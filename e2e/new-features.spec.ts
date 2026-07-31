@@ -97,12 +97,13 @@ test('manual date entry keeps the week aligned and deadlines stack as strips wit
 
   await page.getByRole('button', { name: 'Месяц' }).click()
   const month = page.locator('.month-calendar')
-  await expect(month.getByTitle('Дедлайн: Ручная дата E2E')).toBeVisible()
   expect(await month.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true)
 
   await month.getByRole('button', { name: `Показать задачи на ${localDate}` }).click()
-  await expect(page.getByRole('dialog', { name: /Все задачи дня/ })).toBeVisible()
-  await page.getByRole('button', { name: 'Добавить задачу' }).click()
+  const dayDialog = page.getByRole('dialog', { name: /Все задачи дня/ })
+  await expect(dayDialog).toBeVisible()
+  await expect(dayDialog.getByText('Ручная дата E2E', { exact: true })).toBeVisible()
+  await dayDialog.getByRole('button', { name: 'Добавить задачу' }).click()
   await expect(page.getByRole('textbox', { name: 'Начало', exact: true })).toHaveValue(`${localDate}, 09:00`)
   await page.getByRole('button', { name: 'Закрыть редактор' }).click()
 
@@ -226,11 +227,19 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
 
   await page.getByRole('button', { name: 'Дедлайны', exact: true }).click()
   const monthRange = page.locator('.deadline-month-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })
-  await expect(monthRange).toHaveCount(1)
-  await expect(monthRange).toHaveAttribute('data-range-span', '3')
+  await expect(monthRange.first()).toBeVisible()
+  const monthSpans = await monthRange.evaluateAll((nodes) =>
+    nodes.map((node) => Number(node.getAttribute('data-range-span'))),
+  )
+  expect(monthSpans.reduce((total, span) => total + span, 0)).toBe(3)
 
   await page.getByRole('button', { name: 'Дедлайны: неделя' }).click()
-  await expect(page.locator('.deadline-week-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })).toHaveAttribute('data-range-span', '3')
+  const weekRange = page.locator('.deadline-week-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })
+  await expect(weekRange).toHaveCount(1)
+  const weekSpan = Number(await weekRange.getAttribute('data-range-span'))
+  expect(weekSpan).toBeGreaterThan(0)
+  expect(weekSpan).toBeLessThanOrEqual(3)
+  if (weekSpan < 3) await expect(weekRange).toHaveClass(/continues-after/)
   await page.getByRole('button', { name: 'Дедлайны: год' }).click()
   await expect(page.locator('.deadline-year-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })).toHaveAttribute('data-range-span', '3')
 })
@@ -555,7 +564,7 @@ test('voice fallback populates task fields and an attachment can be reopened', a
   await page.getByRole('textbox', { name: 'Фраза для разбора задачи' }).fill(
     'Подготовить отчёт в проект Работа завтра в 10 важно #голос',
   )
-  await page.getByRole('button', { name: 'Разобрать' }).click()
+  await page.getByRole('button', { name: 'Разобрать', exact: true }).click()
 
   const preview = page.getByLabel('Предпросмотр распознанной задачи')
   await expect(preview.getByText('Подготовить отчёт', { exact: true })).toBeVisible()

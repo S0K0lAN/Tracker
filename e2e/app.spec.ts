@@ -58,7 +58,7 @@ test('calendar views, matrix and habit actions respond', async ({ page }) => {
   await page.locator('.sidebar').getByRole('link', { name: /Привычки/ }).click()
   const habitButton = page.getByRole('button', { name: /Отметить Пить воду/ }).last()
   await habitButton.click()
-  await expect(page.getByRole('button', { name: /Отменить Пить воду/ })).toHaveClass(/is-done/)
+  await expect(page.getByRole('button', { name: /Отменить Пить воду/ }).last()).toHaveClass(/is-done/)
 })
 
 test('settings controls and demo sync work', async ({ page }) => {
@@ -95,7 +95,7 @@ test('interactive controls have accessible names', async ({ page }) => {
 })
 
 test('secondary controls expose a visible result', async ({ page }) => {
-  await page.getByRole('button', { name: 'Фильтры' }).click()
+  await page.getByRole('button', { name: 'Фильтры', exact: true }).click()
   await expect(page.locator('.filter-panel')).toBeVisible()
   await page.getByRole('button', { name: 'Важные' }).click()
   await expect(page.locator('.filter-count')).toHaveText('1')
