@@ -237,7 +237,13 @@ function TimeCalendar({
             </button>
             <div className="week-day__deadlines" role="group" aria-label={`Дедлайны ${dateForAria(day)}`}>
               {dayDeadlines.slice(0, deadlineLimit).map((task) => (
-                <button className="calendar-deadline-strip" key={task.id} onClick={() => onEdit(task)} title={`Дедлайн: ${task.title}`}>
+                <button
+                  className={`calendar-deadline-strip ${task.importance === 'high' ? 'calendar-deadline-strip--important' : ''}`}
+                  key={task.id}
+                  onClick={() => onEdit(task)}
+                  title={`Дедлайн: ${task.title}`}
+                  data-importance={task.importance}
+                >
                   <i aria-hidden="true" /><span>{task.title}</span>
                 </button>
               ))}
@@ -248,13 +254,14 @@ function TimeCalendar({
               {Array.from({ length: 24 }, (_, index) => <i key={index} />)}
               {positionedTasks.map(({ task, top, height, column, columnCount, durationMinutes }) => (
                 <button
-                  className="calendar-task"
+                  className={`calendar-task ${task.importance === 'high' ? 'calendar-task--important' : ''}`}
                   style={{ top: `${top}px`, height: `${height}px`, ...eventHorizontalStyle(column, columnCount) }}
                   onClick={() => onEdit(task)}
                   key={task.id}
                   aria-label={`${task.title}, ${taskTimeRange(task)}`}
                   data-overlap-column={`${column + 1}/${columnCount}`}
                   data-duration-minutes={durationMinutes}
+                  data-importance={task.importance}
                 >
                   <span>{taskTimeRange(task)}</span>
                   <strong>{task.title}</strong>
@@ -314,11 +321,12 @@ function MonthCalendar({
                 return (
                   <button
                     type="button"
-                    className={`month-day__task ${deadlineOnDay ? 'month-day__deadline calendar-deadline-strip' : ''} ${!deadlineOnDay && !startsOnDay ? 'month-day__ongoing' : ''}`}
+                    className={`month-day__task ${deadlineOnDay ? 'month-day__deadline calendar-deadline-strip' : ''} ${!deadlineOnDay && !startsOnDay ? 'month-day__ongoing' : ''} ${task.importance === 'high' ? 'calendar-deadline-strip--important' : ''}`}
                     key={task.id}
                     onClick={() => onEdit(task)}
                     aria-label={`${deadlineOnDay ? 'Дедлайн' : startsOnDay ? 'Запланировано' : 'Продолжается'}: ${task.title}`}
                     title={`${deadlineOnDay ? 'Дедлайн' : startsOnDay ? 'Запланировано' : 'Продолжается'}: ${task.title}`}
+                    data-importance={task.importance}
                   >
                     {deadlineOnDay ? <i aria-hidden="true" /> : startsOnDay ? <Clock3 size={11} /> : <Rows3 size={11} />}
                     <span>{task.title}</span>
@@ -408,13 +416,14 @@ function DeadlineRangeBars({
     >
       {ranges.map(({ task, columnStart, columnSpan, lane, startsBeforeView, endsAfterView }) => (
         <button
-          className={`deadline-range ${startsBeforeView ? 'continues-before' : ''} ${endsAfterView ? 'continues-after' : ''} ${isOverdue(task) ? 'is-overdue' : ''}`}
+          className={`deadline-range ${task.importance === 'high' ? 'is-important' : ''} ${startsBeforeView ? 'continues-before' : ''} ${endsAfterView ? 'continues-after' : ''} ${isOverdue(task) ? 'is-overdue' : ''}`}
           style={{ gridColumn: `${columnStart + 1} / span ${columnSpan}`, gridRow: lane + 1 }}
           key={task.id}
           onClick={() => onEdit(task)}
           title={`${task.title}: ${taskDateRangeLabel(task)}`}
           aria-label={`${task.title}: ${taskDateRangeLabel(task)}`}
           data-range-span={columnSpan}
+          data-importance={task.importance}
         >
           <i aria-hidden="true" /><span>{task.title}</span>
         </button>

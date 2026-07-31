@@ -1322,6 +1322,16 @@ h1, h2, h3, p {
   white-space: nowrap;
 }
 
+.calendar-task--important {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
+  border-left-color: var(--danger);
+}
+
+.calendar-task--important span {
+  color: var(--danger);
+}
+
 .time-calendar--day .calendar-task,
 .time-calendar--three-days .calendar-task {
   padding: 7px 9px;
@@ -1779,13 +1789,22 @@ h1, h2, h3, p {
 }
 
 .deadline-range.is-overdue {
+  border-style: dashed;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 42%, transparent);
+}
+
+.deadline-range.is-overdue > i {
+  background: var(--danger);
+}
+
+.deadline-range.is-important {
   color: var(--danger);
   background: var(--danger-soft);
   border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
   border-left-color: var(--danger);
 }
 
-.deadline-range.is-overdue > i {
+.deadline-range.is-important > i {
   background: var(--danger);
 }
 

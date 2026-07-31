@@ -17,9 +17,9 @@
   align-items: center;
   gap: 3px;
   padding: 0 5px;
-  color: var(--danger);
-  background: var(--danger-soft);
-  border: 1px solid color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: 5px;
   font-size: 7px;
   font-weight: 700;
@@ -37,17 +37,28 @@
 }
 
 .month-day .month-day__deadline {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border: 1px solid color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .calendar-deadline-strip > i {
   width: 3px;
   height: 12px;
   flex: 0 0 auto;
-  background: var(--danger);
+  background: var(--accent);
   border-radius: 3px;
+}
+
+.week-day__deadlines .calendar-deadline-strip--important,
+.month-day .calendar-deadline-strip--important {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+.calendar-deadline-strip--important > i {
+  background: var(--danger);
 }
 
 .calendar-deadline-strip > span {

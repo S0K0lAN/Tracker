@@ -112,23 +112,30 @@
 .appearance-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
-  margin-top: 7px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+  min-height: 48px;
+  margin: 0;
+  padding: 9px 0 10px;
+  border: 0;
 }
 
 .appearance-status {
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 0 9px;
   color: var(--text-soft);
+  background: var(--surface-soft);
+  border-radius: 8px;
   font-size: 9px;
+  font-weight: 600;
 }
 
 .appearance-status--saved {
   color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .appearance-status--error {

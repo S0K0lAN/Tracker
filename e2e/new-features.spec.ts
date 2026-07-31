@@ -235,6 +235,24 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
   await expect(page.locator('.deadline-year-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })).toHaveAttribute('data-range-span', '3')
 })
 
+test('deadline calendar updates the task color when importance changes', async ({ page }) => {
+  await page.goto('/calendar')
+  await page.getByRole('button', { name: 'Дедлайны', exact: true }).click()
+  const range = page.locator('.deadline-range').filter({ hasText: 'Купить продукты на неделю' })
+  await expect(range).toHaveAttribute('data-importance', 'low')
+  const lowColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
+
+  await range.click()
+  await page.getByLabel('Важность').click()
+  await page.getByRole('option', { name: /Важная/ }).click()
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+
+  await expect(range).toHaveAttribute('data-importance', 'high')
+  const highColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
+  expect(highColor).not.toBe(lowColor)
+  await expect(range).toHaveClass(/is-important/)
+})
+
 test('search exposes its own new-task action and archive omits the redundant bulk action', async ({ page }) => {
   await page.goto('/search')
   const searchHeader = page.locator('.page-header')
@@ -265,6 +283,21 @@ test('appearance settings are saved locally and survive reload', async ({ page }
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'violet')
   await expect(page.locator('html')).toHaveAttribute('data-background', 'forest')
   await expect(page.getByLabel('Затемнение фона')).toHaveValue('55')
+  const dividerLayout = await page.locator('#appearance .appearance-actions').evaluate((footer) => {
+    const previous = footer.previousElementSibling as HTMLElement | null
+    return {
+      footerBorderTop: getComputedStyle(footer).borderTopWidth,
+      footerMarginTop: getComputedStyle(footer).marginTop,
+      previousBorderBottom: previous ? getComputedStyle(previous).borderBottomWidth : '',
+      gap: previous ? Math.round(footer.getBoundingClientRect().top - previous.getBoundingClientRect().bottom) : -1,
+    }
+  })
+  expect(dividerLayout).toEqual({
+    footerBorderTop: '0px',
+    footerMarginTop: '0px',
+    previousBorderBottom: '1px',
+    gap: 0,
+  })
 })
 
 test('habit dates align with checks, icons are centered and the daily completion chart is visible', async ({ page }) => {
