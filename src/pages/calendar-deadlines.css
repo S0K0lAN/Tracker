@@ -1,0 +1,62 @@
+.week-day__deadlines {
+  height: var(--week-deadline-height);
+  min-height: var(--week-deadline-height);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 4px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--danger-soft) 52%, var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+
+.week-day__deadlines button {
+  overflow: hidden;
+  min-height: 21px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 16%, transparent);
+  border-radius: 5px;
+  font-size: 7px;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.week-day__deadlines small {
+  color: var(--danger);
+  font-size: 7px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
+.month-day .month-day__deadline {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.calendar-deadline-strip > i {
+  width: 3px;
+  height: 12px;
+  flex: 0 0 auto;
+  background: var(--danger);
+  border-radius: 3px;
+}
+
+.calendar-deadline-strip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-day__deadlines-empty {
+  min-height: 1px;
+}

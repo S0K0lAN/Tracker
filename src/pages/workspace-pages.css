@@ -1,0 +1,455 @@
+.today-focus {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 23px;
+  padding: 15px 17px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: var(--radius-md);
+}
+
+.today-focus > span {
+  width: 39px;
+  height: 39px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  border-radius: 11px;
+}
+
+.today-focus > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.today-focus strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.today-focus p {
+  margin: 3px 0 0;
+  color: var(--text-soft);
+  font-size: 9px;
+}
+
+.today-focus em {
+  padding: 6px 9px;
+  color: var(--accent-strong);
+  background: var(--surface);
+  border-radius: 20px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.workspace-section {
+  margin-bottom: 22px;
+}
+
+.workspace-section > header {
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  color: var(--accent-strong);
+}
+
+.workspace-section > header > span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.workspace-section > header svg {
+  width: 17px;
+  height: 17px;
+}
+
+.workspace-section > header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.workspace-section > header em {
+  min-width: 22px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-radius: 20px;
+  font-size: 9px;
+  font-style: normal;
+}
+
+.workspace-section--danger > header {
+  color: var(--danger);
+}
+
+.workspace-section__empty {
+  margin: 0;
+  padding: 13px 16px;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px dashed var(--line);
+  border-radius: 11px;
+  font-size: 9px;
+}
+
+.workspace-empty {
+  margin-top: 20px;
+}
+
+.workspace-back {
+  min-height: 35px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 16px;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.project-card {
+  min-height: 150px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 12px;
+  padding: 17px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.project-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  box-shadow: 0 7px 18px rgba(27, 41, 28, 0.1);
+}
+
+.project-card__icon {
+  width: 39px;
+  height: 39px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+}
+
+.project-card__content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-card__content strong {
+  font-size: 12px;
+}
+
+.project-card__content small,
+.project-card__stats small {
+  color: var(--text-soft);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.project-card__stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.project-card__stats em {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 24px;
+  font-style: normal;
+  line-height: 1;
+}
+
+.project-card__deadline {
+  grid-column: 2 / -1;
+  align-self: end;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-soft);
+  font-size: 9px;
+}
+
+.project-card--new {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-soft);
+  background: transparent;
+  border-style: dashed;
+  text-align: center;
+}
+
+.project-card--new strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.project-card--new small {
+  font-size: 9px;
+}
+
+.project-creator {
+  margin-bottom: 18px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.project-creator > header,
+.project-creator > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-creator h2 {
+  margin: 0;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 20px;
+}
+
+.project-creator__fields {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 11px;
+  margin: 16px 0;
+}
+
+.project-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 17px;
+  padding: 0;
+  border: 0;
+}
+
+.project-color-picker legend {
+  margin-bottom: 8px;
+  color: var(--text-soft);
+  font-size: 9px;
+}
+
+.project-color-picker button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.project-color-picker button span {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.project-color-picker button.is-selected span {
+  box-shadow: 0 0 0 2px var(--text);
+}
+
+.project-creator > footer {
+  justify-content: flex-end;
+}
+
+.project-detail-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 16px;
+  padding: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.project-detail-heading > span {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: white;
+  border-radius: 10px;
+}
+
+.project-detail-heading > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.project-detail-heading strong {
+  font-size: 10px;
+}
+
+.project-detail-heading small {
+  color: var(--text-soft);
+  font-size: 8px;
+}
+
+.trash-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 17px;
+}
+
+.trash-toolbar .segmented button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trash-toolbar .segmented em {
+  min-width: 19px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  border-radius: 20px;
+  font-size: 8px;
+  font-style: normal;
+}
+
+.trash-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+  font-size: 9px;
+}
+
+.trash-confirm button {
+  min-height: 29px;
+  color: inherit;
+  background: var(--danger-soft);
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.trash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trash-task {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.trash-task__icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-radius: 10px;
+}
+
+.trash-task > div {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.trash-task strong {
+  font-size: 11px;
+}
+
+.trash-task small {
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-size: 8px;
+}
+
+@media (max-width: 900px) {
+  .project-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .today-focus {
+    align-items: flex-start;
+  }
+
+  .today-focus em {
+    display: none;
+  }
+
+  .project-grid,
+  .project-creator__fields {
+    grid-template-columns: 1fr;
+  }
+
+  .project-card {
+    min-height: 126px;
+  }
+
+  .trash-toolbar,
+  .trash-task {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trash-task__icon {
+    display: none;
+  }
+
+  .trash-task .button {
+    width: 100%;
+  }
+
+}

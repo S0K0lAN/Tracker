@@ -1,0 +1,195 @@
+.setting-row.setting-row--background {
+  min-height: 104px;
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px 0;
+}
+
+.background-picker {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  flex-direction: row !important;
+  gap: 7px;
+}
+
+.background-swatch {
+  min-height: 58px;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  padding: 5px;
+  color: #fff;
+  background: var(--surface-soft);
+  border: 2px solid transparent;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+}
+
+.background-swatch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 30%, rgba(15, 20, 16, 0.7));
+}
+
+.background-swatch span {
+  z-index: 1;
+  margin: 0 !important;
+  color: inherit !important;
+  font-size: 7px !important;
+  font-weight: 700;
+}
+
+.background-swatch--none {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.background-swatch--none::after {
+  background: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--line) 55%, transparent) 5px 6px);
+}
+
+.background-swatch--mist {
+  background: radial-gradient(circle at 24% 20%, #e7eee7, transparent 34%), linear-gradient(140deg, #7f9484, #44574b);
+}
+
+.background-swatch--dawn {
+  background: radial-gradient(circle at 70% 15%, #f6d5af, transparent 30%), linear-gradient(145deg, #b8746d, #66536f);
+}
+
+.background-swatch--forest {
+  background: radial-gradient(circle at 70% 20%, #8dab8f, transparent 28%), linear-gradient(145deg, #395649, #172c27);
+}
+
+.background-swatch--custom {
+  align-items: center;
+  justify-content: center;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+}
+
+.background-swatch--custom img {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+}
+
+.background-swatch.is-selected {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+}
+
+.background-error {
+  color: var(--danger) !important;
+}
+
+.background-range {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-soft) !important;
+}
+
+.background-range input {
+  width: 130px;
+}
+
+.background-range em {
+  min-width: 31px;
+  font-size: 8px;
+  font-style: normal;
+}
+
+.appearance-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 7px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.appearance-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 9px;
+}
+
+.appearance-status--saved {
+  color: var(--accent-strong);
+}
+
+.appearance-status--error {
+  color: var(--danger);
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-shell::before,
+.app-shell::after {
+  content: '';
+  position: fixed;
+  z-index: -2;
+  inset: 0;
+  pointer-events: none;
+}
+
+.app-shell::after {
+  z-index: -1;
+  background: var(--bg);
+  opacity: var(--background-dim, 0.35);
+}
+
+:root[data-background='none'] .app-shell::before {
+  background: none;
+}
+
+:root[data-background='none'] .app-shell::after {
+  opacity: 1;
+}
+
+:root[data-background='mist'] .app-shell::before {
+  background: radial-gradient(circle at 16% 12%, rgba(222, 235, 225, 0.95), transparent 30%), radial-gradient(circle at 84% 78%, rgba(129, 157, 139, 0.65), transparent 32%), linear-gradient(145deg, #8da093, #42584c);
+}
+
+:root[data-background='dawn'] .app-shell::before {
+  background: radial-gradient(circle at 73% 12%, rgba(255, 216, 168, 0.9), transparent 28%), radial-gradient(circle at 20% 72%, rgba(156, 113, 139, 0.65), transparent 31%), linear-gradient(145deg, #bf7c70, #594d68);
+}
+
+:root[data-background='forest'] .app-shell::before {
+  background: radial-gradient(circle at 67% 12%, rgba(141, 179, 143, 0.65), transparent 25%), radial-gradient(circle at 15% 75%, rgba(41, 84, 67, 0.85), transparent 32%), linear-gradient(145deg, #496958, #172d27);
+}
+
+:root[data-background='custom'] .app-shell::before {
+  background: var(--custom-background-image) center / cover no-repeat;
+}
+
+:root:not([data-background='none']) body {
+  background: transparent;
+}
+
+@media (max-width: 560px) {
+  .background-picker {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .appearance-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

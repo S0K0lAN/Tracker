@@ -1,0 +1,243 @@
+.date-time-field {
+  position: relative;
+  align-self: start;
+}
+
+.date-time-field__control {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 6px 0 11px;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.date-time-field__control:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 11%, transparent);
+}
+
+.date-time-field__control.is-invalid {
+  border-color: var(--danger);
+}
+
+.date-time-field__control > input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 11px;
+}
+
+.date-time-field__clear,
+.date-time-field__toggle {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.date-time-field__clear:hover,
+.date-time-field__toggle:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.date-time-field__toggle svg {
+  transform: rotate(90deg);
+}
+
+.date-time-field__hint,
+.date-time-field__error {
+  margin-top: -2px;
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.date-time-field__error {
+  color: var(--danger);
+}
+
+.date-time-popover {
+  position: fixed;
+  z-index: 130;
+  padding: 12px;
+  color: var(--text);
+  background: var(--surface-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  animation: date-popover-in 150ms var(--ease-standard) both;
+}
+
+.date-time-popover > header {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.date-time-popover > header strong {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 15px;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.date-time-popover > header button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.date-time-popover > header button:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.date-time-popover__weekdays,
+.date-time-popover__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.date-time-popover__weekdays span {
+  min-height: 24px;
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.date-time-popover__days button {
+  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.date-time-popover__days button:hover {
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+
+.date-time-popover__days button.is-muted {
+  color: var(--text-faint);
+}
+
+.date-time-popover__days button.is-today {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+  font-weight: 800;
+}
+
+.date-time-popover__days button.is-selected {
+  color: white;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.date-time-popover__quick {
+  display: flex;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.date-time-popover__quick button {
+  flex: 1;
+  min-height: 31px;
+  padding: 0 6px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 8px;
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.date-time-popover__time {
+  min-height: 43px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 0 10px;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.date-time-popover__time input {
+  min-height: 34px;
+  padding: 0 4px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font: inherit;
+}
+
+.date-time-popover > footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+@keyframes date-popover-in {
+  from { opacity: 0; transform: translateY(-5px) scale(0.99); }
+}
+
+@media (max-width: 560px) {
+  .date-time-popover {
+    width: auto !important;
+    max-height: calc(100vh - 20px);
+    inset: auto 10px 10px !important;
+    overflow-y: auto;
+    border-radius: 18px;
+  }
+
+  .date-time-popover__days button {
+    min-height: 39px;
+  }
+}
