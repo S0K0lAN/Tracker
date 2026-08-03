@@ -184,6 +184,13 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
     })
     state.tasks.push({
       ...template,
+      id: 'wrapping-week-slot',
+      title: 'Подготовить подробный план презентации для общей встречи',
+      startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0).toISOString(),
+      deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0).toISOString(),
+    })
+    state.tasks.push({
+      ...template,
       id: 'project-range',
       title: 'Диапазон проекта',
       startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0).toISOString(),
@@ -206,6 +213,11 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
   for (const view of ['Год', 'Месяц', 'Неделя', '3 дня', 'День', 'Дедлайны']) {
     await expect(page.getByRole('button', { name: view, exact: true })).toBeVisible()
   }
+
+  const wrappingWeekSlot = page.locator('.calendar-task').filter({ hasText: 'Подготовить подробный план презентации для общей встречи' })
+  const wrappingTitleBox = await wrappingWeekSlot.locator('strong').boundingBox()
+  expect(wrappingTitleBox).not.toBeNull()
+  expect(wrappingTitleBox!.height).toBeGreaterThan(20)
 
   await page.getByRole('button', { name: 'День', exact: true }).click()
   const longSlot = page.locator('.calendar-task').filter({ hasText: 'Длинный дневной слот' })

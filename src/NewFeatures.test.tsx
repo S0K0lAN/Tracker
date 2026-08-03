@@ -6,7 +6,7 @@ import { RouterProvider } from './core/router/Router'
 import type { AppState, Task } from './domain/models'
 import { createSeedState } from './domain/seed'
 import { layoutDeadlineRanges, layoutTimedDayTasks, tasksForLocalDate } from './pages/calendarLayout'
-import { layoutWeekDayTasks } from './pages/CalendarPage'
+import { calendarTaskLineLimit, layoutWeekDayTasks } from './pages/CalendarPage'
 import { AppProvider } from './state/AppContext'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
@@ -81,6 +81,13 @@ describe('new workspace pages', () => {
 })
 
 describe('calendar deadline projection', () => {
+  it('adds title lines only when the calendar event has enough height', () => {
+    expect(calendarTaskLineLimit(34, 'week')).toBe(1)
+    expect(calendarTaskLineLimit(66, 'week')).toBe(3)
+    expect(calendarTaskLineLimit(44, 'day')).toBe(1)
+    expect(calendarTaskLineLimit(136, 'day')).toBe(7)
+  })
+
   it('places overlapping timed tasks in adjacent columns and reuses the full width afterwards', () => {
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
     const at = (hours: number, minutes: number) => {

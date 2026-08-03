@@ -160,6 +160,13 @@ function eventHorizontalStyle(column: number, columnCount: number) {
   }
 }
 
+export function calendarTaskLineLimit(height: number, mode: 'week' | 'three-days' | 'day') {
+  const renderedHeight = Math.max(34, height)
+  const verticalInsets = mode === 'week' ? 12 : 16
+  const lineHeight = mode === 'week' ? 15.6 : 16.9
+  return Math.max(1, Math.floor((renderedHeight - verticalInsets) / lineHeight))
+}
+
 function DayTasksDialog({
   date,
   tasks,
@@ -310,7 +317,12 @@ function TimeCalendar({
               {positionedTasks.map(({ task, top, height, column, columnCount, durationMinutes }) => (
                 <button
                   className={`calendar-task ${task.importance === 'high' ? 'calendar-task--important' : ''}`}
-                  style={{ top: `${top}px`, height: `${height}px`, ...eventHorizontalStyle(column, columnCount) }}
+                  style={{
+                    top: `${top}px`,
+                    height: `${height}px`,
+                    '--calendar-task-lines': calendarTaskLineLimit(height, mode),
+                    ...eventHorizontalStyle(column, columnCount),
+                  } as CSSProperties}
                   onClick={() => onEdit(task)}
                   key={task.id}
                   aria-label={`${task.title}, ${taskTimeRange(task)}`}

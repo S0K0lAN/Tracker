@@ -1328,14 +1328,17 @@ h1, h2, h3, p {
 .calendar-task strong {
   width: 100%;
   min-width: 0;
-  display: block;
+  display: -webkit-box;
   overflow: hidden;
   margin: 0;
   color: var(--text);
   font-size: 12px;
   line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--calendar-task-lines, 1);
 }
 
 .calendar-task--important {
