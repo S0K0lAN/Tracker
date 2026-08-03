@@ -1312,6 +1312,9 @@ h1, h2, h3, p {
   z-index: 2;
   min-width: 0;
   min-height: 34px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
   padding: 5px 6px;
   text-align: left;
   background: var(--accent-soft);
@@ -1322,18 +1325,13 @@ h1, h2, h3, p {
   overflow: hidden;
 }
 
-.calendar-task span, .calendar-task strong {
-  display: block;
-}
-
-.calendar-task span {
-  color: var(--accent-strong);
-  font-size: 11px;
-}
-
 .calendar-task strong {
+  width: 100%;
+  min-width: 0;
+  display: block;
   overflow: hidden;
-  margin-top: 2px;
+  margin: 0;
+  color: var(--text);
   font-size: 12px;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -1346,7 +1344,7 @@ h1, h2, h3, p {
   border-left-color: var(--danger);
 }
 
-.calendar-task--important span {
+.calendar-task--important strong {
   color: var(--danger);
 }
 
@@ -1354,12 +1352,6 @@ h1, h2, h3, p {
 .time-calendar--three-days .calendar-task {
   padding: 7px 9px;
   border-left-width: 4px;
-}
-
-.time-calendar--day .calendar-task span,
-.time-calendar--three-days .calendar-task span {
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .time-calendar--day .calendar-task strong,
@@ -3041,12 +3033,9 @@ h1, h2, h3, p {
   .week-day__deadlines button { min-height: 21px; padding-inline: 3px; font-size: 0; }
   .week-day__deadlines button i { width: 100%; height: 4px; }
   .calendar-task { min-height: 34px; padding: 3px; border-left-width: 2px; }
-  .calendar-task span { font-size: 9px; }
   .calendar-task strong { font-size: 10px; }
   .time-calendar--day .calendar-task,
   .time-calendar--three-days .calendar-task { padding: 6px; border-left-width: 3px; }
-  .time-calendar--day .calendar-task span,
-  .time-calendar--three-days .calendar-task span { font-size: 11px; }
   .time-calendar--day .calendar-task strong,
   .time-calendar--three-days .calendar-task strong { font-size: 12px; }
   .month-weekday { font-size: 10px; }

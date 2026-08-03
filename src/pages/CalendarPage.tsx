@@ -314,11 +314,11 @@ function TimeCalendar({
                   onClick={() => onEdit(task)}
                   key={task.id}
                   aria-label={`${task.title}, ${taskTimeRange(task)}`}
+                  title={`${task.title} · ${taskTimeRange(task)}`}
                   data-overlap-column={`${column + 1}/${columnCount}`}
                   data-duration-minutes={durationMinutes}
                   data-importance={task.importance}
                 >
-                  <span>{taskTimeRange(task)}</span>
                   <strong>{task.title}</strong>
                 </button>
               ))}

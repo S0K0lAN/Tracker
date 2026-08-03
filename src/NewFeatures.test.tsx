@@ -151,7 +151,11 @@ describe('calendar deadline projection', () => {
 
     await user.click(screen.getByRole('button', { name: 'День' }))
     expect(container.querySelector('.time-calendar--day')).toBeInTheDocument()
-    expect(container.querySelector('.calendar-task')).toHaveAttribute('data-duration-minutes', '60')
+    const calendarTask = container.querySelector('.calendar-task')
+    expect(calendarTask).toHaveAttribute('data-duration-minutes', '60')
+    expect(calendarTask).toHaveTextContent('Задача месяца 1')
+    expect(calendarTask).not.toHaveTextContent(/\d{2}:\d{2}/)
+    expect(calendarTask?.getAttribute('aria-label')).toMatch(/\d{2}:\d{2}/)
 
     await user.click(screen.getByRole('button', { name: 'Год' }))
     expect(container.querySelectorAll('.year-month')).toHaveLength(12)

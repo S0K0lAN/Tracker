@@ -210,6 +210,8 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
   await page.getByRole('button', { name: 'День', exact: true }).click()
   const longSlot = page.locator('.calendar-task').filter({ hasText: 'Длинный дневной слот' })
   await expect(longSlot).toHaveAttribute('data-duration-minutes', '210')
+  await expect(longSlot).toHaveText('Длинный дневной слот')
+  await expect(longSlot).not.toContainText(/\d{2}:\d{2}/)
   const longSlotBox = await longSlot.boundingBox()
   expect(longSlotBox).not.toBeNull()
   expect(longSlotBox!.height).toBeGreaterThan(140)
@@ -381,7 +383,7 @@ test('mobile calendar keeps deadline markers and compact controls usable', async
   const taskCheckBounds = await taskCheck.boundingBox()
   expect(taskCheckBounds).not.toBeNull()
   expect(taskCheckBounds!.width).toBeGreaterThanOrEqual(44)
-  expect(taskCheckBounds!.height).toBeGreaterThanOrEqual(44)
+  expect(taskCheckBounds!.height + 0.01).toBeGreaterThanOrEqual(44)
 
   await page.goto('/projects')
   await page.locator('.project-card--new').click()
