@@ -665,6 +665,17 @@ test('a habit keeps its icon and description and toggles independently after rel
   await expect(habit.locator('[data-habit-icon="book"]')).toBeVisible()
   await expect(habit.getByText('Двадцать минут без уведомлений')).toBeVisible()
   await habit.getByRole('button', { name: 'Редактировать привычку E2E вечернее чтение' }).click()
+  const iconCenterOffsets = await page.locator('.habit-icon-picker label').evaluateAll((labels) => labels.map((label) => {
+    const icon = label.querySelector('svg')
+    if (!icon) return Number.POSITIVE_INFINITY
+    const labelRect = label.getBoundingClientRect()
+    const iconRect = icon.getBoundingClientRect()
+    return Math.max(
+      Math.abs(iconRect.x + iconRect.width / 2 - labelRect.x - labelRect.width / 2),
+      Math.abs(iconRect.y + iconRect.height / 2 - labelRect.y - labelRect.height / 2),
+    )
+  }))
+  expect(Math.max(...iconCenterOffsets)).toBeLessThanOrEqual(1)
   await page.getByLabel(/Описание/).fill('Обновлённое описание привычки')
   await page.getByRole('radio', { name: 'Солнце' }).click()
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click()

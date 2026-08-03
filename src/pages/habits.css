@@ -188,12 +188,13 @@
   gap: 5px;
 }
 
-.habit-icon-picker label {
+.inline-form .habit-icon-picker label {
   position: relative;
   width: 44px;
   height: 44px;
   display: grid;
   place-items: center;
+  gap: 0;
   background: var(--surface-strong);
   border: 1px solid var(--line);
   border-radius: 9px;
