@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Download, ExternalLink, File, Minus, Plus, X } from 'lucide-react'
 import type { Attachment } from '../domain/models'
+import { safeAttachmentDataUrl } from '../domain/attachments'
 import { trapTabKey } from './focusTrap'
 import './attachment-viewer.css'
 
@@ -9,8 +10,10 @@ export function AttachmentViewer({ attachment, onClose }: { attachment: Attachme
   const closeRef = useRef<HTMLButtonElement>(null)
   const viewerRef = useRef<HTMLElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null)
-  const canPreviewImage = attachment.type.startsWith('image/') && attachment.dataUrl
-  const canEmbed = attachment.dataUrl && (attachment.type === 'application/pdf' || attachment.type.startsWith('text/'))
+  const dataUrl = safeAttachmentDataUrl(attachment.dataUrl, attachment.type)
+  const canPreviewImage = attachment.type.startsWith('image/') && dataUrl
+  const textPreview = attachment.type === 'text/plain' && dataUrl ? decodeTextDataUrl(dataUrl) : undefined
+  const canEmbedPdf = dataUrl && attachment.type === 'application/pdf'
 
   useLayoutEffect(() => {
     closeRef.current?.focus()
@@ -46,8 +49,8 @@ export function AttachmentViewer({ attachment, onClose }: { attachment: Attachme
             <h2 id="attachment-viewer-title">{attachment.name}</h2>
             <small>{formatFileSize(attachment.size)} · {attachment.type || 'тип не определён'}</small>
           </div>
-          {attachment.dataUrl && (
-            <a className="icon-button" href={attachment.dataUrl} download={attachment.name} aria-label={`Скачать ${attachment.name}`}>
+          {dataUrl && (
+            <a className="icon-button" href={dataUrl} download={attachment.name} aria-label={`Скачать ${attachment.name}`}>
               <Download size={18} />
             </a>
           )}
@@ -62,16 +65,18 @@ export function AttachmentViewer({ attachment, onClose }: { attachment: Attachme
         </header>
         <div className="attachment-viewer__content">
           {canPreviewImage ? (
-            <img src={attachment.dataUrl} alt={attachment.name} style={{ transform: `scale(${zoom})` }} />
-          ) : canEmbed ? (
-            <iframe src={attachment.dataUrl} title={`Просмотр ${attachment.name}`} tabIndex={-1} />
+            <img src={dataUrl} alt={attachment.name} style={{ transform: `scale(${zoom})` }} />
+          ) : textPreview !== undefined ? (
+            <pre>{textPreview}</pre>
+          ) : canEmbedPdf ? (
+            <iframe src={dataUrl} title={`Просмотр ${attachment.name}`} sandbox="" tabIndex={-1} />
           ) : (
             <div className="attachment-viewer__empty">
               <File size={38} />
               <strong>Предпросмотр для этого типа недоступен</strong>
               <p>Файл можно сохранить и открыть в подходящем приложении.</p>
-              {attachment.dataUrl && (
-                <a className="button button--primary" href={attachment.dataUrl} download={attachment.name}>
+              {dataUrl && (
+                <a className="button button--primary" href={dataUrl} download={attachment.name}>
                   <ExternalLink size={17} /> Открыть файл
                 </a>
               )}
@@ -87,4 +92,14 @@ function formatFileSize(size: number) {
   if (size < 1024) return `${size} Б`
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} КБ`
   return `${(size / 1024 / 1024).toFixed(1)} МБ`
+}
+
+function decodeTextDataUrl(dataUrl: string): string | undefined {
+  try {
+    const encoded = dataUrl.slice(dataUrl.indexOf(',') + 1)
+    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0))
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return undefined
+  }
 }

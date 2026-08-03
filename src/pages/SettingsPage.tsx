@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   CheckCircle2,
+  CircleAlert,
   Cloud,
   Database,
+  Download,
   ExternalLink,
   HardDrive,
   Image,
+  Link2,
+  LogOut,
   Palette,
   Plug,
   RefreshCw,
@@ -24,16 +28,49 @@ import type { BackgroundPreset } from '../domain/models'
 import './settings-backgrounds.css'
 
 export function SettingsPage() {
-  const { state, updateSettings, persistState, sync, resetDemo } = useApp()
-  const [token, setToken] = useState('')
+  const {
+    state,
+    updateSettings,
+    updateSyncProviderConfig,
+    persistState,
+    syncProviders,
+    syncConflict,
+    importBackupAvailable,
+    selectSyncProvider,
+    connectSyncProvider,
+    disconnectSyncProvider,
+    syncNow,
+    resolveSyncConflict,
+    restoreImportBackup,
+    resetDemo,
+  } = useApp()
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showPluginDetails, setShowPluginDetails] = useState(false)
+  const [confirmLocalOverwrite, setConfirmLocalOverwrite] = useState(false)
   const [backgroundError, setBackgroundError] = useState('')
   const [appearanceStatus, setAppearanceStatus] = useState<'saved' | 'saving' | 'error'>('saved')
   const appearanceReadyRef = useRef(false)
   const backgroundRef = useRef<HTMLInputElement>(null)
   const plugins = pluginRegistry.list()
-  const syncing = state.sync.status === 'syncing'
+  const syncing = state.sync.status === 'syncing' || state.sync.status === 'connecting'
+  const selectedProvider = syncProviders.find((provider) => provider.id === state.settings.syncProvider)
+  const interactiveSelected = selectedProvider?.connection === 'interactive'
+  const selectedProviderConfig = state.settings.syncProviderConfigs[state.settings.syncProvider] ?? {}
+  const fieldValue = (key: string, defaultValue?: string) => selectedProviderConfig[key] ?? defaultValue ?? ''
+  const missingRequiredConfig = selectedProvider?.configFields?.some((field) => (
+    field.required && !fieldValue(field.key, field.defaultValue).trim()
+  )) ?? false
+  const connected = state.sync.connectionStatus === 'connected'
+  const authorizationRequired = state.sync.connectionStatus === 'authorization-required'
+  const statusLabel = state.sync.status === 'conflict'
+    ? 'Нужен выбор'
+    : syncing
+      ? 'Синхронизация'
+      : authorizationRequired
+        ? 'Нужен вход'
+        : connected
+          ? state.sync.status === 'success' ? 'Синхронизировано' : 'Подключено'
+          : state.sync.status === 'error' ? 'Ошибка' : 'Отключено'
   const appearanceKey = JSON.stringify({
     theme: state.settings.theme,
     accent: state.settings.accent,
@@ -61,6 +98,10 @@ export function SettingsPage() {
     // appearanceKey is the complete persisted appearance snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appearanceKey])
+
+  useEffect(() => {
+    setConfirmLocalOverwrite(false)
+  }, [syncConflict])
 
   const readBackground = async (file?: File) => {
     if (!file) return
@@ -175,42 +216,82 @@ export function SettingsPage() {
           </section>
 
           <section className="settings-card settings-card--sync" id="sync">
-            <header><span><Cloud /></span><div><h2>Google Drive</h2><p>Local-first синхронизация между устройствами</p></div>
+            <header><span><Cloud /></span><div><h2>Синхронизация</h2><p>Local-first копия в выбранном хранилище</p></div>
               <span className={`status-pill status-pill--${state.sync.status}`}>
-                {state.sync.status === 'success' ? <CheckCircle2 size={14} /> : state.sync.status === 'error' ? <WifiOff size={14} /> : <HardDrive size={14} />}
-                {state.sync.status === 'success' ? 'Синхронизировано' : state.sync.status === 'error' ? 'Ошибка' : 'Локально'}
+                {state.sync.status === 'success' ? <CheckCircle2 size={14} /> : state.sync.status === 'error' ? <WifiOff size={14} /> : state.sync.status === 'conflict' ? <CircleAlert size={14} /> : <HardDrive size={14} />}
+                {statusLabel}
               </span>
             </header>
-            <div className="drive-explainer"><ShieldCheck size={21} /><p><strong>Ваши данные остаются вашими.</strong><br />Для реального режима используется скрытая папка приложения и минимальный доступ <code>drive.appdata</code>.</p></div>
+            <div className="drive-explainer"><ShieldCheck size={21} /><p><strong>Ваши данные остаются вашими.</strong><br />{selectedProvider?.privacyNote ?? 'Провайдер работает через изолированный адаптер хранения.'}</p></div>
             <div className="setting-row">
-              <div><strong>Провайдер</strong><span>Демо работает без аккаунта; Drive требует OAuth-токен</span></div>
-              <select aria-label="Провайдер синхронизации" value={state.settings.syncProvider} onChange={(event) => updateSettings({ syncProvider: event.target.value as 'demo' | 'google-drive' })}>
-                <option value="demo">Демо-адаптер</option>
-                <option value="google-drive">Google Drive REST</option>
+              <div><strong>Хранилище</strong><span>{selectedProvider?.description ?? 'Этот провайдер сейчас недоступен'}</span></div>
+              <select aria-label="Провайдер синхронизации" value={state.settings.syncProvider} disabled={syncing} onChange={(event) => void selectSyncProvider(event.target.value)}>
+                {!selectedProvider && <option value={state.settings.syncProvider}>{state.settings.syncProvider} · недоступен</option>}
+                {syncProviders.map((provider) => <option value={provider.id} key={provider.id}>{provider.name}</option>)}
               </select>
             </div>
-            {state.settings.syncProvider === 'google-drive' && (
-              <label className="field drive-token">
-                <span>Временный OAuth access token</span>
-                <input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Не сохраняется в данных приложения" />
-                <small>Для production будет использован системный OAuth PKCE и защищённое хранилище.</small>
+            {selectedProvider?.configFields?.map((field) => (
+              <label className="field drive-token" key={field.key}>
+                <span>{field.label}</span>
+                <input
+                  type="text"
+                  value={fieldValue(field.key, field.defaultValue)}
+                  disabled={syncing || (connected && interactiveSelected)}
+                  required={field.required}
+                  onChange={(event) => updateSyncProviderConfig(field.key, event.target.value.trim())}
+                  placeholder={field.placeholder}
+                  aria-label={field.label}
+                  autoComplete="off"
+                />
+                {field.description && <small>{field.description}</small>}
               </label>
-            )}
+            ))}
+            {missingRequiredConfig && <small className="sync-config-error">Заполните обязательные параметры хранилища.</small>}
             <label className="setting-row">
-              <div><strong>Автосинхронизация</strong><span>После локальных изменений и при запуске</span></div>
+              <div><strong>Автосинхронизация</strong><span>Через 1,8 секунды после локальных изменений, пока подключение активно</span></div>
               <input className="switch" type="checkbox" checked={state.settings.autoSync} onChange={(event) => updateSettings({ autoSync: event.target.checked })} />
             </label>
             <div className="sync-actions">
-              <button className="button button--primary" disabled={syncing || (state.settings.syncProvider === 'google-drive' && !token)} onClick={() => void sync(token)}>
-                <RefreshCw className={syncing ? 'spin' : ''} size={17} /> {syncing ? 'Синхронизация…' : 'Синхронизировать'}
-              </button>
+              {interactiveSelected && !connected ? (
+                <button className="button button--primary" disabled={syncing || missingRequiredConfig} onClick={() => void connectSyncProvider()}>
+                  {syncing ? <RefreshCw className="spin" size={17} /> : <Link2 size={17} />}
+                  {syncing ? 'Подключение…' : authorizationRequired ? `Продолжить с ${selectedProvider.name}` : `Подключить ${selectedProvider.name}`}
+                </button>
+              ) : (
+                <button className="button button--primary" disabled={syncing || !selectedProvider || missingRequiredConfig} onClick={() => void syncNow()}>
+                  <RefreshCw className={syncing ? 'spin' : ''} size={17} /> {syncing ? 'Синхронизация…' : 'Проверить и синхронизировать'}
+                </button>
+              )}
+              {interactiveSelected && connected && (
+                <button className="button button--ghost" disabled={syncing} onClick={() => void disconnectSyncProvider()}><LogOut size={16} /> Отключить</button>
+              )}
               <button className="button button--ghost" onClick={() => setShowAdvanced(!showAdvanced)}>{showAdvanced ? 'Скрыть детали' : 'Показать детали'}</button>
             </div>
-            {state.sync.message && <Toast tone={state.sync.status === 'error' ? 'error' : 'success'}>{state.sync.message}</Toast>}
+            {syncConflict && (
+              <section className="sync-conflict" role="alert" aria-label="Конфликт синхронизации">
+                <header><CircleAlert size={20} /><div><strong>В хранилище уже есть другая копия</strong><span>Ничего не будет перезаписано без вашего выбора.</span></div></header>
+                <div className="sync-conflict__compare">
+                  <span><strong>Это устройство</strong><small>{syncConflict.local.tasks} задач · {syncConflict.local.projects} проектов · {syncConflict.local.habits} привычек</small><em>{syncConflict.local.recentTaskTitles.join(' · ') || 'Нет задач'}</em></span>
+                  <span><strong>Хранилище</strong><small>{syncConflict.remote.tasks} задач · {syncConflict.remote.projects} проектов · {syncConflict.remote.habits} привычек</small><em>{syncConflict.remote.recentTaskTitles.join(' · ') || 'Нет задач'}</em></span>
+                </div>
+                <div className="sync-conflict__actions">
+                  <button className="button button--primary" disabled={syncing} onClick={() => void resolveSyncConflict('remote')}><Download size={16} /> Загрузить из хранилища</button>
+                  {!confirmLocalOverwrite ? (
+                    <button className="button button--danger-ghost" disabled={syncing} onClick={() => setConfirmLocalOverwrite(true)}>Заменить копию локальными данными</button>
+                  ) : (
+                    <button className="button button--danger-ghost" disabled={syncing} onClick={() => void resolveSyncConflict('local')}>Точно заменить копию в хранилище</button>
+                  )}
+                  <button className="button button--ghost" disabled={syncing} onClick={() => { setConfirmLocalOverwrite(false); void resolveSyncConflict('cancel') }}>Отмена</button>
+                </div>
+                {state.sync.status === 'error' && <p className="sync-conflict__error">{state.sync.message}</p>}
+              </section>
+            )}
+            {state.sync.message && !syncConflict && <Toast tone={state.sync.status === 'error' ? 'error' : 'success'}>{state.sync.message}</Toast>}
             {showAdvanced && (
               <div className="sync-details">
                 <span><strong>Локальное хранилище</strong><small>Browser JSON adapter · готово</small></span>
-                <span><strong>Drive API v3</strong><small>appDataFolder · контрактный адаптер</small></span>
+                <span><strong>{selectedProvider?.name ?? state.settings.syncProvider}</strong><small>{state.sync.remoteRevision ? `Ревизия ${state.sync.remoteRevision}` : 'Удалённая копия ещё не привязана'}</small></span>
+                {selectedProvider?.consistency === 'best-effort' && <span><strong>Защита от конфликтов</strong><small>Проверка ревизии перед записью; провайдер не гарантирует атомарный compare-and-swap</small></span>}
                 <span><strong>Последняя синхронизация</strong><small>{state.sync.lastSyncedAt ? new Date(state.sync.lastSyncedAt).toLocaleString('ru-RU') : 'ещё не выполнялась'}</small></span>
               </div>
             )}
@@ -218,10 +299,10 @@ export function SettingsPage() {
 
           <section className="settings-card" id="plugins">
             <header><span><Plug /></span><div><h2>Расширения</h2><p>Версионированные точки подключения</p></div><span className="status-pill">API v1</span></header>
-            <div className="plugin-empty"><Sparkles /><div><strong>{plugins.length ? `${plugins.length} расширений подключено` : 'Готово к расширению'}</strong><p>Плагины смогут добавлять действия задач, панели, настройки и провайдеры синхронизации без доступа к внутреннему состоянию.</p></div><button className="button button--ghost" onClick={() => setShowPluginDetails(!showPluginDetails)}>{showPluginDetails ? 'Скрыть' : 'Контракты'} <ExternalLink size={15} /></button></div>
+            <div className="plugin-empty"><Sparkles /><div><strong>{plugins.length ? `${plugins.length} расширений подключено` : 'Готово к расширению'}</strong><p>Плагины смогут добавлять действия задач, панели и настройки без доступа к внутреннему состоянию.</p></div><button className="button button--ghost" onClick={() => setShowPluginDetails(!showPluginDetails)}>{showPluginDetails ? 'Скрыть' : 'Контракты'} <ExternalLink size={15} /></button></div>
             {showPluginDetails && (
               <div className="plugin-contracts">
-                <code>task-actions</code><code>sidebar</code><code>settings</code><code>sync-adapter</code>
+                <code>task-actions</code><code>sidebar</code><code>settings</code>
                 <p>Plugin API v1 принимает только заявленные capabilities и не предоставляет прямой доступ к store, файлам или токенам.</p>
               </div>
             )}
@@ -229,9 +310,15 @@ export function SettingsPage() {
 
           <section className="settings-card" id="data">
             <header><span><Database /></span><div><h2>Локальные данные</h2><p>Управление демонстрационным пространством</p></div></header>
+            {importBackupAvailable && (
+              <div className="setting-row">
+                <div><strong>Копия до импорта</strong><span>Вернуть локальные данные, которые были до загрузки из хранилища</span></div>
+                <button className="button button--ghost" disabled={syncing} onClick={() => void restoreImportBackup()}><RotateCcw size={16} /> Восстановить</button>
+              </div>
+            )}
             <div className="setting-row">
               <div><strong>Восстановить демо-данные</strong><span>Текущие локальные изменения будут заменены</span></div>
-              <button className="button button--danger-ghost" onClick={() => void resetDemo()}><RotateCcw size={16} /> Сбросить</button>
+              <button className="button button--danger-ghost" disabled={syncing} onClick={() => void resetDemo()}><RotateCcw size={16} /> Сбросить</button>
             </div>
           </section>
         </div>

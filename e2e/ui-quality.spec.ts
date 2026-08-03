@@ -72,7 +72,8 @@ test('long task list scroll keeps frame pacing responsive', async ({ page }, tes
 
   const startedAt = performance.now()
   await page.reload()
-  await expect(page.getByText('Задача производительности 1', { exact: true })).toBeVisible()
+  await expect(page.getByText('Задача производительности 500', { exact: true })).toBeVisible()
+  await expect(page.getByText('500', { exact: true }).first()).toBeVisible()
   const renderMs = performance.now() - startedAt
 
   const frames = await page.evaluate(async () => {
@@ -106,6 +107,7 @@ test('long task list scroll keeps frame pacing responsive', async ({ page }, tes
     contentType: 'application/json',
   })
   console.info(`500-task scroll metrics: ${JSON.stringify(metrics)}`)
+  await expect(page.getByText('Задача производительности 1', { exact: true })).toBeVisible()
   expect(renderMs).toBeLessThan(2_000)
   expect(p95).toBeLessThan(40)
   expect(longFrameRatio).toBeLessThan(0.08)

@@ -322,11 +322,12 @@ export const createSeedState = (): AppState => {
       autoSync: false,
       defaultUrgencyThresholdHours: 72,
       syncProvider: 'demo',
+      syncProviderConfigs: {},
       inboxView: 'list',
       inboxSort: 'created-desc',
       backgroundPreset: 'none',
       backgroundDim: 35,
     },
-    sync: { status: 'idle' },
+    sync: { status: 'idle', connectionStatus: 'connected', connectionMode: 'implicit', providerId: 'demo' },
   }
 }

@@ -86,6 +86,21 @@
   border-radius: 10px;
 }
 
+.attachment-viewer__content > pre {
+  width: 100%;
+  min-height: min(610px, calc(100vh - 180px));
+  box-sizing: border-box;
+  overflow: auto;
+  margin: 0;
+  padding: 18px;
+  color: #18211a;
+  background: white;
+  border-radius: 10px;
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .attachment-viewer__empty {
   max-width: 330px;
   display: flex;

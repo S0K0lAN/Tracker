@@ -145,7 +145,7 @@ export function TaskEditor({
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
-      next.push({ id: crypto.randomUUID(), name: file.name, type: file.type, size: file.size, dataUrl })
+      next.push({ id: crypto.randomUUID(), name: file.name, type: file.type || 'application/octet-stream', size: file.size, dataUrl })
     }
     setAttachments([...attachments, ...next])
   }

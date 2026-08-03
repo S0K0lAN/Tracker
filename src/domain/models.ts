@@ -73,7 +73,8 @@ export interface AppSettings {
   reduceMotion: boolean
   autoSync: boolean
   defaultUrgencyThresholdHours: number
-  syncProvider: 'demo' | 'google-drive'
+  syncProvider: string
+  syncProviderConfigs: Record<string, Record<string, string>>
   inboxView: InboxView
   inboxSort: InboxSort
   backgroundPreset: BackgroundPreset
@@ -104,8 +105,14 @@ export interface PomodoroState {
 }
 
 export interface SyncState {
-  status: 'idle' | 'syncing' | 'success' | 'error'
+  status: 'idle' | 'connecting' | 'syncing' | 'success' | 'error' | 'conflict'
+  connectionStatus: 'disconnected' | 'connected' | 'authorization-required'
+  connectionMode?: 'implicit' | 'interactive'
+  providerId?: string
   lastSyncedAt?: string
+  remoteId?: string
+  remoteRevision?: string
+  lastSyncedHash?: string
   message?: string
 }
 

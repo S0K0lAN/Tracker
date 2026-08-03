@@ -39,11 +39,14 @@ Focus Flow — персональный local-first таск-трекер для
 - создание и редактирование привычек с описанием, десятью векторными иконками и индивидуальным ритмом;
 - темы, акцент, плотность, reduced motion, встроенные/пользовательский фон и синхронизация;
 - schema v2, миграция и backup/recovery localStorage;
-- localStorage-адаптер, демо-синхронизация и Google Drive REST-адаптер;
+- localStorage-адаптер с import-backup/restore;
+- OAuth Google Identity Services, скачивание/загрузка Drive, ручная и автоматическая синхронизация;
+- универсальный реестр sync provider runtime с device-local конфигурацией;
+- глубокая проверка snapshot, quarantine и безопасные URL вложений;
 - реестр встроенных плагинов;
 - unit/component и Playwright E2E-тесты;
 - автоматический WCAG AA-аудит светлой и тёмной тем на desktop/mobile;
-- performance gate прокрутки списка из 500 задач.
+- windowed list и performance gate прокрутки списка из 500 задач.
 
 Текущая реализация — проверяемая браузерная основа. Она ещё не является Tauri-сборкой для Ubuntu и не доказывает live OAuth-синхронизацию с Google Drive.
 
@@ -56,7 +59,9 @@ npm ci
 npm run dev
 ```
 
-Приложение: `http://127.0.0.1:4173`.
+Приложение: `http://localhost:4173` (Playwright использует эквивалентный
+loopback `http://127.0.0.1:4173`). Для live OAuth открытый origin должен точно
+совпадать с Authorized JavaScript origin в Google Cloud.
 
 Перед передачей любой существенной задачи:
 
@@ -78,7 +83,8 @@ src/
 ├── state/                   # application state и команды MVP
 ├── core/
 │   ├── storage/             # StorageAdapter и реализации
-│   ├── sync/                # SyncAdapter, Demo и Google Drive
+│   ├── auth/                # эфемерные OAuth-сессии
+│   ├── sync/                # registry/runtime, snapshots, Demo и Google Drive
 │   └── plugins/             # версионированный реестр расширений
 └── test/                    # общая настройка тестов
 ```
@@ -91,6 +97,8 @@ src/
 - вычисленную срочность не сохранять: сохраняются дедлайн, порог и ручное переопределение;
 - неизвестные данные будущих плагинов нельзя молча удалять при миграции;
 - OAuth-токены никогда не помещать в snapshot, localStorage или Google Drive;
+- config-поля sync provider обязаны быть явно публичными; secret-поля должны
+  передаваться только через authorization/runtime и защищённое хранилище;
 - сторонний динамический JavaScript не выполнять до появления модели permissions и песочницы.
 
 ## 5. Бизнес-инварианты
@@ -132,6 +140,11 @@ src/
 - обновление существующего файла media upload;
 - bearer token внедряется снаружи и не сохраняется.
 
+`GoogleDriveSyncRuntime` получает token через Google Identity Services,
+пересоздаёт adapter после `401` и не сохраняет credential. Координатор умеет
+скачивать remote, сравнивать ID/revision/hash, показывать конфликт, создавать
+import-backup и повторно отправлять правку, сделанную во время upload.
+
 Контрактные тесты находятся в `src/core/sync/GoogleDriveAdapter.test.ts`.
 
 Для production необходимо:
@@ -140,7 +153,7 @@ src/
 2. Authorization Code + PKCE.
 3. Scope `https://www.googleapis.com/auth/drive.appdata`.
 4. Системное защищённое хранилище токенов.
-5. Проверка remote revision/ETag перед записью.
+5. Серверно-атомарная precondition записи (текущая проверка version перед PATCH — best-effort).
 6. Base snapshot для трёхстороннего merge.
 7. Tombstone для удалённых сущностей.
 8. Состояния auth-required, offline, conflict, 401/403/412/429 и retry.
@@ -177,11 +190,11 @@ src/
 - Реализовать date-only без преобразования в UTC-полночь.
 - Добавить preset reminders, системную доставку и permission UX.
 - Вынести вложения из JSON в IndexedDB BlobStore.
-- Повторить performance gate на 1000 задач и добавить виртуализацию, если метрики выйдут за бюджет.
+- Повторить performance gate на 1000 задач и при необходимости настроить
+  размер окна/высоту строк текущего windowed list.
 
 ### Этап B — синхронизация
 
-- Расширить `SyncAdapter` до `connect`, `disconnect`, `head`, `download`, `upload`.
 - Добавить полноценный fake provider со сценариями offline/conflict/rate-limit.
 - Ввести UUID устройства, entity revision, `deletedAt` и sync queue.
 - Реализовать ETag/If-Match и трёхсторонний merge.

@@ -5,7 +5,7 @@
 Матрица переводит расширенные продуктовые запросы в наблюдаемые критерии
 приёмки. Актуальный срез повторно проверен 31 июля 2026 года после интеграции
 новых страниц, task lifecycle, раскладок входящих, Pomodoro, голосового
-разбора, вложений и фонов.
+разбора, вложений, фонов и браузерной синхронизации.
 
 Статусы:
 
@@ -64,8 +64,11 @@ Done браузерного MVP. Они честно вынесены в отд�
 | DES-01 | Лаконичный дизайн Todoist/Singularity | **Готово** | Новые страницы используют общие tokens и progressive disclosure; пройдены independent visual QA, automated contrast/overflow, mobile action и menu clipping regressions. |
 | QA-01 | Независимое покрытие новых функций | **Готово** | Test-only агент добавил unit/component/E2E с наблюдаемыми эффектами, browser-error collection и theme/mobile loops; полный gate зелёный. |
 | DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v2, ограничениям и тестам. |
+| SYNC-01 | Подключить Google Drive через OAuth без сохранения token | **Готово** | GIS runtime использует только `drive.appdata`; unit и mock-browser E2E проверяют connect, повторный вход после reload/401 и отсутствие token в localStorage/remote envelope. Live smoke честно вынесен за scope без credentials. |
+| SYNC-02 | Загружать существующие данные и не перезаписывать конфликт молча | **Готово** | ID/revision/base hash определяют create/upload/download/conflict; UI сравнивает копии, импорт создаёт восстанавливаемый backup; race-тесты покрывают локальную правку во время download/upload и reset. |
+| SYNC-03 | Задел под новые хранилища | **Готово** | Второй configurable interactive provider полностью подключается через registry descriptor/runtime; component-тест проверяет defaults, required public config, connect и upload без Google-specific ветки. Secret config registry отклоняет. |
 
-Итого по явному scope браузерного MVP: **26 готовых**, **0 частично
+Итого по явному scope браузерного MVP: **29 готовых**, **0 частично
 готовых**, **0 отсутствующих** критериев.
 
 ## Тестовая трассировка
@@ -83,6 +86,17 @@ Done браузерного MVP. Они честно вынесены в отд�
   10 иконок и optional description.
 - `src/domain/models.test.ts` — urgency/overdue.
 - `src/core/sync/GoogleDriveAdapter.test.ts` — контрактные сценарии Drive.
+- `src/core/auth/GoogleIdentityAuthorization.test.ts` — GIS scope/session,
+  expiry, revoke, retry загрузки script и отмена позднего OAuth callback.
+- `src/core/sync/RemoteSnapshot.test.ts`, `SyncDecision.test.ts` и
+  `SyncProviderRegistry.test.ts` — envelope, hash/base decision, credential
+  isolation, глубокая проверка remote data и расширяемый registry contract.
+- `src/core/storage/LocalStorageAdapter.test.ts` и
+  `src/components/AttachmentViewer.test.tsx` — quarantine/transactional restore,
+  совместимость исторической schema v2 и блокировка executable attachment URL.
+- `src/state/AppContext.sync.test.tsx` — download/upload/reset races и новый
+  runtime после `401`; `SettingsSyncProvider.test.tsx` — второй configurable
+  interactive provider без специальных веток.
 
 ### Browser E2E
 
@@ -101,6 +115,8 @@ Done браузерного MVP. Они честно вынесены в отд�
 11. habit icon/description/completion independence → reload;
 12. light/dark contrast и overflow для `/today`, `/projects`, `/search`,
     `/trash` на desktop/mobile.
+13. Google OAuth → remote conflict → download → auto-upload → reload без
+    сохранения token → восстановление backup до импорта.
 
 `e2e/app.spec.ts` сохраняет регрессионное покрытие базового task flow,
 календаря, матрицы, привычек, настроек, mobile dialog и доступных имён.
@@ -126,16 +142,14 @@ calendar, скрытых mobile deadline markers, hit targets, animation/route
 flicker и focus trap/restore были исправлены и повторно проверены. Chrome
 runtime подтвердил exact focus return к preview, task opener и menu opener.
 
-### Финальный gate 31 июля 2026 года
+### Финальный gate 3 августа 2026 года
 
-- `npm test`: **6 файлов, 35/35 тестов**;
+- `npm test`: **18 файлов, 126/126 тестов**;
 - `npm run build`: TypeScript и production Vite build — **успешно**;
-- `npm run test:e2e`: **21/21 сценарий**;
-- performance в полном E2E: render **1566 мс**, p95 **19,1 мс**, long
-  frames **0%**;
-- isolated 500-task repeat после hot-path optimization: render
-  **1621/1649/1734/1662/1641 мс**, p95 **19,2–20,6 мс**, long frames **0%**,
-  **5/5 запусков**;
+- `npm run test:e2e`: **30/30 сценариев**;
+- performance gate прошёл и в полном E2E; isolated 500-task repeat после
+  windowed-list optimization: render **377/395/378 мс**, p95
+  **22,8/22,1/25,7 мс**, long frames **0%**, **3/3 запуска**;
 - пороги не ослаблялись; Playwright использует один worker, чтобы performance
   gate не измерял конкуренцию нескольких Axe/Chrome процессов за CPU.
 

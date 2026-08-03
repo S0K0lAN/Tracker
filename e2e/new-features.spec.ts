@@ -340,6 +340,118 @@ test('appearance settings are saved locally and survive reload', async ({ page }
   })
 })
 
+test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-syncs local changes', async ({ page }) => {
+  const secretToken = 'e2e-secret-google-token'
+  let remoteVersion = 7
+  let uploadedBody = ''
+  const remoteState = await page.evaluate((storageKey) => {
+    const state = JSON.parse(localStorage.getItem(storageKey)!)
+    const template = state.tasks.find((task: { status: string }) => task.status === 'active')
+    state.tasks.unshift({
+      ...template,
+      id: 'remote-google-task',
+      title: 'Загружено из Google Drive',
+      description: 'Удалённая копия для E2E',
+    })
+    return state
+  }, STORAGE_KEY)
+
+  await page.addInitScript((token) => {
+    Object.defineProperty(window, 'google', {
+      configurable: true,
+      value: {
+        accounts: {
+          oauth2: {
+            initTokenClient: (configuration: { callback(response: { access_token: string; expires_in: number }): void }) => ({
+              requestAccessToken: () => window.setTimeout(() => configuration.callback({ access_token: token, expires_in: 3600 }), 0),
+            }),
+            revoke: (_accessToken: string, callback?: () => void) => callback?.(),
+          },
+        },
+      },
+    })
+  }, secretToken)
+
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const request = route.request()
+    const url = request.url()
+    if (url.includes('/drive/v3/files?') && request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          files: [{
+            id: 'remote-id',
+            name: 'focus-flow-data.json',
+            modifiedTime: '2026-08-03T12:00:00.000Z',
+            version: String(remoteVersion),
+            size: '4096',
+          }],
+        }),
+      })
+      return
+    }
+    if (url.includes('/drive/v3/files/remote-id?alt=media') && request.method() === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(remoteState) })
+      return
+    }
+    if (url.includes('/upload/drive/v3/files/remote-id') && request.method() === 'PATCH') {
+      uploadedBody = request.postData() ?? ''
+      remoteVersion += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'remote-id',
+          name: 'focus-flow-data.json',
+          modifiedTime: '2026-08-03T12:05:00.000Z',
+          version: String(remoteVersion),
+        }),
+      })
+      return
+    }
+    await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+  })
+
+  await page.reload()
+  await page.goto('/settings')
+  await page.getByLabel('Провайдер синхронизации').selectOption('google-drive')
+  await page.getByLabel('Google OAuth Client ID').fill('e2e-client.apps.googleusercontent.com')
+  await page.getByRole('button', { name: 'Подключить Google Drive' }).click()
+
+  const conflict = page.getByRole('alert', { name: 'Конфликт синхронизации' })
+  await expect(conflict).toBeVisible()
+  await expect(conflict.getByText(/Ничего не будет перезаписано/)).toBeVisible()
+  await conflict.getByRole('button', { name: 'Загрузить из хранилища' }).click()
+  await expect(page.getByText(/Загружена копия из хранилища/)).toBeVisible()
+  await page.getByRole('checkbox', { name: /Автосинхронизация/ }).check()
+
+  await page.getByRole('link', { name: 'Входящие' }).click()
+  await expect(page.getByText('Загружено из Google Drive', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Создать новую задачу' }).click()
+  await page.getByLabel('Название').fill('Автосинхронизация E2E')
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
+  await expect.poll(() => uploadedBody).not.toBe('')
+
+  expect(uploadedBody).toContain('Автосинхронизация E2E')
+  expect(uploadedBody).not.toContain(secretToken)
+  expect(uploadedBody).not.toContain('syncProviderConfigs')
+  expect(uploadedBody).not.toContain('syncProvider')
+  expect(uploadedBody).not.toContain('autoSync')
+  const persistedStorage = await page.evaluate(() => Object.keys(localStorage)
+    .map((key) => `${key}:${localStorage.getItem(key)}`)
+    .join('\n'))
+  expect(persistedStorage).not.toContain(secretToken)
+  await expect.poll(() => page.evaluate(() => Boolean(localStorage.getItem('focus-flow.state.v1.import-backup')))).toBe(true)
+
+  await page.reload()
+  await page.goto('/settings')
+  await expect(page.getByRole('button', { name: 'Продолжить с Google Drive' })).toBeVisible()
+  await page.getByRole('button', { name: 'Восстановить', exact: true }).click()
+  await page.getByRole('link', { name: 'Входящие' }).click()
+  await expect(page.getByText('Загружено из Google Drive', { exact: true })).toHaveCount(0)
+})
+
 test('habit dates align with checks, icons are centered and the daily completion chart is visible', async ({ page }) => {
   await page.goto('/habits')
   await expect(page.getByRole('img', { name: /График выполненных привычек и задач/ })).toBeVisible()
@@ -616,7 +728,7 @@ test('voice fallback populates task fields and an attachment can be reopened', a
   await page.getByRole('button', { name: 'Просмотреть e2e-notes.txt' }).click()
   let attachmentDialog = page.getByRole('dialog', { name: 'e2e-notes.txt' })
   await expect(attachmentDialog).toBeVisible()
-  await expect(attachmentDialog.getByTitle('Просмотр e2e-notes.txt')).toBeVisible()
+  await expect(attachmentDialog.getByText('Focus Flow attachment acceptance', { exact: true })).toBeVisible()
   await attachmentDialog.getByRole('button', { name: 'Закрыть просмотр вложения' }).click()
   await page.getByRole('button', { name: 'Создать задачу' }).click()
   await expect(page.getByText('Подготовить отчёт', { exact: true })).toBeVisible()

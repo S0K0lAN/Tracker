@@ -72,7 +72,7 @@ test('settings controls and demo sync work', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await page.getByRole('checkbox', { name: /Автосинхронизация/ }).check()
   await page.getByRole('button', { name: 'Синхронизировать' }).click()
-  await expect(page.getByText('Демо-синхронизация завершена')).toBeVisible()
+  await expect(page.getByText('Защищённая копия создана в хранилище')).toBeVisible()
 })
 
 test('mobile navigation is usable and dialogs fit the viewport', async ({ page }) => {
@@ -108,7 +108,7 @@ test('secondary controls expose a visible result', async ({ page }) => {
   await page.getByRole('button', { name: /Моё пространство/ }).click()
   await expect(page.getByRole('heading', { name: 'Настройки', level: 1 })).toBeVisible()
   await page.getByRole('button', { name: 'Показать детали' }).click()
-  await expect(page.getByText('Drive API v3')).toBeVisible()
+  await expect(page.getByText('Browser JSON adapter · готово')).toBeVisible()
   await page.getByRole('button', { name: /Контракты/ }).click()
   await expect(page.getByText('task-actions')).toBeVisible()
 

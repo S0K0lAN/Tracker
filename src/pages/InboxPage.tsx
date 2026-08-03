@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Archive, CalendarDays, CheckCircle2, Columns3, Filter, LayoutList, ListFilter, Plus, Search, SlidersHorizontal, X } from 'lucide-react'
 import type { InboxSort, InboxView, Task } from '../domain/models'
 import { getTaskUrgency, isSameLocalDay } from '../domain/models'
@@ -11,6 +11,7 @@ import { NavLink } from '../core/router/Router'
 import './inbox-layouts.css'
 
 type FilterMode = 'all' | 'today' | 'important' | 'urgent'
+const VIRTUAL_LIST_THRESHOLD = 150
 
 export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => void }) {
   const { state, updateSettings, archiveCompletedTasks } = useApp()
@@ -181,7 +182,8 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
 
       <section className={`task-list task-list--${view}`} aria-live="polite">
         <div className="section-heading"><h2>{view === 'list' ? 'Все задачи' : 'Доска по проектам'}</h2><span>{visibleTasks.length}</span></div>
-        {view === 'list' && visibleTasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}
+        {view === 'list' && visibleTasks.length < VIRTUAL_LIST_THRESHOLD && visibleTasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}
+        {view === 'list' && visibleTasks.length >= VIRTUAL_LIST_THRESHOLD && <VirtualTaskList tasks={visibleTasks} onOpen={onEditTask} />}
         {view === 'board' && <InboxBoard tasks={visibleTasks} onEditTask={onEditTask} />}
         {visibleTasks.length === 0 && (
           <div className="empty-state">
@@ -193,6 +195,67 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         )}
       </section>
     </main>
+  )
+}
+
+function VirtualTaskList({ tasks, onOpen }: { tasks: Task[]; onOpen(task: Task): void }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [windowState, setWindowState] = useState({ start: 0, end: 16, rowHeight: 152 })
+
+  useEffect(() => {
+    let frame = 0
+    const updateWindow = () => {
+      frame = 0
+      const container = containerRef.current
+      if (!container) return
+      const rowHeight = window.innerWidth <= 600 ? 210 : 152
+      const containerTop = container.getBoundingClientRect().top + window.scrollY
+      const relativeScroll = Math.max(0, window.scrollY - containerTop)
+      const overscan = 3
+      const start = Math.max(0, Math.floor(relativeScroll / rowHeight) - overscan)
+      const visibleRows = Math.ceil(window.innerHeight / rowHeight) + overscan * 2
+      const end = Math.min(tasks.length, start + visibleRows)
+      setWindowState((current) => (
+        current.start === start && current.end === end && current.rowHeight === rowHeight
+          ? current
+          : { start, end, rowHeight }
+      ))
+    }
+    const scheduleUpdate = () => {
+      if (!frame) frame = requestAnimationFrame(updateWindow)
+    }
+    updateWindow()
+    window.addEventListener('scroll', scheduleUpdate, { passive: true })
+    window.addEventListener('resize', scheduleUpdate)
+    return () => {
+      if (frame) cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', scheduleUpdate)
+      window.removeEventListener('resize', scheduleUpdate)
+    }
+  }, [tasks.length])
+
+  return (
+    <div
+      ref={containerRef}
+      className="virtual-task-list"
+      style={{ height: tasks.length * windowState.rowHeight }}
+      role="list"
+      aria-label={`${tasks.length} задач`}
+    >
+      {tasks.slice(windowState.start, windowState.end).map((task, offset) => {
+        const index = windowState.start + offset
+        return (
+          <div
+            className="virtual-task-list__row"
+            style={{ height: windowState.rowHeight, transform: `translateY(${index * windowState.rowHeight}px)` }}
+            key={task.id}
+            role="listitem"
+          >
+            <TaskCard task={task} onOpen={onOpen} />
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
