@@ -38,14 +38,14 @@
 .attachment-viewer h2 {
   overflow: hidden;
   margin: 0 0 3px;
-  font-size: 13px;
+  font-size: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .attachment-viewer small {
   color: var(--text-soft);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .attachment-viewer__file-icon {
@@ -98,12 +98,12 @@
 .attachment-viewer__empty strong {
   margin-top: 14px;
   color: var(--text);
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .attachment-viewer__empty p {
   margin: 6px 0 16px;
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.5;
 }
 

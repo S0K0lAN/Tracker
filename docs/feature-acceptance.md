@@ -48,15 +48,15 @@ Done браузерного MVP. Они честно вынесены в отд�
 | FLT-01 | Составной и сохраняемый фильтр | **Готово** | Есть status/project/importance/urgency/tags ANY/ALL; UI показывает активные условия, сброс; E2E сохраняет и применяет named filter после reload. |
 | SEARCH-01 | Поиск задач, проектов, тегов и фильтров | **Готово** | `/search` регистронезависимо группирует четыре типа результатов; component/E2E подтверждают кириллический поиск, empty state, сохранение и повторное применение фильтра. |
 | TRASH-01 | Корзина удалённых задач | **Готово** | Soft delete → `/trash` → reload → restore → Inbox проходит E2E; permanent delete требует и component-тестом проверяет явное второе подтверждение. |
-| POM-01 | Pomodoro для задачи | **Готово** | Desktop/mobile E2E запускают timer из task action; task binding, pause и timestamp persistence после reload проверены. |
-| CAL-01 | Дедлайны в неделе и месяце | **Готово** | Deadline-only task отображается ровно одним deadline marker в week/month; отдельный deadlines mode сохранён. |
+| POM-01 | Таймер фокуса для задачи | **Готово** | Действие явно подписано «Таймер фокуса · 25 минут»; desktop/mobile E2E проверяют task binding, pause и timestamp persistence после reload. |
+| CAL-01 | Дедлайны и навигация календаря | **Готово** | Deadline-only task отображается marker в week/month; отдельный deadlines mode сохранён, а E2E проверяет смену периода горизонтальным drag. |
 | INB-01 | Сортировка входящих | **Готово** | Доступны created desc, nearest deadline, importance и title; component проверяет порядок, E2E — сохранение выбора после reload. |
 | ARC-01 | Архив выполненных задач | **Готово** | Individual/bulk archive, отдельный Archive tab, restore и reload реализованы; component/E2E проверяют полный цикл возврата в completed Inbox. |
 | HAB-01 | Правильный «Ваш ритм» и серии | **Готово** | Pure test с фиксированным временем проверяет independent schedule/progress/streak, UI считает только плановые прошедшие дни привычки. |
 | HAB-02 | Независимое выполнение привычек | **Готово** | Component/E2E отмечают одну привычку, доказывают неизменность другой и persistence после reload. |
-| HAB-03 | Около 10 иконок привычки | **Готово** | Component проверяет все 10 radio-options и выбранную «Книгу»; E2E подтверждает иконку после reload. |
-| HAB-04 | Описание привычки | **Готово** | Создание, отображение и reload optional description покрыты component/E2E. |
-| INB-02 | List/board/calendar layouts | **Готово** | Component переключает три проекции одного набора; E2E проверяет board/calendar DOM, общий sort и persistence вида. |
+| HAB-03 | 10 векторных иконок привычки | **Готово** | Component проверяет все 10 Lucide radio-options и выбранную «Книгу»; E2E подтверждает иконку после reload. |
+| HAB-04 | Описание и редактирование привычки | **Готово** | Создание, редактирование и reload имени, optional description, иконки и истории покрыты component/E2E. |
+| INB-02 | List/board и отдельный календарь | **Готово** | Component переключает список/доску и проверяет явный переход в `/calendar`; E2E проверяет общий sort и persistence вида. |
 | BG-01 | Встроенные фоны | **Готово** | Presets, «без фона», dim и global application реализованы; E2E проверяет preset/reload, все страницы — light/dark desktop/mobile contrast и overflow. |
 | BG-02 | Собственный фон | **Готово** | MIME/size validation, upload, global application и reload покрыты E2E в честно документированных browser/localStorage лимитах. |
 | VOICE-01 | Надиктовывание задачи | **Готово** | Web Speech ru-RU и ручной fallback интегрированы; fallback остаётся рабочим при отсутствии API и проверен E2E. |

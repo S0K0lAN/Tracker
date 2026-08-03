@@ -23,7 +23,7 @@
   background: transparent;
   border: 0;
   outline: 0;
-  font-size: 15px;
+  font-size: 18px;
 }
 
 .global-search .button em {
@@ -33,7 +33,7 @@
   place-items: center;
   background: var(--accent-soft);
   border-radius: 20px;
-  font-size: 8px;
+  font-size: 11px;
   font-style: normal;
 }
 
@@ -67,7 +67,7 @@
   align-items: center;
   gap: 6px;
   color: var(--text-soft);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -112,7 +112,7 @@
   background: transparent;
   border: 0;
   border-radius: 9px;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -124,7 +124,7 @@
 }
 
 .search-tabs em {
-  font-size: 8px;
+  font-size: 11px;
   font-style: normal;
 }
 
@@ -153,7 +153,7 @@
 
 .search-result-section h2 {
   margin: 0;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .search-entity {
@@ -185,18 +185,18 @@
 }
 
 .search-entity strong {
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .search-entity small {
   margin-top: 3px;
   color: var(--text-soft);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .search-entity > em {
   color: var(--text-soft);
-  font-size: 9px;
+  font-size: 12px;
   font-style: normal;
 }
 
@@ -227,7 +227,7 @@
 }
 
 .search-tag-cloud em {
-  font-size: 8px;
+  font-size: 11px;
   font-style: normal;
 }
 

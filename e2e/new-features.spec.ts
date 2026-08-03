@@ -150,6 +150,23 @@ test('overlapping week tasks are laid out side by side', async ({ page }) => {
   expect(Math.abs(firstBox!.y - secondBox!.y)).toBeLessThan(firstBox!.height)
 })
 
+test('calendar changes period by horizontal mouse drag', async ({ page }) => {
+  await page.goto('/calendar')
+  await page.getByRole('button', { name: 'Месяц', exact: true }).click()
+  const period = page.locator('.date-navigation strong')
+  const previousPeriod = await period.innerText()
+  const surface = page.locator('.calendar-swipe-surface')
+  const box = await surface.boundingBox()
+  expect(box).not.toBeNull()
+
+  await page.mouse.move(box!.x + box!.width * 0.75, box!.y + 90)
+  await page.mouse.down()
+  await page.mouse.move(box!.x + box!.width * 0.25, box!.y + 90, { steps: 8 })
+  await page.mouse.up()
+
+  await expect(period).not.toHaveText(previousPeriod)
+})
+
 test('calendar scales, full month cell list and deadline ranges stay connected', async ({ page }) => {
   await page.goto('/calendar')
   const localDate = await page.evaluate((storageKey) => {
@@ -325,7 +342,7 @@ test('habit dates align with checks, icons are centered and the daily completion
 
   const iconOffset = await page.locator('.habit-row__icon').first().evaluate((node) => {
     const outer = node.getBoundingClientRect()
-    const inner = node.querySelector('.habit-emoji')!.getBoundingClientRect()
+    const inner = node.querySelector('svg')!.getBoundingClientRect()
     return Math.max(
       Math.abs((outer.left + outer.width / 2) - (inner.left + inner.width / 2)),
       Math.abs((outer.top + outer.height / 2) - (inner.top + inner.height / 2)),
@@ -339,11 +356,11 @@ test('mobile task actions launch a Pomodoro without clipping or pointer intercep
   const actions = page.getByRole('button', { name: 'Действия задачи Подготовить план недели' })
   await expect(actions).toBeVisible()
   await actions.click()
-  const launch = page.getByRole('menuitem', { name: 'Запустить Помодоро' })
+  const launch = page.getByRole('menuitem', { name: 'Таймер фокуса · 25 минут' })
   await expect(launch).toBeVisible()
   await launch.click()
 
-  const timer = page.getByRole('complementary', { name: 'Помодоро-таймер' })
+  const timer = page.getByRole('complementary', { name: 'Таймер фокуса' })
   await expect(timer).toBeVisible()
   await expect(timer.getByText('Подготовить план недели', { exact: true })).toBeVisible()
   const bounds = await timer.boundingBox()
@@ -499,13 +516,13 @@ test('inbox sort, layouts and a running task Pomodoro persist', async ({ page })
   await page.reload()
   await expect(page.locator('.inbox-board')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Вид: Календарь' }).click()
-  await expect(page.locator('.inbox-calendar')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Вид: Календарь' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Планировать в календаре' })).toHaveAttribute('href', '/calendar')
   await page.getByRole('button', { name: 'Вид: Список' }).click()
   await page.getByRole('button', { name: 'Действия задачи Подготовить план недели' }).click()
-  await page.getByRole('menuitem', { name: 'Запустить Помодоро' }).click()
+  await page.getByRole('menuitem', { name: 'Таймер фокуса · 25 минут' }).click()
 
-  let timer = page.getByRole('complementary', { name: 'Помодоро-таймер' })
+  let timer = page.getByRole('complementary', { name: 'Таймер фокуса' })
   await expect(timer.getByText('Подготовить план недели', { exact: true })).toBeVisible()
   await expect(timer.locator('time')).toHaveText('25:00')
   await timer.getByRole('button', { name: 'Запустить таймер' }).click()
@@ -518,7 +535,7 @@ test('inbox sort, layouts and a running task Pomodoro persist', async ({ page })
   ).toBe(true)
 
   await page.reload()
-  timer = page.getByRole('complementary', { name: 'Помодоро-таймер' })
+  timer = page.getByRole('complementary', { name: 'Таймер фокуса' })
   await expect(timer).toBeVisible()
   await expect(timer.getByRole('button', { name: 'Поставить таймер на паузу' })).toBeVisible()
   await expect(timer.locator('time')).toHaveText(/^(?:25:00|24:5\d)$/)
@@ -632,6 +649,7 @@ test('preset and custom backgrounds apply globally and survive reload', async ({
 
 test('a habit keeps its icon and description and toggles independently after reload', async ({ page }) => {
   await page.goto('/habits')
+  await expect(page.getByRole('button', { name: 'Новая привычка' })).toHaveCount(1)
   await page.getByRole('button', { name: 'Новая привычка' }).click()
   await page.getByLabel('Название привычки').fill('E2E вечернее чтение')
   await page.getByLabel(/Описание/).fill('Двадцать минут без уведомлений')
@@ -639,13 +657,20 @@ test('a habit keeps its icon and description and toggles independently after rel
   await page.getByRole('button', { name: 'Создать', exact: true }).click()
 
   let habit = page.getByRole('article', { name: 'Привычка E2E вечернее чтение' })
-  await expect(habit.getByText('📚')).toBeVisible()
+  await expect(habit.locator('[data-habit-icon="book"]')).toBeVisible()
   await expect(habit.getByText('Двадцать минут без уведомлений')).toBeVisible()
   await page.reload()
 
   habit = page.getByRole('article', { name: 'Привычка E2E вечернее чтение' })
-  await expect(habit.getByText('📚')).toBeVisible()
+  await expect(habit.locator('[data-habit-icon="book"]')).toBeVisible()
   await expect(habit.getByText('Двадцать минут без уведомлений')).toBeVisible()
+  await habit.getByRole('button', { name: 'Редактировать привычку E2E вечернее чтение' }).click()
+  await page.getByLabel(/Описание/).fill('Обновлённое описание привычки')
+  await page.getByRole('radio', { name: 'Солнце' }).click()
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  habit = page.getByRole('article', { name: 'Привычка E2E вечернее чтение' })
+  await expect(habit.locator('[data-habit-icon="sun"]')).toBeVisible()
+  await expect(habit.getByText('Обновлённое описание привычки')).toBeVisible()
   const newHabitToday = habit.getByRole('button', { name: /Отметить E2E вечернее чтение/ }).last()
   const water = page.getByRole('article', { name: 'Привычка Пить воду' })
   const waterToday = water.getByRole('button', { name: /Отметить Пить воду/ }).last()
@@ -656,6 +681,8 @@ test('a habit keeps its icon and description and toggles independently after rel
 
   await page.reload()
   habit = page.getByRole('article', { name: 'Привычка E2E вечернее чтение' })
+  await expect(habit.locator('[data-habit-icon="sun"]')).toBeVisible()
+  await expect(habit.getByText('Обновлённое описание привычки')).toBeVisible()
   await expect(habit.getByRole('button', { name: /Отменить E2E вечернее чтение/ }).last()).toBeVisible()
   await expect(page.getByRole('article', { name: 'Привычка Пить воду' }).getByRole('button', { name: /Отметить Пить воду/ }).last()).toBeVisible()
 })

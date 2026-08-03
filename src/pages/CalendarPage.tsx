@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Plus, Rows3, X } from 'lucide-react'
 import type { Task } from '../domain/models'
 import { isOverdue, isSameLocalDay } from '../domain/models'
@@ -43,6 +43,61 @@ function plannedDate(day: Date, hours = 9, minutes = 0) {
 
 function daysFrom(start: Date, count: number) {
   return Array.from({ length: count }, (_, index) => addLocalDays(start, index))
+}
+
+function CalendarSwipeSurface({ children, onMove }: { children: ReactNode; onMove(direction: number): void }) {
+  const dragStart = useRef<{ x: number; y: number; pointerId: number } | null>(null)
+  const suppressClick = useRef(false)
+  const [dragOffset, setDragOffset] = useState(0)
+  const [dragging, setDragging] = useState(false)
+
+  const finishDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = dragStart.current
+    if (!start || start.pointerId !== event.pointerId) return
+    dragStart.current = null
+    const distance = event.clientX - start.x
+    const changePeriod = Math.abs(distance) >= 64
+    suppressClick.current = Math.abs(distance) >= 8
+    setDragging(false)
+    setDragOffset(0)
+    if (changePeriod) onMove(distance < 0 ? 1 : -1)
+    window.setTimeout(() => { suppressClick.current = false }, 0)
+  }
+
+  return (
+    <div className="calendar-swipe-viewport">
+      <div
+        className={`calendar-swipe-surface ${dragging ? 'is-dragging' : ''}`}
+        style={{ transform: `translate3d(${dragOffset}px, 0, 0)` }}
+        onPointerDown={(event) => {
+          if (!event.isPrimary || event.button !== 0) return
+          dragStart.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId }
+        }}
+        onPointerMove={(event) => {
+          const start = dragStart.current
+          if (!start || start.pointerId !== event.pointerId) return
+          const horizontal = event.clientX - start.x
+          const vertical = event.clientY - start.y
+          if (Math.abs(horizontal) < 7 || Math.abs(horizontal) <= Math.abs(vertical)) return
+          event.preventDefault()
+          if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.setPointerCapture?.(event.pointerId)
+          }
+          setDragging(true)
+          setDragOffset(Math.max(-150, Math.min(150, horizontal * 0.35)))
+        }}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onClickCapture={(event) => {
+          if (!suppressClick.current) return
+          event.preventDefault()
+          event.stopPropagation()
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
 }
 
 function monthGridDays(anchor: Date) {
@@ -654,30 +709,32 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
         </div>
       </section>
 
-      {mode === 'year' && <YearCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onOpenMonth={openMonth} />}
-      {mode === 'month' && <MonthCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onEdit={onEditTask} />}
-      {(mode === 'week' || mode === 'three-days' || mode === 'day') && (
-        <TimeCalendar
-          days={timeDays}
-          tasks={activeTasks}
-          mode={mode}
-          onCreate={(date) => onEditTask(null, { startAt: plannedDate(date) })}
-          onEdit={onEditTask}
-        />
-      )}
-      {mode === 'deadlines' && (
-        <DeadlineCalendar
-          anchor={anchor}
-          scale={deadlineScale}
-          tasks={activeTasks}
-          onScaleChange={setDeadlineScale}
-          onOpenDay={showDay}
-          onOpenMonth={openMonth}
-          onEdit={onEditTask}
-        />
-      )}
+      <CalendarSwipeSurface onMove={move}>
+        {mode === 'year' && <YearCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onOpenMonth={openMonth} />}
+        {mode === 'month' && <MonthCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onEdit={onEditTask} />}
+        {(mode === 'week' || mode === 'three-days' || mode === 'day') && (
+          <TimeCalendar
+            days={timeDays}
+            tasks={activeTasks}
+            mode={mode}
+            onCreate={(date) => onEditTask(null, { startAt: plannedDate(date) })}
+            onEdit={onEditTask}
+          />
+        )}
+        {mode === 'deadlines' && (
+          <DeadlineCalendar
+            anchor={anchor}
+            scale={deadlineScale}
+            tasks={activeTasks}
+            onScaleChange={setDeadlineScale}
+            onOpenDay={showDay}
+            onOpenMonth={openMonth}
+            onEdit={onEditTask}
+          />
+        )}
+      </CalendarSwipeSurface>
 
-      <p className="calendar-note"><CalendarDays size={15} /> Высота события соответствует времени от начала до дедлайна. В диаграмме дедлайнов полоска тянется через весь диапазон дат.</p>
+      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Высота события соответствует времени от начала до дедлайна.</p>
 
       {openDay && (
         <DayTasksDialog

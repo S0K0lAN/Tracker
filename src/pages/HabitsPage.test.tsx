@@ -170,6 +170,7 @@ describe('habit creation', () => {
     renderHabits()
     await screen.findByRole('heading', { name: 'Трекер привычек' })
 
+    expect(screen.getAllByRole('button', { name: 'Новая привычка' })).toHaveLength(1)
     await user.click(screen.getByRole('button', { name: 'Новая привычка' }))
     expect(screen.getAllByRole('radio')).toHaveLength(HABIT_ICONS.length)
 
@@ -179,8 +180,33 @@ describe('habit creation', () => {
     await user.click(screen.getByRole('button', { name: 'Создать' }))
 
     const row = screen.getByRole('article', { name: 'Привычка Вечернее чтение' })
-    expect(within(row).getByText('📚')).toBeInTheDocument()
+    expect(row.querySelector('[data-habit-icon="book"]')).toBeInTheDocument()
     expect(within(row).getByText('Двадцать минут перед сном')).toBeInTheDocument()
     expect(screen.queryByLabelText('Название привычки')).not.toBeInTheDocument()
+  })
+
+  it('edits an existing habit without losing its completion history', async () => {
+    const user = userEvent.setup()
+    const today = toDateKey(new Date())
+    renderHabits([{
+      id: 'editable',
+      name: 'Старая привычка',
+      description: 'Старое описание',
+      icon: '💧',
+      targetDays: [0, 1, 2, 3, 4, 5, 6],
+      completions: [today],
+      color: '#75a8b5',
+    }])
+
+    await user.click(await screen.findByRole('button', { name: 'Редактировать привычку Старая привычка' }))
+    const name = screen.getByLabelText('Название привычки')
+    await user.clear(name)
+    await user.type(name, 'Вода утром')
+    await user.click(screen.getByRole('radio', { name: 'Солнце' }))
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    const row = screen.getByRole('article', { name: 'Привычка Вода утром' })
+    expect(row.querySelector('[data-habit-icon="sun"]')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: `Отменить Вода утром ${new Date().toLocaleDateString('ru-RU')}` })).toBeInTheDocument()
   })
 })

@@ -1,7 +1,7 @@
 export type Importance = 'low' | 'high'
 export type Urgency = 'low' | 'high'
 export type TaskStatus = 'active' | 'completed' | 'archived' | 'deleted'
-export type InboxView = 'list' | 'board' | 'calendar'
+export type InboxView = 'list' | 'board'
 export type InboxSort = 'created-desc' | 'deadline-asc' | 'importance-desc' | 'title-asc'
 export type BackgroundPreset = 'none' | 'mist' | 'dawn' | 'forest' | 'custom'
 

@@ -72,7 +72,7 @@ export function PomodoroTimer() {
   const seconds = (remaining % 60).toString().padStart(2, '0')
 
   return (
-    <aside className="pomodoro-dock" aria-label="Помодоро-таймер" aria-live="polite">
+    <aside className="pomodoro-dock" aria-label="Таймер фокуса" aria-live="polite">
       <div className="pomodoro-dock__progress" style={{ transform: `scaleX(${progress})` }} />
       <header>
         <span className="pomodoro-dock__icon">{timer.mode === 'focus' ? <Timer size={17} /> : <Coffee size={17} />}</span>

@@ -191,6 +191,19 @@ describe('calendar deadline projection', () => {
 })
 
 describe('task lifecycle', () => {
+  it('offers an immediate undo after completing a task from the inbox', async () => {
+    const user = userEvent.setup()
+    renderApp('/inbox')
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+
+    await user.click(screen.getByRole('button', { name: 'Завершить задачу Подготовить план недели' }))
+    expect(screen.queryByRole('button', { name: 'Завершить задачу Подготовить план недели' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Задача «Подготовить план недели» выполнена')
+
+    await user.click(within(screen.getByRole('status')).getByRole('button', { name: 'Отменить' }))
+    expect(screen.getByRole('button', { name: 'Завершить задачу Подготовить план недели' })).toBeInTheDocument()
+  })
+
   it('moves a task to trash and restores it to the inbox', async () => {
     const user = userEvent.setup()
     renderApp('/inbox')
@@ -259,7 +272,7 @@ describe('task lifecycle', () => {
 })
 
 describe('inbox layouts and focus', () => {
-  it('switches list, board and calendar views and sorts task cards by title', async () => {
+  it('switches list and board views, sorts tasks and links to the dedicated calendar', async () => {
     const user = userEvent.setup()
     const templateState = createSeedState()
     const template = templateState.tasks.find((task) => task.status === 'active')!
@@ -290,9 +303,9 @@ describe('inbox layouts and focus', () => {
     expect(screen.getByRole('heading', { name: 'Доска по проектам' })).toBeInTheDocument()
     expect(container.querySelector('.inbox-board')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Вид: Календарь' }))
-    expect(screen.getByRole('heading', { name: 'Календарная раскладка' })).toBeInTheDocument()
-    expect(container.querySelector('.inbox-calendar')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Вид: Календарь' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Планировать в календаре' }))
+    expect(await screen.findByRole('heading', { name: 'Календарь', level: 1 })).toBeInTheDocument()
   })
 
   it('launches a task-bound Pomodoro and exposes working timer controls', async () => {
@@ -301,9 +314,9 @@ describe('inbox layouts and focus', () => {
     await screen.findByRole('heading', { name: 'Входящие', level: 1 })
 
     await user.click(screen.getByRole('button', { name: 'Действия задачи Подготовить план недели' }))
-    await user.click(screen.getByRole('menuitem', { name: 'Запустить Помодоро' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Таймер фокуса · 25 минут' }))
 
-    const timer = screen.getByRole('complementary', { name: 'Помодоро-таймер' })
+    const timer = screen.getByRole('complementary', { name: 'Таймер фокуса' })
     expect(within(timer).getByText('Подготовить план недели')).toBeInTheDocument()
     expect(within(timer).getByText('25:00')).toBeInTheDocument()
     await user.click(within(timer).getByRole('button', { name: 'Запустить таймер' }))
@@ -412,7 +425,7 @@ describe('task card keyboard interactions', () => {
     const open = screen.getByRole('menuitem', { name: 'Открыть' })
     await waitFor(() => expect(open).toHaveFocus())
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitem', { name: 'Запустить Помодоро' })).toHaveFocus()
+    expect(screen.getByRole('menuitem', { name: 'Таймер фокуса · 25 минут' })).toHaveFocus()
     await user.keyboard('{End}')
     expect(screen.getByRole('menuitem', { name: 'В корзину' })).toHaveFocus()
     await user.keyboard('{Home}')

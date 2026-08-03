@@ -31,6 +31,7 @@ import { ProjectsPage } from './pages/ProjectsPage'
 import { SearchPage } from './pages/SearchPage'
 import { TrashPage } from './pages/TrashPage'
 import { PomodoroTimer } from './components/PomodoroTimer'
+import { Toast } from './components/Toast'
 import { setInert, trapTabKey } from './components/focusTrap'
 import { useApp } from './state/AppContext'
 
@@ -149,6 +150,7 @@ export function App() {
   const [editorDefaults, setEditorDefaults] = useState<Partial<Pick<Task, 'startAt' | 'deadline'>> | undefined>()
   const [menuOpen, setMenuOpen] = useState(false)
   const { path, navigate } = useRouter()
+  const { completionNotice, undoTaskCompletion, dismissCompletionNotice } = useApp()
   const openEditor = (task: Task | null, defaults?: Partial<Pick<Task, 'startAt' | 'deadline'>>) => {
     setEditorDefaults(task ? undefined : defaults)
     setEditorTask(task)
@@ -222,6 +224,17 @@ export function App() {
         ))}
       </nav>
       <PomodoroTimer />
+      {completionNotice && (
+        <div className="global-task-toast">
+          <Toast
+            tone="success"
+            action={{ label: 'Отменить', onClick: undoTaskCompletion }}
+            onClose={dismissCompletionNotice}
+          >
+            Задача «{completionNotice.title}» выполнена
+          </Toast>
+        </div>
+      )}
       {editorTask !== undefined && <TaskEditor task={editorTask ?? undefined} defaults={editorDefaults} onClose={closeEditor} />}
     </div>
   )

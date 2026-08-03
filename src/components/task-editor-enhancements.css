@@ -15,7 +15,7 @@
   background: var(--accent-soft);
   border: 0;
   border-radius: 8px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -47,12 +47,12 @@
 }
 
 .voice-fallback strong {
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .voice-fallback small {
   color: var(--text-soft);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
@@ -80,7 +80,7 @@
 }
 
 .voice-preview strong {
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .voice-preview > div:last-child,
@@ -100,7 +100,7 @@
   color: var(--accent-strong);
   background: var(--surface);
   border-radius: 20px;
-  font-size: 8px;
+  font-size: 11px;
   font-style: normal;
 }
 

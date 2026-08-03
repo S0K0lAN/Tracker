@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
-import { DateTimePicker, formatDateTimeInput, parseDateTimeInput } from './DateTimePicker'
+import { DateTimePicker, formatDateTimeInput, formatNumericDateTimeDraft, parseDateTimeInput } from './DateTimePicker'
 
 describe('manual date input', () => {
   it('parses Russian and ISO formats without rolling invalid dates', () => {
@@ -12,6 +12,18 @@ describe('manual date input', () => {
     expect(parseDateTimeInput('2026-08-05', reference, '18:00')).toBe('2026-08-05T18:00')
     expect(parseDateTimeInput('31.02.2026, 12:00', reference)).toBeNull()
     expect(formatDateTimeInput('2026-08-05T18:30')).toBe('05.08.2026, 18:30')
+    expect(formatNumericDateTimeDraft('050820261830')).toBe('05.08.2026, 18:30')
+    expect(formatNumericDateTimeDraft('2026-08-05')).toBe('2026-08-05')
+  })
+
+  it('adds date and time separators while the user types digits', async () => {
+    const user = userEvent.setup()
+    render(<DateTimePicker label="Начало" value="" onChange={() => undefined} />)
+    const input = screen.getByLabelText('Начало')
+
+    await user.type(input, '050820261830')
+
+    expect(input).toHaveValue('05.08.2026, 18:30')
   })
 
   it('commits manual input and supports quick calendar selection', async () => {

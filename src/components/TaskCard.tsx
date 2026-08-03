@@ -147,7 +147,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
             </button>
             {task.status === 'active' && (
               <button type="button" role="menuitem" onClick={() => { startPomodoroForTask(task.id, updatePomodoro); setMenuOpen(false) }}>
-                <Play size={16} /> Запустить Помодоро
+                <Play size={16} /> Таймер фокуса · 25 минут
               </button>
             )}
             {task.status === 'completed' && (

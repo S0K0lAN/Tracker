@@ -7,6 +7,7 @@ export function normalizeAppState(input: unknown): AppState {
   const seed = createSeedState()
   if (!input || typeof input !== 'object') return seed
   const raw = input as Partial<AppState>
+  const rawSettings = raw.settings as (Partial<AppState['settings']> & { inboxView?: string }) | undefined
   const now = new Date().toISOString()
 
   return {
@@ -23,7 +24,8 @@ export function normalizeAppState(input: unknown): AppState {
     },
     settings: {
       ...seed.settings,
-      ...(raw.settings ?? {}),
+      ...(rawSettings ?? {}),
+      inboxView: rawSettings?.inboxView === 'board' ? 'board' : 'list',
     },
     sync: {
       ...seed.sync,
@@ -65,11 +67,23 @@ function normalizeProject(value: Partial<Project>, now: string): Project {
 }
 
 function normalizeHabit(value: Partial<Habit>): Habit {
+  const legacyIcons: Record<string, string> = {
+    '✨': 'sparkles',
+    '💧': 'water',
+    '📚': 'book',
+    '🌿': 'nature',
+    '🏃': 'activity',
+    '🧘': 'mindfulness',
+    '🥗': 'nutrition',
+    '😴': 'sleep',
+    '🎯': 'target',
+    '☀️': 'sun',
+  }
   return {
     ...value,
     id: value.id ?? crypto.randomUUID(),
     name: value.name?.trim() || 'Новая привычка',
-    icon: value.icon ?? '✨',
+    icon: legacyIcons[value.icon ?? ''] ?? value.icon ?? 'sparkles',
     targetDays: Array.isArray(value.targetDays) ? value.targetDays : [1, 2, 3, 4, 5],
     completions: Array.isArray(value.completions) ? value.completions : [],
     color: value.color ?? '#778c70',

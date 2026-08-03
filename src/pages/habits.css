@@ -17,7 +17,7 @@
 
 .habit-rhythm__heading h2 {
   margin: 4px 0 0;
-  font-family: 'Playfair Display', Georgia, serif;
+  font-family: inherit;
   font-size: 18px;
 }
 
@@ -25,13 +25,13 @@
   max-width: 360px;
   margin: 0;
   color: var(--text-soft);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.55;
   text-align: right;
 }
 
-.habit-rhythm__mobile-add {
-  display: none;
+.habit-rhythm__add {
+  flex: 0 0 auto;
 }
 
 .habit-rhythm__grid {
@@ -57,19 +57,7 @@
   display: grid;
   place-items: center;
   border-radius: 10px;
-  font-size: 16px;
-}
-
-.habit-emoji {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  padding-top: 1px;
-  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
-  font-style: normal;
-  line-height: 1;
-  text-align: center;
+  font-size: 18px;
 }
 
 .habit-rhythm-card__copy {
@@ -79,7 +67,7 @@
 .habit-rhythm-card__copy h3 {
   overflow: hidden;
   margin: 0;
-  font-size: 10px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -87,7 +75,7 @@
 .habit-rhythm-card__copy p {
   margin: 3px 0 0;
   color: var(--text-soft);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .habit-rhythm-card__ring {
@@ -111,7 +99,7 @@
 .habit-rhythm-card__ring strong {
   z-index: 1;
   grid-area: 1 / 1;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .habit-rhythm-card__stats {
@@ -122,7 +110,7 @@
   padding-top: 9px;
   color: var(--text-faint);
   border-top: 1px solid var(--line);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .habit-rhythm-card__stats span {
@@ -191,7 +179,7 @@
 .habit-icon-picker legend {
   margin-bottom: 5px;
   color: var(--text-soft);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .habit-icon-picker > div {
@@ -236,7 +224,7 @@
 
 .habit-icon-picker label span {
   color: var(--text);
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .habit-form__actions {
@@ -265,7 +253,7 @@
 
 .habit-trend > header h2 {
   margin: 4px 0 0;
-  font-family: 'Playfair Display', Georgia, serif;
+  font-family: inherit;
   font-size: 18px;
 }
 
@@ -274,7 +262,7 @@
   align-items: center;
   gap: 12px;
   color: var(--text-soft);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .habit-trend__legend span {
@@ -340,7 +328,7 @@
   top: -14px;
   left: 50%;
   color: var(--text-soft);
-  font-size: 7px;
+  font-size: 10px;
   font-style: normal;
   transform: translateX(-50%);
 }
@@ -350,14 +338,14 @@
   flex-direction: column;
   align-items: center;
   color: var(--text-faint);
-  font-size: 7px;
+  font-size: 10px;
   text-transform: uppercase;
 }
 
 .habit-trend__day > small strong {
   margin-top: 2px;
   color: var(--text-soft);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .habit-trend__day.is-today > small {
@@ -367,7 +355,7 @@
 
 .habit-list__streak-label {
   color: var(--text-faint);
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
@@ -378,7 +366,7 @@
   overflow: hidden;
   margin: 3px 0 0;
   color: var(--text-soft);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -389,6 +377,18 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.habit-row__edit {
+  flex: 0 0 auto;
+  opacity: 0.68;
+}
+
+.habit-row__edit:hover,
+.habit-row__edit:focus-visible {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  opacity: 1;
 }
 
 .habit-checks button.is-rest:not(.is-done) {
@@ -427,9 +427,8 @@
     text-align: left;
   }
 
-  .habit-rhythm__mobile-add {
+  .habit-rhythm__add {
     width: 100%;
-    display: inline-flex;
     justify-content: center;
     margin-top: 5px;
   }
@@ -455,7 +454,7 @@
   }
 
   .habit-trend__day > small {
-    font-size: 6px;
+    font-size: 9px;
   }
 
   .inline-form.inline-form--habit {

@@ -75,6 +75,23 @@ export function formatDateTimeInput(value: string) {
   return `${match[3]}.${match[2]}.${match[1]}, ${match[4]}:${match[5]}`
 }
 
+export function formatNumericDateTimeDraft(input: string) {
+  if (/[-/]/.test(input) || /[A-Za-zА-Яа-я]/.test(input)) return input
+  const digits = input.replace(/\D/g, '').slice(0, 12)
+  if (!digits) return ''
+
+  let result = digits.slice(0, 2)
+  if (digits.length >= 2) result += '.'
+  result += digits.slice(2, 4)
+  if (digits.length >= 4) result += '.'
+  result += digits.slice(4, 8)
+  if (digits.length >= 8) result += ', '
+  result += digits.slice(8, 10)
+  if (digits.length >= 10) result += ':'
+  result += digits.slice(10, 12)
+  return result
+}
+
 function dateFromLocalValue(value: string) {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
   if (!match) return null
@@ -233,7 +250,7 @@ export function DateTimePicker({
           inputMode="numeric"
           placeholder="ДД.ММ.ГГГГ, ЧЧ:ММ"
           onChange={(event) => {
-            const nextDraft = event.target.value
+            const nextDraft = formatNumericDateTimeDraft(event.target.value)
             setDraft(nextDraft)
             setInvalid(false)
             if (!nextDraft.trim()) {

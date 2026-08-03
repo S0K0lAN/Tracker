@@ -1,22 +1,63 @@
 import { useMemo, useState, type CSSProperties, type FormEvent } from 'react'
-import { Check, Flame, Plus, X } from 'lucide-react'
+import {
+  Activity,
+  Apple,
+  BookOpen,
+  Brain,
+  Check,
+  Droplets,
+  Flame,
+  Leaf,
+  Moon,
+  Pencil,
+  Plus,
+  Sparkles,
+  Sun,
+  Target,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import type { Habit, Task } from '../domain/models'
 import { useApp } from '../state/AppContext'
 import './habits.css'
 
 export const HABIT_ICONS = [
-  { value: '✨', label: 'Искры' },
-  { value: '💧', label: 'Вода' },
-  { value: '📚', label: 'Книга' },
-  { value: '🌿', label: 'Природа' },
-  { value: '🏃', label: 'Бег' },
-  { value: '🧘', label: 'Медитация' },
-  { value: '🥗', label: 'Питание' },
-  { value: '😴', label: 'Сон' },
-  { value: '🎯', label: 'Цель' },
-  { value: '☀️', label: 'Солнце' },
-] as const
+  { value: 'sparkles', label: 'Искры', Icon: Sparkles },
+  { value: 'water', label: 'Вода', Icon: Droplets },
+  { value: 'book', label: 'Книга', Icon: BookOpen },
+  { value: 'nature', label: 'Природа', Icon: Leaf },
+  { value: 'activity', label: 'Движение', Icon: Activity },
+  { value: 'mindfulness', label: 'Медитация', Icon: Brain },
+  { value: 'nutrition', label: 'Питание', Icon: Apple },
+  { value: 'sleep', label: 'Сон', Icon: Moon },
+  { value: 'target', label: 'Цель', Icon: Target },
+  { value: 'sun', label: 'Солнце', Icon: Sun },
+] as const satisfies ReadonlyArray<{ value: string; label: string; Icon: LucideIcon }>
+
+const LEGACY_HABIT_ICONS: Record<string, (typeof HABIT_ICONS)[number]['value']> = {
+  '✨': 'sparkles',
+  '💧': 'water',
+  '📚': 'book',
+  '🌿': 'nature',
+  '🏃': 'activity',
+  '🧘': 'mindfulness',
+  '🥗': 'nutrition',
+  '😴': 'sleep',
+  '🎯': 'target',
+  '☀️': 'sun',
+}
+
+export function normalizeHabitIcon(value: string) {
+  const normalized = LEGACY_HABIT_ICONS[value] ?? value
+  return HABIT_ICONS.some((item) => item.value === normalized) ? normalized : 'sparkles'
+}
+
+function HabitIcon({ value, size = 19 }: { value: string; size?: number }) {
+  const normalized = normalizeHabitIcon(value)
+  const Icon = HABIT_ICONS.find((item) => item.value === normalized)?.Icon ?? Sparkles
+  return <Icon size={size} strokeWidth={2} data-habit-icon={normalized} aria-hidden="true" />
+}
 
 export const toDateKey = (date: Date) => [
   date.getFullYear(),
@@ -102,11 +143,12 @@ function getTodayStatus(rhythm: HabitRhythm) {
 }
 
 export function HabitsPage() {
-  const { state, toggleHabit, addHabit } = useApp()
+  const { state, toggleHabit, addHabit, updateHabit } = useApp()
   const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string>()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [icon, setIcon] = useState<(typeof HABIT_ICONS)[number]['value']>('✨')
+  const [icon, setIcon] = useState<(typeof HABIT_ICONS)[number]['value']>('sparkles')
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => {
     const date = atStartOfDay(new Date())
     date.setDate(date.getDate() - 6 + index)
@@ -130,23 +172,40 @@ export function HabitsPage() {
 
   const closeForm = () => {
     setAdding(false)
+    setEditingId(undefined)
     setName('')
     setDescription('')
-    setIcon('✨')
+    setIcon('sparkles')
   }
 
-  const createHabit = (event?: FormEvent) => {
+  const openCreate = () => {
+    closeForm()
+    setAdding(true)
+  }
+
+  const openEdit = (habit: Habit) => {
+    setAdding(false)
+    setEditingId(habit.id)
+    setName(habit.name)
+    setDescription(habit.description ?? '')
+    setIcon(normalizeHabitIcon(habit.icon))
+  }
+
+  const saveHabit = (event?: FormEvent) => {
     event?.preventDefault()
     if (!name.trim()) return
-    addHabit({
-      id: crypto.randomUUID(),
+    const existing = state.habits.find((habit) => habit.id === editingId)
+    const habit: Habit = {
+      id: existing?.id ?? crypto.randomUUID(),
       name: name.trim(),
       description: description.trim() || undefined,
       icon,
-      targetDays: [1, 2, 3, 4, 5, 6, 0],
-      completions: [],
-      color: '#d78b69',
-    })
+      targetDays: existing?.targetDays ?? [1, 2, 3, 4, 5, 6, 0],
+      completions: existing?.completions ?? [],
+      color: existing?.color ?? '#d78b69',
+    }
+    if (existing) updateHabit(habit)
+    else addHabit(habit)
     closeForm()
   }
 
@@ -156,7 +215,6 @@ export function HabitsPage() {
         eyebrow="Маленькие шаги"
         title="Трекер привычек"
         description="Последовательность важнее идеальности"
-        actions={<button className="button button--primary" onClick={() => setAdding(true)}><Plus size={18} /> Новая привычка</button>}
       />
 
       <section className="habit-rhythm" aria-labelledby="habit-rhythm-title">
@@ -166,8 +224,8 @@ export function HabitsPage() {
             <h2 id="habit-rhythm-title">Каждая привычка — в своём темпе</h2>
           </div>
           <p>Прогресс считается только по плановым дням конкретной привычки за последние семь дней.</p>
-          <button className="button button--primary habit-rhythm__mobile-add" onClick={() => setAdding(true)}>
-            <Plus size={16} /> Добавить привычку
+          <button className="button button--primary habit-rhythm__add" onClick={openCreate}>
+            <Plus size={16} /> Новая привычка
           </button>
         </div>
         <div className="habit-rhythm__grid">
@@ -175,7 +233,7 @@ export function HabitsPage() {
             const rhythm = rhythms.get(habit.id) ?? getHabitRhythm(habit, days)
             return (
               <article className="habit-rhythm-card" key={habit.id} aria-label={`Ритм привычки ${habit.name}`}>
-                <span className="habit-rhythm-card__icon" style={{ background: `${habit.color}22`, color: habit.color }} aria-hidden="true"><span className="habit-emoji">{habit.icon}</span></span>
+                <span className="habit-rhythm-card__icon" style={{ background: `${habit.color}22`, color: habit.color }}><HabitIcon value={habit.icon} /></span>
                 <div className="habit-rhythm-card__copy">
                   <h3>{habit.name}</h3>
                   <p>{getTodayStatus(rhythm)}</p>
@@ -219,9 +277,9 @@ export function HabitsPage() {
         </div>
       </section>
 
-      {adding && (
-        <form className="inline-form inline-form--habit" onSubmit={createHabit}>
-          <span className="inline-form__icon" aria-hidden="true"><span className="habit-emoji">{icon}</span></span>
+      {(adding || editingId) && (
+        <form className="inline-form inline-form--habit" onSubmit={saveHabit} aria-label={editingId ? 'Редактирование привычки' : 'Создание привычки'}>
+          <span className="inline-form__icon"><HabitIcon value={icon} size={22} /></span>
           <div className="habit-form__fields">
             <label>
               <span>Название привычки</span>
@@ -245,14 +303,14 @@ export function HabitsPage() {
                     onChange={() => setIcon(item.value)}
                     aria-label={item.label}
                   />
-                  <span className="habit-emoji" aria-hidden="true">{item.value}</span>
+                  <item.Icon size={20} aria-hidden="true" />
                 </label>
               ))}
             </div>
           </fieldset>
           <div className="habit-form__actions">
-            <button className="button button--primary" type="submit">Создать</button>
-            <button className="icon-button" type="button" onClick={closeForm} aria-label="Отменить добавление"><X /></button>
+            <button className="button button--primary" type="submit">{editingId ? 'Сохранить' : 'Создать'}</button>
+            <button className="icon-button" type="button" onClick={closeForm} aria-label={editingId ? 'Отменить редактирование' : 'Отменить добавление'}><X /></button>
           </div>
         </form>
       )}
@@ -270,12 +328,15 @@ export function HabitsPage() {
           return (
             <article className="habit-row" key={habit.id} aria-label={`Привычка ${habit.name}`}>
               <div className="habit-row__identity">
-                <span className="habit-row__icon" style={{ background: `${habit.color}22`, color: habit.color }} aria-hidden="true"><span className="habit-emoji">{habit.icon}</span></span>
+                <span className="habit-row__icon" style={{ background: `${habit.color}22`, color: habit.color }}><HabitIcon value={habit.icon} /></span>
                 <div className="habit-row__title">
                   <strong>{habit.name}</strong>
                   {habit.description && <p>{habit.description}</p>}
                   <small>{rhythm.completed} из {rhythm.scheduled} плановых дней</small>
                 </div>
+                <button type="button" className="icon-button habit-row__edit" onClick={() => openEdit(habit)} aria-label={`Редактировать привычку ${habit.name}`}>
+                  <Pencil size={16} />
+                </button>
               </div>
               <div className="habit-checks">
                 {days.map((day) => {

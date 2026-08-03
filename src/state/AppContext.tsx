@@ -22,6 +22,7 @@ type Action =
   | { type: 'pomodoro/update'; pomodoro: Partial<PomodoroState> }
   | { type: 'habit/toggle'; id: string; date: string }
   | { type: 'habit/add'; habit: Habit }
+  | { type: 'habit/update'; habit: Habit }
   | { type: 'settings/update'; settings: Partial<AppSettings> }
   | { type: 'sync/status'; sync: AppState['sync'] }
   | { type: 'replace'; state: AppState }
@@ -156,6 +157,11 @@ function reducer(state: AppState, action: Action): AppState {
       }
     case 'habit/add':
       return { ...state, habits: [...state.habits, action.habit] }
+    case 'habit/update':
+      return {
+        ...state,
+        habits: state.habits.map((habit) => (habit.id === action.habit.id ? action.habit : habit)),
+      }
     case 'settings/update':
       return { ...state, settings: { ...state.settings, ...action.settings } }
     case 'sync/status':
@@ -171,6 +177,9 @@ interface AppContextValue {
   addTask(task: Task): void
   updateTask(task: Task): void
   toggleTask(id: string): void
+  completionNotice?: { id: string; title: string }
+  undoTaskCompletion(): void
+  dismissCompletionNotice(): void
   removeTask(id: string): void
   restoreTask(id: string): void
   permanentlyRemoveTask(id: string): void
@@ -184,6 +193,7 @@ interface AppContextValue {
   updatePomodoro(pomodoro: Partial<PomodoroState>): void
   toggleHabit(id: string, date: string): void
   addHabit(habit: Habit): void
+  updateHabit(habit: Habit): void
   updateSettings(settings: Partial<AppSettings>): void
   persistState(): Promise<void>
   sync(token?: string): Promise<void>
@@ -196,6 +206,7 @@ const storage = new LocalStorageAdapter()
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, createSeedState)
   const [ready, setReady] = useState(false)
+  const [completionNotice, setCompletionNotice] = useState<{ id: string; title: string }>()
 
   useEffect(() => {
     storage.load().then((saved) => {
@@ -207,6 +218,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (ready) void storage.save(state)
   }, [ready, state])
+
+  useEffect(() => {
+    if (!completionNotice) return
+    const timeout = window.setTimeout(() => setCompletionNotice(undefined), 6000)
+    return () => window.clearTimeout(timeout)
+  }, [completionNotice])
 
   useLayoutEffect(() => {
     if (!ready) return
@@ -229,7 +246,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ready,
       addTask: (task) => dispatch({ type: 'task/add', task }),
       updateTask: (task) => dispatch({ type: 'task/update', task }),
-      toggleTask: (id) => dispatch({ type: 'task/toggle', id }),
+      toggleTask: (id) => {
+        const task = state.tasks.find((item) => item.id === id)
+        dispatch({ type: 'task/toggle', id })
+        setCompletionNotice(task?.status === 'active' ? { id, title: task.title } : undefined)
+      },
+      completionNotice,
+      undoTaskCompletion: () => {
+        if (!completionNotice) return
+        const task = state.tasks.find((item) => item.id === completionNotice.id)
+        if (task?.status === 'completed') dispatch({ type: 'task/toggle', id: completionNotice.id })
+        setCompletionNotice(undefined)
+      },
+      dismissCompletionNotice: () => setCompletionNotice(undefined),
       removeTask: (id) => dispatch({ type: 'task/remove', id }),
       restoreTask: (id) => dispatch({ type: 'task/restore', id }),
       permanentlyRemoveTask: (id) => dispatch({ type: 'task/permanent-remove', id }),
@@ -243,6 +272,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updatePomodoro: (pomodoro) => dispatch({ type: 'pomodoro/update', pomodoro }),
       toggleHabit: (id, date) => dispatch({ type: 'habit/toggle', id, date }),
       addHabit: (habit) => dispatch({ type: 'habit/add', habit }),
+      updateHabit: (habit) => dispatch({ type: 'habit/update', habit }),
       updateSettings: (settings) => dispatch({ type: 'settings/update', settings }),
       persistState: () => storage.save(state),
       sync: async (token) => {
@@ -269,7 +299,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'replace', state: createSeedState() })
       },
     }),
-    [ready, state],
+    [completionNotice, ready, state],
   )
 
   return <AppContext.Provider value={value}>{ready ? children : null}</AppContext.Provider>

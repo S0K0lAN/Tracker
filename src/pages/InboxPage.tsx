@@ -7,10 +7,10 @@ import { useApp } from '../state/AppContext'
 import { PageHeader } from '../components/PageHeader'
 import { SelectMenu } from '../components/SelectMenu'
 import { TaskCard } from '../components/TaskCard'
+import { NavLink } from '../core/router/Router'
 import './inbox-layouts.css'
 
 type FilterMode = 'all' | 'today' | 'important' | 'urgent'
-const weekdayLabels = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
 
 export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => void }) {
   const { state, updateSettings, archiveCompletedTasks } = useApp()
@@ -21,7 +21,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
   const [tagMode, setTagMode] = useState<'any' | 'all'>('any')
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [projectId, setProjectId] = useState('')
-  const [calendarAnchor, setCalendarAnchor] = useState(() => new Date())
 
   const tags = useMemo(() => [...new Set(state.tasks.flatMap((task) => task.tags))].sort(), [state.tasks])
   const visibleTasks = useMemo(
@@ -157,13 +156,15 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
           {([
             ['list', 'Список', LayoutList],
             ['board', 'Доска', Columns3],
-            ['calendar', 'Календарь', CalendarDays],
           ] as const).map(([value, label, Icon]) => (
             <button key={value} className={view === value ? 'is-selected' : ''} onClick={() => updateSettings({ inboxView: value as InboxView })} aria-label={`Вид: ${label}`} title={label}>
               <Icon size={16} /><span>{label}</span>
             </button>
           ))}
         </div>
+        <NavLink className="button button--ghost inbox-calendar-link" to="/calendar">
+          <CalendarDays size={16} /> Планировать в календаре
+        </NavLink>
         <SelectMenu<InboxSort>
           className="inbox-sort"
           label="Сортировка входящих"
@@ -179,10 +180,9 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
       </section>
 
       <section className={`task-list task-list--${view}`} aria-live="polite">
-        <div className="section-heading"><h2>{view === 'list' ? 'Все задачи' : view === 'board' ? 'Доска по проектам' : 'Календарная раскладка'}</h2><span>{visibleTasks.length}</span></div>
+        <div className="section-heading"><h2>{view === 'list' ? 'Все задачи' : 'Доска по проектам'}</h2><span>{visibleTasks.length}</span></div>
         {view === 'list' && visibleTasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}
         {view === 'board' && <InboxBoard tasks={visibleTasks} onEditTask={onEditTask} />}
-        {view === 'calendar' && <InboxCalendar tasks={visibleTasks} anchor={calendarAnchor} setAnchor={setCalendarAnchor} onEditTask={onEditTask} />}
         {visibleTasks.length === 0 && (
           <div className="empty-state">
             <span><Search /></span>
@@ -210,43 +210,6 @@ function InboxBoard({ tasks, onEditTask }: { tasks: Task[]; onEditTask(task: Tas
           </section>
         )
       })}
-    </div>
-  )
-}
-
-function InboxCalendar({
-  tasks,
-  anchor,
-  setAnchor,
-  onEditTask,
-}: {
-  tasks: Task[]
-  anchor: Date
-  setAnchor(date: Date): void
-  onEditTask(task: Task): void
-}) {
-  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
-  const offset = (first.getDay() + 6) % 7
-  const undated = tasks.filter((task) => !task.startAt && !task.deadline)
-  const move = (direction: number) => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + direction, 1))
-  return (
-    <div className="inbox-calendar-wrap">
-      <header><button onClick={() => move(-1)} aria-label="Предыдущий месяц">‹</button><strong>{anchor.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}</strong><button onClick={() => move(1)} aria-label="Следующий месяц">›</button></header>
-      <div className="inbox-calendar" aria-label={`Календарь входящих: ${anchor.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}`}>
-        {weekdayLabels.map((label) => <span className="inbox-calendar__weekday" key={label}>{label}</span>)}
-        {Array.from({ length: 42 }, (_, index) => {
-          const date = new Date(anchor.getFullYear(), anchor.getMonth(), index - offset + 1)
-          const dayTasks = tasks.filter((task) => isSameLocalDay(task.startAt, date) || isSameLocalDay(task.deadline, date))
-          return (
-            <article className={`${date.getMonth() !== anchor.getMonth() ? 'is-muted' : ''} ${isSameLocalDay(new Date().toISOString(), date) ? 'is-today' : ''}`} key={date.toISOString()}>
-              <strong>{date.getDate()}</strong>
-              {dayTasks.slice(0, 3).map((task) => <button key={task.id} className={task.deadline && isSameLocalDay(task.deadline, date) ? 'is-deadline' : ''} onClick={() => onEditTask(task)}>{task.title}</button>)}
-              {dayTasks.length > 3 && <small>+{dayTasks.length - 3}</small>}
-            </article>
-          )
-        })}
-      </div>
-      {undated.length > 0 && <aside className="undated-tray"><strong>Без даты</strong><span>{undated.map((task) => <button key={task.id} onClick={() => onEditTask(task)}>{task.title}</button>)}</span></aside>}
     </div>
   )
 }
