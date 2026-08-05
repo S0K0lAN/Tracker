@@ -23,6 +23,8 @@ describe('remote snapshots', () => {
     state.settings.autoSync = true
     state.settings.syncProvider = 'google-drive'
     state.settings.syncProviderConfigs = { 'google-drive': { clientId: 'local-client-id' } }
+    state.settings.fontFamily = 'readable'
+    state.settings.fontScale = 110
     state.sync = {
       status: 'success',
       connectionStatus: 'connected',
@@ -44,6 +46,8 @@ describe('remote snapshots', () => {
     expect(envelope.data.settings).not.toHaveProperty('syncProvider')
     expect(envelope.data.settings).not.toHaveProperty('syncProviderConfigs')
     expect(envelope.data.settings.theme).toBe(state.settings.theme)
+    expect(envelope.data.settings.fontFamily).toBe('readable')
+    expect(envelope.data.settings.fontScale).toBe(110)
     expect(envelope.data.tasks).toEqual(state.tasks)
   })
 
@@ -141,6 +145,8 @@ describe('remote snapshots', () => {
     const remote = createSeedState()
     remote.tasks[0] = { ...remote.tasks[0], title: 'Название с другого устройства' }
     remote.settings.theme = 'dark'
+    remote.settings.fontFamily = 'humanist'
+    remote.settings.fontScale = 120
     remote.settings.syncProvider = 'demo'
     remote.settings.autoSync = false
     remote.settings.syncProviderConfigs = {}
@@ -149,6 +155,8 @@ describe('remote snapshots', () => {
 
     expect(merged.tasks[0].title).toBe('Название с другого устройства')
     expect(merged.settings.theme).toBe('dark')
+    expect(merged.settings.fontFamily).toBe('humanist')
+    expect(merged.settings.fontScale).toBe(120)
     expect(merged.settings).toMatchObject({
       syncProvider: 'google-drive',
       autoSync: true,
@@ -185,6 +193,10 @@ describe('remote snapshots', () => {
     const changed = structuredClone(state)
     changed.tasks[0].title = 'Изменённая задача'
     expect(syncableHash(changed)).not.toBe(syncableHash(state))
+
+    const typographyChanged = structuredClone(state)
+    typographyChanged.settings.fontScale = 110
+    expect(syncableHash(typographyChanged)).not.toBe(syncableHash(state))
   })
 
   it('summarizes all synchronized collections', () => {

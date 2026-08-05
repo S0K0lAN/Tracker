@@ -21,7 +21,7 @@
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   border-radius: 5px;
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   text-align: left;
   text-overflow: ellipsis;
@@ -31,7 +31,7 @@
 
 .week-day__deadlines small {
   color: var(--danger);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   line-height: 12px;
 }

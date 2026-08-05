@@ -16,12 +16,16 @@ describe('state migrations for simplified navigation and habit icons', () => {
 
   it('accepts historical schema v2 snapshots that predate provider config and connection metadata', () => {
     const historical = structuredClone(createSeedState()) as unknown as {
+      schemaVersion: number
       settings: Record<string, unknown>
       sync: Record<string, unknown>
       tasks: ReturnType<typeof createSeedState>['tasks']
     }
+    historical.schemaVersion = 2
     historical.settings.inboxView = 'calendar'
     delete historical.settings.syncProviderConfigs
+    delete historical.settings.fontFamily
+    delete historical.settings.fontScale
     historical.sync = { status: 'idle' }
     const historicalAttachment = historical.tasks.flatMap((task) => task.attachments)[0]
     historicalAttachment.type = ''
@@ -30,12 +34,25 @@ describe('state migrations for simplified navigation and habit icons', () => {
 
     expect(migrated.settings.inboxView).toBe('list')
     expect(migrated.settings.syncProviderConfigs).toEqual({})
+    expect(migrated.settings.fontFamily).toBe('system')
+    expect(migrated.settings.fontScale).toBe(100)
+    expect(migrated.schemaVersion).toBe(3)
     expect(migrated.tasks.flatMap((task) => task.attachments)[0].type).toBe('image/svg+xml')
     expect(migrated.sync).toMatchObject({
       status: 'idle',
       connectionStatus: 'connected',
       connectionMode: 'implicit',
     })
+  })
+
+  it('rejects unsafe typography values in current snapshots', () => {
+    const invalidFamily = createSeedState()
+    ;(invalidFamily.settings as unknown as Record<string, unknown>).fontFamily = 'url(https://example.com/font.woff2)'
+    const invalidScale = createSeedState()
+    ;(invalidScale.settings as unknown as Record<string, unknown>).fontScale = 500
+
+    expect(() => parseStoredAppState(invalidFamily)).toThrow(/settings\.fontFamily/)
+    expect(() => parseStoredAppState(invalidScale)).toThrow(/settings\.fontScale/)
   })
 
   it('keeps the selected provider but requires a fresh browser OAuth session after reload', () => {

@@ -46,7 +46,7 @@
 .select-menu__value strong,
 .select-menu__option strong {
   overflow: hidden;
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -55,7 +55,7 @@
 .select-menu__value small,
 .select-menu__option small {
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   line-height: 1.3;
 }
 
@@ -111,7 +111,7 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .select-menu__options {
@@ -150,7 +150,7 @@
   margin: 0;
   padding: 14px 10px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   text-align: center;
 }
 

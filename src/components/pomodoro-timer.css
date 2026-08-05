@@ -38,7 +38,7 @@
 
 .pomodoro-dock > header small {
   color: var(--accent-strong);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -46,7 +46,7 @@
 
 .pomodoro-dock > header strong {
   overflow: hidden;
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -71,7 +71,7 @@
 
 .pomodoro-dock__body time {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 31px;
+  font-size: calc(31px * var(--app-font-scale));
   font-weight: 750;
   letter-spacing: -0.05em;
 }
@@ -111,7 +111,7 @@
   background: transparent;
   border: 0;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 700;
   cursor: pointer;
 }
@@ -124,7 +124,7 @@
 .pomodoro-dock__modes span {
   margin-left: auto;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 @keyframes pomodoro-in {

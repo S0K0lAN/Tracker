@@ -27,13 +27,13 @@
 
 .today-focus strong {
   color: var(--text);
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .today-focus p {
   margin: 3px 0 0;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .today-focus em {
@@ -41,7 +41,7 @@
   color: var(--accent-strong);
   background: var(--surface);
   border-radius: 20px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-style: normal;
   font-weight: 700;
 }
@@ -74,7 +74,7 @@
 .workspace-section > header h2 {
   margin: 0;
   color: var(--text);
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
 }
 
 .workspace-section > header em {
@@ -85,7 +85,7 @@
   color: var(--text-soft);
   background: var(--surface-soft);
   border-radius: 20px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-style: normal;
 }
 
@@ -100,7 +100,7 @@
   background: var(--surface);
   border: 1px dashed var(--line);
   border-radius: 11px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .workspace-empty {
@@ -117,7 +117,7 @@
   color: var(--text-soft);
   background: transparent;
   border: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   cursor: pointer;
 }
 
@@ -166,13 +166,13 @@
 }
 
 .project-card__content strong {
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
 }
 
 .project-card__content small,
 .project-card__stats small {
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   line-height: 1.4;
 }
 
@@ -184,7 +184,7 @@
 
 .project-card__stats em {
   font-family: inherit;
-  font-size: 24px;
+  font-size: calc(24px * var(--app-font-scale));
   font-style: normal;
   line-height: 1;
 }
@@ -196,7 +196,7 @@
   align-items: center;
   gap: 5px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .project-card--new {
@@ -212,11 +212,11 @@
 
 .project-card--new strong {
   color: var(--text);
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .project-card--new small {
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .project-creator {
@@ -239,7 +239,7 @@
 .project-creator h2 {
   margin: 0;
   font-family: inherit;
-  font-size: 20px;
+  font-size: calc(20px * var(--app-font-scale));
 }
 
 .project-creator__fields {
@@ -262,7 +262,7 @@
 .project-color-picker legend {
   margin-bottom: 8px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .project-color-picker button {
@@ -319,12 +319,12 @@
 }
 
 .project-detail-heading strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .project-detail-heading small {
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .trash-toolbar {
@@ -348,7 +348,7 @@
   place-items: center;
   background: color-mix(in srgb, currentColor 9%, transparent);
   border-radius: 20px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-style: normal;
 }
 
@@ -357,7 +357,7 @@
   align-items: center;
   gap: 6px;
   color: var(--danger);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .trash-confirm button {
@@ -405,13 +405,13 @@
 }
 
 .trash-task strong {
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .trash-task small {
   margin-top: 3px;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 @media (max-width: 900px) {

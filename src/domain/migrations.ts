@@ -2,7 +2,10 @@ import type { AppState, Habit, Project, SavedFilter, Task, TaskStatus } from './
 import { createSeedState } from './seed'
 import { attachmentDataUrlMimeType, MAX_ATTACHMENT_BYTES, safeAttachmentDataUrl } from './attachments'
 
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
+
+const FONT_FAMILIES = ['system', 'humanist', 'readable'] as const
+const FONT_SCALES = [90, 100, 110, 120] as const
 
 export class UnsupportedSchemaVersionError extends Error {
   constructor(readonly schemaVersion: number) {
@@ -51,7 +54,15 @@ export function assertSnapshotStateShape(
   const pomodoro = recordField(raw, 'pomodoro', strict)
   if (pomodoro) assertPomodoroShape(pomodoro, strict, 'pomodoro')
   const settings = recordField(raw, 'settings', true)
-  if (settings) assertSettingsShape(settings, strict, Boolean(options.requireLocalSettings), 'settings')
+  if (settings) {
+    assertSettingsShape(
+      settings,
+      strict,
+      Boolean(options.requireLocalSettings),
+      schemaVersion >= 3,
+      'settings',
+    )
+  }
   const sync = recordField(raw, 'sync', Boolean(options.requireSync) && strict)
   if (sync) assertSyncShape(sync, strict, 'sync')
 }
@@ -134,9 +145,17 @@ function assertPomodoroShape(pomodoro: Record<string, unknown>, strict: boolean,
   }
 }
 
-function assertSettingsShape(settings: Record<string, unknown>, strict: boolean, requireLocal: boolean, path: string) {
+function assertSettingsShape(
+  settings: Record<string, unknown>,
+  strict: boolean,
+  requireLocal: boolean,
+  requireTypography: boolean,
+  path: string,
+) {
   enumField(settings, 'theme', ['light', 'dark', 'system'], strict, path)
   enumField(settings, 'accent', ['sage', 'violet', 'coral'], strict, path)
+  enumField(settings, 'fontFamily', FONT_FAMILIES, requireTypography, path)
+  numberField(settings, 'fontScale', requireTypography, path, (value) => FONT_SCALES.includes(value as typeof FONT_SCALES[number]))
   enumField(settings, 'inboxView', ['list', 'board', 'calendar'], strict, path)
   enumField(settings, 'inboxSort', ['created-desc', 'deadline-asc', 'importance-desc', 'title-asc'], strict, path)
   enumField(settings, 'backgroundPreset', ['none', 'mist', 'dawn', 'forest', 'custom'], strict, path)
@@ -297,6 +316,12 @@ export function normalizeAppState(input: unknown): AppState {
       const settings: AppState['settings'] & { googleDriveClientId?: string } = {
         ...seed.settings,
         ...(rawSettings ?? {}),
+        fontFamily: FONT_FAMILIES.includes(rawSettings?.fontFamily as typeof FONT_FAMILIES[number])
+          ? rawSettings?.fontFamily as AppState['settings']['fontFamily']
+          : seed.settings.fontFamily,
+        fontScale: FONT_SCALES.includes(rawSettings?.fontScale as typeof FONT_SCALES[number])
+          ? rawSettings?.fontScale as AppState['settings']['fontScale']
+          : seed.settings.fontScale,
         syncProvider: providerId,
         syncProviderConfigs,
         inboxView: rawSettings?.inboxView === 'board' ? 'board' : 'list',

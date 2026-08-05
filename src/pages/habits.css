@@ -18,14 +18,14 @@
 .habit-rhythm__heading h2 {
   margin: 4px 0 0;
   font-family: inherit;
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale));
 }
 
 .habit-rhythm__heading > p {
   max-width: 360px;
   margin: 0;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   line-height: 1.55;
   text-align: right;
 }
@@ -57,7 +57,7 @@
   display: grid;
   place-items: center;
   border-radius: 10px;
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale));
 }
 
 .habit-rhythm-card__copy {
@@ -67,7 +67,7 @@
 .habit-rhythm-card__copy h3 {
   overflow: hidden;
   margin: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -75,7 +75,7 @@
 .habit-rhythm-card__copy p {
   margin: 3px 0 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .habit-rhythm-card__ring {
@@ -99,7 +99,7 @@
 .habit-rhythm-card__ring strong {
   z-index: 1;
   grid-area: 1 / 1;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .habit-rhythm-card__stats {
@@ -110,7 +110,7 @@
   padding-top: 9px;
   color: var(--text-faint);
   border-top: 1px solid var(--line);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .habit-rhythm-card__stats span {
@@ -130,7 +130,7 @@
 }
 
 .inline-form--habit .inline-form__icon {
-  font-size: 20px;
+  font-size: calc(20px * var(--app-font-scale));
 }
 
 .habit-form__fields {
@@ -179,7 +179,7 @@
 .habit-icon-picker legend {
   margin-bottom: 5px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .habit-icon-picker > div {
@@ -225,7 +225,7 @@
 
 .habit-icon-picker label span {
   color: var(--text);
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale));
 }
 
 .habit-form__actions {
@@ -255,7 +255,7 @@
 .habit-trend > header h2 {
   margin: 4px 0 0;
   font-family: inherit;
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale));
 }
 
 .habit-trend__legend {
@@ -263,7 +263,7 @@
   align-items: center;
   gap: 12px;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .habit-trend__legend span {
@@ -329,7 +329,7 @@
   top: -14px;
   left: 50%;
   color: var(--text-soft);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-style: normal;
   transform: translateX(-50%);
 }
@@ -339,14 +339,14 @@
   flex-direction: column;
   align-items: center;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   text-transform: uppercase;
 }
 
 .habit-trend__day > small strong {
   margin-top: 2px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .habit-trend__day.is-today > small {
@@ -356,7 +356,7 @@
 
 .habit-list__streak-label {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
@@ -367,7 +367,7 @@
   overflow: hidden;
   margin: 3px 0 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -455,7 +455,7 @@
   }
 
   .habit-trend__day > small {
-    font-size: 9px;
+    font-size: calc(9px * var(--app-font-scale));
   }
 
   .inline-form.inline-form--habit {

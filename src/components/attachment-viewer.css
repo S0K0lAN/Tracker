@@ -38,14 +38,14 @@
 .attachment-viewer h2 {
   overflow: hidden;
   margin: 0 0 3px;
-  font-size: 16px;
+  font-size: calc(16px * var(--app-font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .attachment-viewer small {
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .attachment-viewer__file-icon {
@@ -96,7 +96,7 @@
   color: #18211a;
   background: white;
   border-radius: 10px;
-  font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: calc(13px * var(--app-font-scale)) / 1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -113,12 +113,12 @@
 .attachment-viewer__empty strong {
   margin-top: 14px;
   color: var(--text);
-  font-size: 16px;
+  font-size: calc(16px * var(--app-font-scale));
 }
 
 .attachment-viewer__empty p {
   margin: 6px 0 16px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   line-height: 1.5;
 }
 

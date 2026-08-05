@@ -110,12 +110,14 @@ export function DateTimePicker({
   onChange,
   onValidityChange,
   defaultTime = '09:00',
+  resetToken = 0,
 }: {
   label: string
   value: string
   onChange(value: string): void
   onValidityChange?(valid: boolean): void
   defaultTime?: string
+  resetToken?: number
 }) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(() => formatDateTimeInput(value))
@@ -135,7 +137,7 @@ export function DateTimePicker({
     setInvalid(false)
     const date = dateFromLocalValue(value)
     if (date) setAnchor(date)
-  }, [value])
+  }, [resetToken, value])
 
   useEffect(() => {
     if (!open) return

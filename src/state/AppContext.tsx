@@ -23,6 +23,12 @@ import {
 import { SyncProviderRegistry } from '../core/sync/SyncProviderRegistry'
 import { createDefaultSyncProviderRegistry } from '../core/sync/providers'
 
+const FONT_FAMILY_STACKS: Record<AppSettings['fontFamily'], string> = {
+  system: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  humanist: '"Trebuchet MS", "Segoe UI", Arial, sans-serif',
+  readable: 'Verdana, Geneva, "DejaVu Sans", sans-serif',
+}
+
 type Action =
   | { type: 'task/add'; task: Task }
   | { type: 'task/update'; task: Task }
@@ -350,10 +356,14 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
     const root = document.documentElement
     root.dataset.theme = state.settings.theme
     root.dataset.accent = state.settings.accent
+    root.dataset.fontFamily = state.settings.fontFamily
+    root.dataset.fontScale = String(state.settings.fontScale)
     root.dataset.compact = String(state.settings.compactMode)
     root.dataset.reduceMotion = String(state.settings.reduceMotion)
     root.dataset.background = state.settings.backgroundPreset
     root.style.setProperty('--background-dim', String(state.settings.backgroundDim / 100))
+    root.style.setProperty('--app-font-family', FONT_FAMILY_STACKS[state.settings.fontFamily])
+    root.style.setProperty('--app-font-scale', String(state.settings.fontScale / 100))
     root.style.setProperty(
       '--custom-background-image',
       state.settings.customBackgroundDataUrl ? `url("${state.settings.customBackgroundDataUrl}")` : 'none',
@@ -744,6 +754,8 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
     state.settings.compactMode,
     state.settings.customBackgroundDataUrl,
     state.settings.defaultUrgencyThresholdHours,
+    state.settings.fontFamily,
+    state.settings.fontScale,
     state.settings.inboxSort,
     state.settings.inboxView,
     state.settings.reduceMotion,

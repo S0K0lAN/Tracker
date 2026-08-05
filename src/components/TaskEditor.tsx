@@ -35,6 +35,7 @@ export function TaskEditor({
   const [deadline, setDeadline] = useState(localInput(task?.deadline ?? defaults?.deadline))
   const [startAtValid, setStartAtValid] = useState(true)
   const [deadlineValid, setDeadlineValid] = useState(true)
+  const [dateInputResetToken, setDateInputResetToken] = useState(0)
   const [importance, setImportance] = useState<Importance>(task?.importance ?? 'low')
   const [urgencyOverride, setUrgencyOverride] = useState<Urgency | ''>(task?.urgencyOverride ?? '')
   const [threshold, setThreshold] = useState(task?.urgencyThresholdHours ?? state.settings.defaultUrgencyThresholdHours)
@@ -157,8 +158,22 @@ export function TaskEditor({
   const applyVoicePreview = () => {
     if (!voicePreview) return
     const parsed = voicePreview
+    const hasSpokenDate = Boolean(parsed.startAt || parsed.deadline)
     if (parsed.title) setTitle(parsed.title)
-    if (parsed.deadline) setDeadline(localInput(parsed.deadline))
+    if (parsed.startAt) {
+      setStartAt(localInput(parsed.startAt))
+      setDeadline('')
+    }
+    if (parsed.deadline) {
+      setDeadline(localInput(parsed.deadline))
+      setStartAt('')
+    }
+    if (hasSpokenDate) {
+      setStartAtValid(true)
+      setDeadlineValid(true)
+      setDateInputResetToken((current) => current + 1)
+      setError((current) => current === 'Исправьте дату и время перед сохранением' ? '' : current)
+    }
     if (parsed.importance) setImportance(parsed.importance)
     if (parsed.tags.length) {
       const existing = tags.split(',').map((tag) => tag.trim()).filter(Boolean)
@@ -223,7 +238,8 @@ export function TaskEditor({
                 <span className="eyebrow">Распознано</span>
                 <strong>{voicePreview.title}</strong>
                 <span className="voice-preview__chips">
-                  {voicePreview.deadline && <em>{new Date(voicePreview.deadline).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</em>}
+                  {voicePreview.startAt && <em>Начало: {new Date(voicePreview.startAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</em>}
+                  {voicePreview.deadline && <em>Дедлайн: {new Date(voicePreview.deadline).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</em>}
                   {voicePreview.importance === 'high' && <em>Важно</em>}
                   {voicePreview.projectHint && <em>{voicePreview.projectHint}</em>}
                   {voicePreview.tags.map((tag) => <em key={tag}>#{tag}</em>)}
@@ -264,8 +280,8 @@ export function TaskEditor({
               ]}
             />
           </div>
-          <DateTimePicker label="Начало" value={startAt} onChange={setStartAt} onValidityChange={setStartAtValid} defaultTime="09:00" />
-          <DateTimePicker label="Дедлайн" value={deadline} onChange={setDeadline} onValidityChange={setDeadlineValid} defaultTime="18:00" />
+          <DateTimePicker label="Начало" value={startAt} onChange={setStartAt} onValidityChange={setStartAtValid} defaultTime="09:00" resetToken={dateInputResetToken} />
+          <DateTimePicker label="Дедлайн" value={deadline} onChange={setDeadline} onValidityChange={setDeadlineValid} defaultTime="18:00" resetToken={dateInputResetToken} />
           <div className="field">
             <span>Становится срочной за</span>
             <SelectMenu<number>

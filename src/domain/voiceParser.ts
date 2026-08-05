@@ -2,6 +2,7 @@ import type { Importance } from './models'
 
 export interface ParsedVoiceTask {
   title: string
+  startAt?: string
   deadline?: string
   importance?: Importance
   tags: string[]
@@ -10,12 +11,31 @@ export interface ParsedVoiceTask {
 
 const weekdayMap: Record<string, number> = {
   воскресенье: 0,
+  воскресенья: 0,
   понедельник: 1,
+  понедельника: 1,
   вторник: 2,
+  вторника: 2,
   среду: 3,
+  среды: 3,
   четверг: 4,
+  четверга: 4,
   пятницу: 5,
+  пятницы: 5,
   субботу: 6,
+  субботы: 6,
+}
+
+const deadlineWordPattern = String.raw`(?:дедлайн(?:а|у|ом|ы|ов|ам|ами|ах)?|срок(?:а|у|ом|и|ов|ам|ами|ах)?)`
+const weekdayPattern = `(?:${Object.keys(weekdayMap).join('|')})`
+
+function hasDeadlineMarker(value: string) {
+  const namedMarker = new RegExp(`(?<![\\p{L}\\p{N}_])${deadlineWordPattern}(?![\\p{L}\\p{N}_])`, 'iu')
+  const beforeSpokenDate = new RegExp(
+    `(?<![\\p{L}\\p{N}_])до\\s+(?=(?:сегодня|завтра|послезавтра|${weekdayPattern}|\\d{1,2}(?::\\d{2})?)(?![\\p{L}\\p{N}_]))`,
+    'iu',
+  )
+  return namedMarker.test(value) || beforeSpokenDate.test(value)
 }
 
 export function parseVoiceTask(transcript: string, now = new Date()): ParsedVoiceTask {
@@ -23,29 +43,34 @@ export function parseVoiceTask(transcript: string, now = new Date()): ParsedVoic
   const tags = [...normalized.matchAll(/#([\p{L}\p{N}_-]+)/gu)].map((match) => match[1].toLowerCase())
   const importance: Importance | undefined =
     /(?<![\p{L}\p{N}_])(важн(?:о|ая|ый|ое)|высок(?:ий|ая)\s+приоритет)(?![\p{L}\p{N}_])/iu.test(normalized) ? 'high' : undefined
-  const projectMatch = normalized.match(/(?<![\p{L}\p{N}_])(?:в\s+проект(?:е)?|проект)\s+[«"]?([\p{L}\p{N}_ -]+?)[»"]?(?=\s+(?:сегодня|завтра|послезавтра|в\s+\d|к\s+\d|до\s+\d|важн|#)|$)/iu)
+  const projectBoundaryPattern = `(?:сегодня|завтра|послезавтра|(?:в|во|к|до)\\s+(?:\\d|${weekdayPattern})|${deadlineWordPattern}|важн|#)`
+  const projectMatch = normalized.match(new RegExp(`(?<![\\p{L}\\p{N}_])(?:в\\s+проект(?:е)?|проект)\\s+[«"]?([\\p{L}\\p{N}_ -]+?)[»"]?(?=\\s+${projectBoundaryPattern}|$)`, 'iu'))
   const projectHint = projectMatch?.[1].trim()
-  const deadline = parseSpokenDeadline(normalized, now)
+  const spokenDateTime = parseSpokenDateTime(normalized, now)
+  const isDeadline = hasDeadlineMarker(normalized)
+  const startAt = spokenDateTime && !isDeadline ? spokenDateTime : undefined
+  const deadline = spokenDateTime && isDeadline ? spokenDateTime : undefined
 
   let title = normalized
     .replace(/#([\p{L}\p{N}_-]+)/gu, '')
     .replace(/(?<![\p{L}\p{N}_])(важн(?:о|ая|ый|ое)|высок(?:ий|ая)\s+приоритет)(?![\p{L}\p{N}_])/giu, '')
     .replace(/(?<![\p{L}\p{N}_])(?:сегодня|завтра|послезавтра)(?![\p{L}\p{N}_])/giu, '')
     .replace(/(?<![\p{L}\p{N}_])(?:в|к|до)\s+\d{1,2}(?::\d{2})?(?![\p{L}\p{N}_])/giu, '')
-    .replace(/(?<![\p{L}\p{N}_])(?:дедлайн|срок)(?![\p{L}\p{N}_])/giu, '')
+    .replace(new RegExp(`(?<![\\p{L}\\p{N}_])${deadlineWordPattern}(?![\\p{L}\\p{N}_])`, 'giu'), '')
 
   if (projectMatch) title = title.replace(projectMatch[0], '')
   for (const weekday of Object.keys(weekdayMap)) {
-    title = title.replace(new RegExp(`(?<![\\\\p{L}\\\\p{N}_])(?:в\\\\s+)?${weekday}(?![\\\\p{L}\\\\p{N}_])`, 'iu'), '')
+    title = title.replace(new RegExp(`(?<![\\p{L}\\p{N}_])(?:в\\s+)?${weekday}(?![\\p{L}\\p{N}_])`, 'iu'), '')
   }
   title = title
-    .replace(/(?<![\p{L}\p{N}_])(?:в|к|до)(?![\p{L}\p{N}_])\s*$/iu, '')
+    .replace(/(?<![\p{L}\p{N}_])(?:в|во|на|к|до)(?![\p{L}\p{N}_])\s*$/iu, '')
     .replace(/\s+/g, ' ')
     .replace(/^[,;:—–-]+|[,;:—–-]+$/g, '')
     .trim()
 
   return {
     title: title || normalized,
+    startAt,
     deadline,
     importance,
     tags: [...new Set(tags)],
@@ -53,7 +78,7 @@ export function parseVoiceTask(transcript: string, now = new Date()): ParsedVoic
   }
 }
 
-function parseSpokenDeadline(value: string, now: Date): string | undefined {
+function parseSpokenDateTime(value: string, now: Date): string | undefined {
   const target = new Date(now)
   target.setSeconds(0, 0)
   let hasDate = false
@@ -68,7 +93,7 @@ function parseSpokenDeadline(value: string, now: Date): string | undefined {
     hasDate = true
   } else {
     const weekdayEntry = Object.entries(weekdayMap).find(([name]) =>
-      new RegExp(`(?<![\\\\p{L}\\\\p{N}_])${name}(?![\\\\p{L}\\\\p{N}_])`, 'iu').test(value),
+      new RegExp(`(?<![\\p{L}\\p{N}_])${name}(?![\\p{L}\\p{N}_])`, 'iu').test(value),
     )
     if (weekdayEntry) {
       const daysAhead = (weekdayEntry[1] - target.getDay() + 7) % 7 || 7

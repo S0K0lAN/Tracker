@@ -15,7 +15,7 @@
   background: var(--accent-soft);
   border: 0;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 700;
   cursor: pointer;
 }
@@ -47,12 +47,12 @@
 }
 
 .voice-fallback strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .voice-fallback small {
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   line-height: 1.4;
 }
 
@@ -80,7 +80,7 @@
 }
 
 .voice-preview strong {
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .voice-preview > div:last-child,
@@ -100,7 +100,7 @@
   color: var(--accent-strong);
   background: var(--surface);
   border-radius: 20px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-style: normal;
 }
 

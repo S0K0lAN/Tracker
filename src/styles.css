@@ -1,5 +1,7 @@
 :root {
-  font-family: 'Segoe UI', Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --app-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --app-font-scale: 1;
+  font-family: var(--app-font-family);
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -217,13 +219,13 @@ h1, h2, h3, p {
 
 .brand strong {
   font-family: inherit;
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale));
   letter-spacing: -0.02em;
 }
 
 .brand small, .profile-button small, .focus-card small {
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   margin-top: 2px;
 }
 
@@ -247,7 +249,7 @@ h1, h2, h3, p {
   color: var(--text-soft);
   border-radius: 12px;
   text-decoration: none;
-  font-size: 16px;
+  font-size: calc(16px * var(--app-font-scale));
   font-weight: 600;
   transition: color var(--transition), background var(--transition), transform var(--transition);
 }
@@ -273,7 +275,7 @@ h1, h2, h3, p {
   background: var(--surface-strong);
   border: 1px solid var(--line);
   border-radius: 20px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-style: normal;
 }
 
@@ -305,7 +307,7 @@ h1, h2, h3, p {
 }
 
 .focus-card strong {
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .profile-button {
@@ -326,7 +328,7 @@ h1, h2, h3, p {
 }
 
 .profile-button strong {
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .workspace {
@@ -363,7 +365,7 @@ h1, h2, h3, p {
   display: block;
   margin-bottom: 7px;
   color: var(--accent-strong);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -372,7 +374,11 @@ h1, h2, h3, p {
 .page-header h1, .empty-page h1 {
   margin-bottom: 7px;
   font-family: inherit;
-  font-size: clamp(31px, 4vw, 43px);
+  font-size: clamp(
+    calc(31px * var(--app-font-scale)),
+    calc(4vw * var(--app-font-scale)),
+    calc(43px * var(--app-font-scale))
+  );
   line-height: 1;
   letter-spacing: -0.035em;
 }
@@ -380,7 +386,7 @@ h1, h2, h3, p {
 .page-header p {
   margin: 0;
   color: var(--text-soft);
-  font-size: 16px;
+  font-size: calc(16px * var(--app-font-scale));
 }
 
 .page-header__actions {
@@ -397,7 +403,7 @@ h1, h2, h3, p {
   padding: 0 16px;
   border: 1px solid transparent;
   border-radius: 11px;
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
   font-weight: 700;
   text-decoration: none;
   cursor: pointer;
@@ -482,7 +488,7 @@ h1, h2, h3, p {
   color: var(--accent-strong);
   background: transparent;
   border: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
   font-weight: 700;
   cursor: pointer;
 }
@@ -507,7 +513,7 @@ h1, h2, h3, p {
   border: 0;
   border-radius: 15px;
   box-shadow: 0 12px 34px rgba(23, 31, 25, 0.25);
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
   font-weight: 700;
   cursor: pointer;
   transition: transform var(--transition), box-shadow var(--transition);
@@ -530,7 +536,7 @@ h1, h2, h3, p {
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 7px;
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .overview-strip {
@@ -559,12 +565,12 @@ h1, h2, h3, p {
 
 .overview-strip span {
   color: var(--text-soft);
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .overview-strip strong {
   font-family: inherit;
-  font-size: 24px;
+  font-size: calc(24px * var(--app-font-scale));
 }
 
 .toolbar {
@@ -599,7 +605,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 0;
   outline: 0;
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
 }
 
 .filter-count, .count-badge {
@@ -611,7 +617,7 @@ h1, h2, h3, p {
   color: white;
   background: var(--accent);
   border-radius: 20px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .filter-panel {
@@ -638,7 +644,7 @@ h1, h2, h3, p {
   gap: 6px;
   margin-bottom: 9px;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -659,7 +665,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 0;
   border-radius: 7px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 600;
   cursor: pointer;
 }
@@ -684,7 +690,7 @@ h1, h2, h3, p {
   background: var(--accent-soft);
   border: 1px solid transparent;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 600;
 }
 
@@ -705,7 +711,7 @@ h1, h2, h3, p {
   gap: 4px;
   align-items: center;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .tag-mode button {
@@ -749,13 +755,13 @@ h1, h2, h3, p {
 
 .section-heading h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
   letter-spacing: 0.02em;
 }
 
 .section-heading span {
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .task-card {
@@ -852,7 +858,7 @@ h1, h2, h3, p {
 .task-card__title {
   width: 100%;
   overflow: hidden;
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -867,7 +873,7 @@ h1, h2, h3, p {
   margin-top: 3px;
   overflow: hidden;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
@@ -885,7 +891,7 @@ h1, h2, h3, p {
   align-items: center;
   gap: 4px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   white-space: nowrap;
 }
 
@@ -948,7 +954,7 @@ h1, h2, h3, p {
 .empty-state p, .empty-page p {
   margin-bottom: 18px;
   color: var(--text-soft);
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .empty-page {
@@ -998,7 +1004,7 @@ h1, h2, h3, p {
 .task-editor__header h2 {
   margin: 0;
   font-family: inherit;
-  font-size: 23px;
+  font-size: calc(23px * var(--app-font-scale));
 }
 
 .task-editor__content {
@@ -1022,7 +1028,7 @@ h1, h2, h3, p {
 
 .field > span {
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -1035,7 +1041,7 @@ h1, h2, h3, p {
   border: 1px solid var(--line);
   border-radius: 9px;
   outline: none;
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
@@ -1061,7 +1067,7 @@ h1, h2, h3, p {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 9px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -1074,7 +1080,7 @@ h1, h2, h3, p {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .subtask-row > span {
@@ -1100,7 +1106,7 @@ h1, h2, h3, p {
 .empty-inline {
   margin: 4px 0 0;
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .reminder-row input {
@@ -1134,7 +1140,7 @@ h1, h2, h3, p {
 .attachment span {
   flex: 1;
   overflow: hidden;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1151,7 +1157,7 @@ h1, h2, h3, p {
   color: var(--danger);
   background: var(--danger-soft);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .task-editor__footer {
@@ -1208,7 +1214,7 @@ h1, h2, h3, p {
   min-width: 190px;
   margin-left: 8px;
   font-family: inherit;
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale));
   text-transform: capitalize;
 }
 
@@ -1251,7 +1257,7 @@ h1, h2, h3, p {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger-soft) 52%, var(--surface));
   border-bottom: 1px solid var(--line);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1259,7 +1265,7 @@ h1, h2, h3, p {
 .week-calendar__times time {
   padding: 5px 7px;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .week-day {
@@ -1288,7 +1294,7 @@ h1, h2, h3, p {
 
 .week-day__header span {
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   text-transform: uppercase;
 }
 
@@ -1298,7 +1304,7 @@ h1, h2, h3, p {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  font-size: 16px;
+  font-size: calc(16px * var(--app-font-scale));
 }
 
 .week-day__header.is-today strong {
@@ -1342,7 +1348,7 @@ h1, h2, h3, p {
   overflow: hidden;
   margin: 0;
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   line-height: 1.3;
   overflow-wrap: normal;
   word-break: normal;
@@ -1369,7 +1375,7 @@ h1, h2, h3, p {
 
 .time-calendar--day .calendar-task strong,
 .time-calendar--three-days .calendar-task strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .month-calendar {
@@ -1389,7 +1395,7 @@ h1, h2, h3, p {
   background: var(--surface-soft);
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1420,7 +1426,7 @@ h1, h2, h3, p {
 
 .month-day__items > small {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -1432,7 +1438,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 0;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   text-align: left;
   cursor: pointer;
@@ -1457,7 +1463,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 0;
   border-radius: 50%;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 700;
   cursor: pointer;
 }
@@ -1479,7 +1485,7 @@ h1, h2, h3, p {
   background: var(--accent-soft);
   border: 0;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1524,7 +1530,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 0;
   font-family: inherit;
-  font-size: 17px;
+  font-size: calc(17px * var(--app-font-scale));
   font-weight: 700;
   text-align: left;
   text-transform: capitalize;
@@ -1547,7 +1553,7 @@ h1, h2, h3, p {
   display: grid;
   place-items: center;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1567,7 +1573,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 0;
   border-radius: 7px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   cursor: pointer;
 }
 
@@ -1593,7 +1599,7 @@ h1, h2, h3, p {
   color: white;
   background: var(--accent);
   border-radius: 5px;
-  font-size: 8px;
+  font-size: calc(8px * var(--app-font-scale));
   font-style: normal;
   font-weight: 800;
 }
@@ -1636,7 +1642,7 @@ h1, h2, h3, p {
 
 .deadline-view__toolbar > span {
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -1689,12 +1695,12 @@ h1, h2, h3, p {
 }
 
 .deadline-calendar__days > button span {
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   text-transform: uppercase;
 }
 
 .deadline-calendar__days > button strong {
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .deadline-calendar__days > button i {
@@ -1705,7 +1711,7 @@ h1, h2, h3, p {
   color: var(--accent-strong);
   background: var(--accent-soft);
   border-radius: 8px;
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
   font-style: normal;
   font-weight: 800;
 }
@@ -1733,7 +1739,7 @@ h1, h2, h3, p {
   background: var(--surface-soft);
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1771,7 +1777,7 @@ h1, h2, h3, p {
   border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
   border-left: 3px solid var(--accent);
   border-radius: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-weight: 700;
   text-align: left;
   white-space: nowrap;
@@ -1837,7 +1843,7 @@ h1, h2, h3, p {
   display: grid;
   place-items: center;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .deadline-year-calendar__months {
@@ -1855,7 +1861,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 0;
   border-right: 1px solid var(--line);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   text-transform: uppercase;
   cursor: pointer;
@@ -1907,14 +1913,14 @@ h1, h2, h3, p {
 
 .deadline-item__date {
   color: var(--accent-strong);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 700;
 }
 
 .deadline-item strong {
   min-height: 36px;
   margin: 7px 0 12px;
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .deadline-item__line {
@@ -1935,7 +1941,7 @@ h1, h2, h3, p {
 
 .deadline-item small {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .deadline-item--overdue .deadline-item__date {
@@ -1952,7 +1958,7 @@ h1, h2, h3, p {
   gap: 7px;
   margin: 13px 3px 0;
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .calendar-day-backdrop {
@@ -1994,7 +2000,7 @@ h1, h2, h3, p {
 .calendar-day-dialog > header h2 {
   margin: 3px 0 0;
   font-family: inherit;
-  font-size: 20px;
+  font-size: calc(20px * var(--app-font-scale));
   text-transform: capitalize;
 }
 
@@ -2004,7 +2010,7 @@ h1, h2, h3, p {
 
 .calendar-day-dialog > footer > span {
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -2051,14 +2057,14 @@ h1, h2, h3, p {
 .calendar-day-dialog__task strong {
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .calendar-day-dialog__task small {
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .calendar-day-dialog__empty {
@@ -2073,11 +2079,11 @@ h1, h2, h3, p {
 
 .calendar-day-dialog__empty strong {
   color: var(--text-soft);
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .calendar-day-dialog__empty span {
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .axis-legend {
@@ -2095,7 +2101,7 @@ h1, h2, h3, p {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 9px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .select-control {
@@ -2107,7 +2113,7 @@ h1, h2, h3, p {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 9px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .select-control select {
@@ -2116,7 +2122,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 0;
   outline: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .matrix-project-filter {
@@ -2181,19 +2187,19 @@ h1, h2, h3, p {
   color: var(--quadrant-color);
   background: var(--quadrant-bg);
   border-radius: 10px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 800;
 }
 
 .quadrant__header h2 {
   margin: 1px 0 3px;
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
 }
 
 .quadrant__header p {
   margin: 0;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .quadrant__action {
@@ -2201,7 +2207,7 @@ h1, h2, h3, p {
   color: var(--quadrant-color);
   background: var(--quadrant-bg);
   border-radius: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -2251,7 +2257,7 @@ h1, h2, h3, p {
 
 .matrix-task strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2259,7 +2265,7 @@ h1, h2, h3, p {
 .matrix-task small, .matrix-task time {
   margin-top: 3px;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .quadrant__empty {
@@ -2272,7 +2278,7 @@ h1, h2, h3, p {
   background: transparent;
   border: 1px dashed var(--line-strong);
   border-radius: 9px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   cursor: pointer;
 }
 
@@ -2317,12 +2323,12 @@ h1, h2, h3, p {
 
 .habit-hero__ring strong {
   font-family: inherit;
-  font-size: 23px;
+  font-size: calc(23px * var(--app-font-scale));
 }
 
 .habit-hero__ring span {
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .habit-hero h2 {
@@ -2333,7 +2339,7 @@ h1, h2, h3, p {
 .habit-hero p {
   margin: 0;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .habit-hero__stats {
@@ -2359,12 +2365,12 @@ h1, h2, h3, p {
 }
 
 .habit-hero__stats strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .habit-hero__stats small {
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
 }
 
 .inline-form {
@@ -2395,7 +2401,7 @@ h1, h2, h3, p {
   flex-direction: column;
   gap: 5px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .habit-list {
@@ -2419,13 +2425,13 @@ h1, h2, h3, p {
 
 .habit-list__header h2 {
   margin: 0 0 3px;
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
 }
 
 .habit-list__header p {
   margin: 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .week-labels, .habit-checks {
@@ -2439,14 +2445,14 @@ h1, h2, h3, p {
   flex-direction: column;
   align-items: center;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   text-transform: uppercase;
 }
 
 .week-labels strong {
   margin-top: 3px;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .habit-row {
@@ -2472,7 +2478,7 @@ h1, h2, h3, p {
   display: grid;
   place-items: center;
   border-radius: 11px;
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale));
 }
 
 .habit-row__title {
@@ -2481,13 +2487,13 @@ h1, h2, h3, p {
 }
 
 .habit-row__title strong {
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .habit-row__title small {
   margin-top: 3px;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .habit-checks button {
@@ -2523,7 +2529,7 @@ h1, h2, h3, p {
   align-items: center;
   gap: 4px;
   color: var(--warning);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -2535,6 +2541,7 @@ h1, h2, h3, p {
 }
 
 .settings-index {
+  min-width: 0;
   position: sticky;
   top: 25px;
   display: flex;
@@ -2550,7 +2557,7 @@ h1, h2, h3, p {
   padding: 0 11px;
   color: var(--text-soft);
   border-radius: 9px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 600;
   text-decoration: none;
 }
@@ -2561,12 +2568,14 @@ h1, h2, h3, p {
 }
 
 .settings-sections {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 13px;
 }
 
 .settings-card {
+  min-width: 0;
   padding: 0 20px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -2601,18 +2610,19 @@ h1, h2, h3, p {
 }
 
 .settings-card > header div {
+  min-width: 0;
   flex: 1;
 }
 
 .settings-card > header h2 {
   margin: 0 0 3px;
-  font-size: 15px;
+  font-size: calc(15px * var(--app-font-scale));
 }
 
 .settings-card > header p {
   margin: 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .setting-row {
@@ -2634,19 +2644,24 @@ h1, h2, h3, p {
 }
 
 .setting-row strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .setting-row span {
   margin-top: 3px;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .setting-row select {
   width: auto;
   min-width: 120px;
   min-height: 35px;
+}
+
+.font-scale-picker button {
+  min-width: 51px;
+  padding-inline: 8px;
 }
 
 .switch {
@@ -2716,7 +2731,7 @@ h1, h2, h3, p {
   color: var(--text-soft);
   background: var(--surface-soft);
   border-radius: 20px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-weight: 700;
 }
 
@@ -2749,13 +2764,13 @@ h1, h2, h3, p {
 .drive-explainer p {
   margin: 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   line-height: 1.55;
 }
 
 .drive-explainer strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .drive-token {
@@ -2764,7 +2779,7 @@ h1, h2, h3, p {
 
 .drive-token small {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .sync-actions {
@@ -2779,7 +2794,7 @@ h1, h2, h3, p {
   display: block;
   margin: 8px 0 0;
   color: var(--danger);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   line-height: 1.45;
 }
 
@@ -2806,12 +2821,12 @@ h1, h2, h3, p {
 
 .sync-conflict > header strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .sync-conflict > header span {
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .sync-conflict__compare {
@@ -2833,12 +2848,12 @@ h1, h2, h3, p {
 }
 
 .sync-conflict__compare strong {
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .sync-conflict__compare small {
   color: var(--text-soft);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   line-height: 1.45;
 }
 
@@ -2846,7 +2861,7 @@ h1, h2, h3, p {
   display: -webkit-box;
   overflow: hidden;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   font-style: normal;
   line-height: 1.4;
   -webkit-box-orient: vertical;
@@ -2879,7 +2894,7 @@ h1, h2, h3, p {
   padding: 8px 11px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .toast span {
@@ -2937,13 +2952,13 @@ h1, h2, h3, p {
 }
 
 .sync-details strong {
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .sync-details small {
   margin-top: 3px;
   color: var(--text-soft);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
 }
 
 .plugin-empty {
@@ -2959,14 +2974,14 @@ h1, h2, h3, p {
 }
 
 .plugin-empty strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .plugin-empty p {
   max-width: 520px;
   margin: 4px 0 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   line-height: 1.5;
 }
 
@@ -2987,14 +3002,14 @@ h1, h2, h3, p {
   background: var(--surface-strong);
   border: 1px solid var(--line);
   border-radius: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .plugin-contracts p {
   flex: 1 0 100%;
   margin: 3px 0 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .mobile-header, .bottom-nav, .sidebar-overlay {
@@ -3073,7 +3088,7 @@ h1, h2, h3, p {
   .global-add { display: none; }
   .bottom-nav {
     position: fixed;
-    inset: auto 10px 10px;
+    inset: auto 4px 6px;
     z-index: 22;
     height: 59px;
     display: grid;
@@ -3092,7 +3107,7 @@ h1, h2, h3, p {
     gap: 2px;
     color: var(--text-faint);
     border-radius: 12px;
-    font-size: 10px;
+    font-size: min(calc(10px * var(--app-font-scale)), 11px);
     font-weight: 600;
     text-decoration: none;
   }
@@ -3102,7 +3117,7 @@ h1, h2, h3, p {
   }
   .page { width: calc(100% - 28px); padding-top: 30px; padding-bottom: 100px; }
   .page-header { min-height: 70px; margin-bottom: 20px; }
-  .page-header h1 { font-size: 32px; }
+  .page-header h1 { font-size: calc(32px * var(--app-font-scale)); }
   .header-add { display: none; }
   .overview-strip { grid-template-columns: 1fr 1fr; }
   .overview-strip > div { min-height: 62px; border-bottom: 1px solid var(--line); }
@@ -3119,7 +3134,7 @@ h1, h2, h3, p {
   .date-navigation strong { min-width: 0; }
   .deadline-track { grid-template-columns: 1fr; }
   .month-day { min-height: 96px; padding: 6px; }
-  .month-day__task { min-height: 22px; padding: 3px; font-size: 10px; }
+  .month-day__task { min-height: 22px; padding: 3px; font-size: calc(10px * var(--app-font-scale)); }
   .matrix-toolbar { align-items: flex-start; flex-direction: column; }
   .habit-hero { grid-template-columns: auto 1fr; padding: 20px; }
   .habit-hero__stats { grid-column: 1 / -1; }
@@ -3135,26 +3150,26 @@ h1, h2, h3, p {
 @media (max-width: 700px) {
   .week-calendar { grid-template-columns: 38px repeat(var(--calendar-day-count, 7), minmax(0, 1fr)); }
   .week-calendar__times { min-width: 37px; }
-  .week-calendar__times time { padding: 5px 2px; font-size: 10px; }
+  .week-calendar__times time { padding: 5px 2px; font-size: calc(10px * var(--app-font-scale)); }
   .week-calendar__deadline-label { font-size: 0; }
-  .week-day__header span { font-size: 10px; }
+  .week-day__header span { font-size: calc(10px * var(--app-font-scale)); }
   .week-day__deadlines { padding-inline: 2px; }
   .week-day__deadlines button { min-height: 21px; padding-inline: 3px; font-size: 0; }
   .week-day__deadlines button i { width: 100%; height: 4px; }
   .calendar-task { min-height: 34px; padding: 3px; border-left-width: 2px; }
-  .calendar-task strong { font-size: 10px; }
+  .calendar-task strong { font-size: calc(10px * var(--app-font-scale)); }
   .time-calendar--day .calendar-task,
   .time-calendar--three-days .calendar-task { padding: 6px; border-left-width: 3px; }
   .time-calendar--day .calendar-task strong,
-  .time-calendar--three-days .calendar-task strong { font-size: 12px; }
-  .month-weekday { font-size: 10px; }
+  .time-calendar--three-days .calendar-task strong { font-size: calc(12px * var(--app-font-scale)); }
+  .month-weekday { font-size: calc(10px * var(--app-font-scale)); }
   .month-day { min-height: 90px; gap: 3px; padding: 4px; }
-  .month-day__number { width: 22px; height: 22px; font-size: 12px; }
+  .month-day__number { width: 22px; height: 22px; font-size: calc(12px * var(--app-font-scale)); }
   .month-day__items { gap: 3px; }
   .month-day__task { min-height: 18px; padding: 2px; font-size: 0; }
   .month-day__task > svg { width: 10px; height: 10px; margin: auto; }
   .month-day__deadline > i { width: 100%; height: 4px; margin: auto; }
-  .month-day__items > small { font-size: 9px; }
+  .month-day__items > small { font-size: calc(9px * var(--app-font-scale)); }
   .year-calendar { grid-template-columns: 1fr; }
   .deadline-view { padding: 12px; }
   .deadline-view__header { align-items: flex-start; gap: 10px; }
@@ -3162,11 +3177,11 @@ h1, h2, h3, p {
   .deadline-view__toolbar .segmented { width: 100%; }
   .deadline-view__toolbar .segmented button { flex: 1; }
   .deadline-calendar__days > button { min-height: 42px; flex-direction: column; gap: 1px; padding: 3px; }
-  .deadline-calendar__days > button span { font-size: 9px; }
-  .deadline-calendar__days > button i { position: absolute; right: 2px; top: 2px; min-width: 12px; height: 12px; font-size: 8px; }
-  .deadline-range { padding-inline: 4px; font-size: 10px; }
+  .deadline-calendar__days > button span { font-size: calc(9px * var(--app-font-scale)); }
+  .deadline-calendar__days > button i { position: absolute; right: 2px; top: 2px; min-width: 12px; height: 12px; font-size: calc(8px * var(--app-font-scale)); }
+  .deadline-range { padding-inline: 4px; font-size: calc(10px * var(--app-font-scale)); }
   .deadline-range > i { display: none; }
-  .deadline-year-calendar__months > button { padding: 0 1px; font-size: 9px; }
+  .deadline-year-calendar__months > button { padding: 0 1px; font-size: calc(9px * var(--app-font-scale)); }
   .calendar-day-dialog__task { grid-template-columns: 4px minmax(0, 1fr); }
   .calendar-day-dialog__task small { grid-column: 2; }
 }
@@ -3182,7 +3197,7 @@ h1, h2, h3, p {
   box-shadow: var(--shadow-md);
 }
 
-.storage-load-error h1 { margin: 0 0 10px; font-size: 24px; }
+.storage-load-error h1 { margin: 0 0 10px; font-size: calc(24px * var(--app-font-scale)); }
 .storage-load-error p { margin: 0; color: var(--muted); line-height: 1.55; }
 
 .storage-write-error {
@@ -3203,8 +3218,8 @@ h1, h2, h3, p {
   .page { width: calc(100% - 22px); }
   .page-header { gap: 12px; }
   .page-header__actions { display: none; }
-  .overview-strip strong { font-size: 20px; }
-  .toolbar .button { flex: 1; padding: 0 8px; font-size: 12px; }
+  .overview-strip strong { font-size: calc(20px * var(--app-font-scale)); }
+  .toolbar .button { flex: 1; padding: 0 8px; font-size: calc(12px * var(--app-font-scale)); }
   .task-card { grid-template-columns: auto minmax(0, 1fr); padding-right: 8px; }
   .task-card__actions { position: absolute; z-index: 2; right: 4px; top: 4px; }
   .task-card__more { position: static; }

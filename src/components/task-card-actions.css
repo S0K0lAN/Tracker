@@ -36,7 +36,7 @@
   background: transparent;
   border: 0;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   font-weight: 650;
   cursor: pointer;
   text-align: left;

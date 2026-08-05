@@ -4,6 +4,8 @@ export type TaskStatus = 'active' | 'completed' | 'archived' | 'deleted'
 export type InboxView = 'list' | 'board'
 export type InboxSort = 'created-desc' | 'deadline-asc' | 'importance-desc' | 'title-asc'
 export type BackgroundPreset = 'none' | 'mist' | 'dawn' | 'forest' | 'custom'
+export type AppFontFamily = 'system' | 'humanist' | 'readable'
+export type AppFontScale = 90 | 100 | 110 | 120
 
 export interface Subtask {
   id: string
@@ -69,6 +71,8 @@ export interface Habit {
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system'
   accent: 'sage' | 'violet' | 'coral'
+  fontFamily: AppFontFamily
+  fontScale: AppFontScale
   compactMode: boolean
   reduceMotion: boolean
   autoSync: boolean

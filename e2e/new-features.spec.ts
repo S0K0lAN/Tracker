@@ -283,9 +283,12 @@ test('deadline calendar updates the task color when importance changes', async (
   const lowColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
 
   await range.click()
+  const details = page.getByRole('dialog', { name: 'Купить продукты на неделю' })
+  await details.getByRole('button', { name: 'Редактировать' }).click()
   await page.getByLabel('Важность').click()
   await page.getByRole('option', { name: /Важная/ }).click()
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await page.getByRole('button', { name: 'Закрыть задачу' }).click()
 
   await expect(range).toHaveAttribute('data-importance', 'high')
   const highColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
@@ -310,18 +313,32 @@ test('appearance settings are saved locally and survive reload', async ({ page }
   await page.goto('/settings')
   await page.getByRole('button', { name: 'Тёмная' }).click()
   await page.getByRole('button', { name: 'Акцент violet' }).click()
+  await page.getByLabel('Шрифт интерфейса').selectOption('readable')
+  await page.getByRole('button', { name: 'Размер текста 120%' }).click()
   await page.getByRole('button', { name: 'Фон: Лес' }).click()
   await page.getByLabel('Затемнение фона').fill('55')
   await expect(page.getByText('Оформление сохранено локально')).toBeVisible()
   await expectStoredSetting(page, 'theme', 'dark')
   await expectStoredSetting(page, 'accent', 'violet')
+  await expectStoredSetting(page, 'fontFamily', 'readable')
+  await expectStoredSetting(page, 'fontScale', 120)
   await expectStoredSetting(page, 'backgroundPreset', 'forest')
   await expectStoredSetting(page, 'backgroundDim', 55)
 
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'violet')
+  await expect(page.locator('html')).toHaveAttribute('data-font-family', 'readable')
+  await expect(page.locator('html')).toHaveAttribute('data-font-scale', '120')
   await expect(page.locator('html')).toHaveAttribute('data-background', 'forest')
+  await expect(page.getByLabel('Шрифт интерфейса')).toHaveValue('readable')
+  await expect(page.getByRole('button', { name: 'Размер текста 120%' })).toHaveAttribute('aria-pressed', 'true')
+  const typography = await page.evaluate(() => ({
+    family: getComputedStyle(document.documentElement).fontFamily,
+    scale: getComputedStyle(document.documentElement).getPropertyValue('--app-font-scale').trim(),
+  }))
+  expect(typography.family).toContain('Verdana')
+  expect(typography.scale).toBe('1.2')
   await expect(page.getByLabel('Затемнение фона')).toHaveValue('55')
   const dividerLayout = await page.locator('#appearance .appearance-actions').evaluate((footer) => {
     const previous = footer.previousElementSibling as HTMLElement | null
@@ -338,6 +355,15 @@ test('appearance settings are saved locally and survive reload', async ({ page }
     previousBorderBottom: '1px',
     gap: 0,
   })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  for (const path of ['/settings', '/inbox', '/calendar', '/habits']) {
+    await page.goto(path)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth),
+      `${path} overflows horizontally with 120% text on mobile`,
+    ).toBe(false)
+  }
 })
 
 test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-syncs local changes', async ({ page }) => {
@@ -546,7 +572,7 @@ test('dialogs and mobile drawer restore focus to their exact openers', async ({ 
   await preview.click()
   await page.getByRole('button', { name: 'Закрыть просмотр вложения' }).click()
   await expect(preview).toBeFocused()
-  await page.getByRole('button', { name: 'Закрыть редактор' }).click()
+  await page.getByRole('button', { name: 'Закрыть задачу' }).click()
   await expect(taskBody).toBeFocused()
 
   await page.setViewportSize({ width: 390, height: 844 })
@@ -717,7 +743,8 @@ test('voice fallback populates task fields and an attachment can be reopened', a
   await expect(page.getByLabel('Название')).toHaveValue('Подготовить отчёт')
   await expect(page.getByRole('combobox', { name: 'Проект' })).toContainText('Работа')
   await expect(page.getByRole('combobox', { name: 'Важность' })).toContainText('Важная')
-  await expect(page.getByRole('textbox', { name: 'Дедлайн', exact: true })).not.toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Начало', exact: true })).not.toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Дедлайн', exact: true })).toHaveValue('')
   await expect(page.getByLabel('Теги через запятую')).toHaveValue('голос')
 
   await page.locator('.task-editor input[type="file"]').setInputFiles({
@@ -732,6 +759,11 @@ test('voice fallback populates task fields and an attachment can be reopened', a
   await attachmentDialog.getByRole('button', { name: 'Закрыть просмотр вложения' }).click()
   await page.getByRole('button', { name: 'Создать задачу' }).click()
   await expect(page.getByText('Подготовить отчёт', { exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate((storageKey) => {
+    const raw = localStorage.getItem(storageKey)
+    const task = raw ? JSON.parse(raw).tasks.find((item: { title: string }) => item.title === 'Подготовить отчёт') : undefined
+    return task ? { hasStart: Boolean(task.startAt), hasDeadline: Boolean(task.deadline) } : undefined
+  }, STORAGE_KEY)).toEqual({ hasStart: true, hasDeadline: false })
 
   await page.reload()
   await page.locator('.task-card').filter({ hasText: 'Подготовить отчёт' }).locator('.task-card__body').click()

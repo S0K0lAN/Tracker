@@ -142,12 +142,17 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
         </button>
         {menuOpen && (
           <div className="task-card__menu" role="menu">
-            <button type="button" role="menuitem" onClick={() => { onOpen(task); setMenuOpen(false) }}>
+            <button type="button" role="menuitem" onClick={() => { menuTriggerRef.current?.focus(); onOpen(task); setMenuOpen(false) }}>
               <FileText size={16} /> Открыть
             </button>
             {task.status === 'active' && (
               <button type="button" role="menuitem" onClick={() => { startPomodoroForTask(task.id, updatePomodoro); setMenuOpen(false) }}>
                 <Play size={16} /> Таймер фокуса · 25 минут
+              </button>
+            )}
+            {task.status === 'active' && (
+              <button type="button" role="menuitem" onClick={() => { toggleTask(task.id); setMenuOpen(false) }}>
+                <Check size={16} /> Завершить
               </button>
             )}
             {task.status === 'completed' && (

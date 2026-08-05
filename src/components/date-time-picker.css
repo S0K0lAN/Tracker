@@ -34,7 +34,7 @@
   background: transparent;
   border: 0;
   outline: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
 }
 
 .date-time-field__clear,
@@ -65,7 +65,7 @@
 .date-time-field__error {
   margin-top: -2px;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .date-time-field__error {
@@ -94,7 +94,7 @@
 
 .date-time-popover > header strong {
   font-family: inherit;
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale));
   text-align: center;
   text-transform: capitalize;
 }
@@ -129,7 +129,7 @@
   display: grid;
   place-items: center;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -145,7 +145,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
   cursor: pointer;
 }
 
@@ -184,7 +184,7 @@
   background: var(--accent-soft);
   border: 0;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-weight: 700;
   cursor: pointer;
 }
@@ -201,7 +201,7 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 700;
 }
 

@@ -26,7 +26,7 @@
   background: transparent;
   border: 0;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-weight: 700;
   cursor: pointer;
 }
@@ -85,11 +85,11 @@
 
 .board-column > header strong {
   flex: 1;
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale));
 }
 
 .board-column > header em {
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
   font-style: normal;
 }
 
@@ -124,7 +124,7 @@
 
 .inbox-calendar-wrap > header strong {
   min-width: 150px;
-  font-size: 14px;
+  font-size: calc(14px * var(--app-font-scale));
   text-align: center;
   text-transform: capitalize;
 }
@@ -145,7 +145,7 @@
   place-items: center;
   color: var(--text-soft);
   background: var(--surface-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -164,7 +164,7 @@
   height: 23px;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .inbox-calendar article.is-today > strong {
@@ -186,7 +186,7 @@
   background: var(--accent-soft);
   border: 0;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -200,7 +200,7 @@
 
 .inbox-calendar article small {
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .undated-tray {
@@ -216,7 +216,7 @@
 
 .undated-tray > strong {
   min-width: 58px;
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale));
 }
 
 .undated-tray > span {
@@ -232,7 +232,7 @@
   background: var(--surface-soft);
   border: 0;
   border-radius: 7px;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   cursor: pointer;
 }
 

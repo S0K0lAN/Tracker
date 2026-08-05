@@ -3,9 +3,9 @@
 ## Назначение
 
 Матрица переводит расширенные продуктовые запросы в наблюдаемые критерии
-приёмки. Актуальный срез повторно проверен 31 июля 2026 года после интеграции
-новых страниц, task lifecycle, раскладок входящих, Pomodoro, голосового
-разбора, вложений, фонов и браузерной синхронизации.
+приёмки. Актуальный срез повторно проверен 5 августа 2026 года после интеграции
+режима просмотра задачи, голосового маршрута даты, глобальной типографики,
+task lifecycle, Pomodoro, вложений, фонов и браузерной синхронизации.
 
 Статусы:
 
@@ -42,6 +42,7 @@ Done браузерного MVP. Они честно вынесены в отд�
 | UX-02 | Единые dropdown в редакторе задачи | **Готово** | `SelectMenu` используется для проекта, важности, порога и override; поддерживает поиск, стрелки, `Home/End`, `Enter/Space`, `Escape` и возврат focus. Регрессия доказывает, что `Escape` закрывает только dropdown и сохраняет draft. |
 | UX-03 | Понятное отображение важности | **Готово** | `TaskCard` показывает текст «Обычно/Важно» и контурный/заполненный флаг, поэтому значение не зависит только от цвета и одинаково читается в task layouts. |
 | UX-04 | Улучшенный выбор проекта | **Готово** | Searchable `SelectMenu` показывает цвет и описание; E2E доказывает create project → select in task → reload → project detail. |
+| UX-05 | Просмотр задачи до редактирования | **Готово** | `TaskDetails` показывает содержимое без полей ввода; component и отдельный E2E проверяют явный переход к редактору, таймер, завершение/возврат и focus restore. |
 | NAV-01 | Отдельная страница «Сегодня» | **Готово** | `/today` есть в desktop/mobile navigation; component-тест проверяет секции и отсутствие дубля scheduled deadline, E2E — direct URL, Back/Forward и heading. |
 | PRJ-01 | Страница и создание проектов | **Готово** | `/projects`, форма с названием/цветом/описанием, detail и задача проекта работают и переживают reload; пустое имя блокируется. |
 | ATT-01 | Просмотр фото и файлов | **Готово** | Viewer открывает image/PDF/text, поддерживает zoom, download, `Escape` и возврат focus; E2E загружает text attachment и повторно открывает после reload в пределах лимита браузерного MVP. |
@@ -59,24 +60,29 @@ Done браузерного MVP. Они честно вынесены в отд�
 | INB-02 | List/board и отдельный календарь | **Готово** | Component переключает список/доску и проверяет явный переход в `/calendar`; E2E проверяет общий sort и persistence вида. |
 | BG-01 | Встроенные фоны | **Готово** | Presets, «без фона», dim и global application реализованы; E2E проверяет preset/reload, все страницы — light/dark desktop/mobile contrast и overflow. |
 | BG-02 | Собственный фон | **Готово** | MIME/size validation, upload, global application и reload покрыты E2E в честно документированных browser/localStorage лимитах. |
+| TYPE-01 | Настройка шрифта всего приложения | **Готово** | Три локальных системных стека и масштаб 90–120% применяются CSS variables; schema v2 мигрирует в v3, component/E2E проверяют persistence и отсутствие mobile overflow при 120%. |
 | VOICE-01 | Надиктовывание задачи | **Готово** | Web Speech ru-RU и ручной fallback интегрированы; fallback остаётся рабочим при отсутствии API и проверен E2E. |
-| VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет title, relative/weekday deadline, time, importance, unique tags и project; E2E — preview → apply → saved task. |
+| VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет default `startAt`, явные «до»/«дедлайн»/«срок», weekday, time, importance, tags и project; component/E2E — preview → взаимоисключающее применение даты → saved task. |
 | DES-01 | Лаконичный дизайн Todoist/Singularity | **Готово** | Новые страницы используют общие tokens и progressive disclosure; пройдены independent visual QA, automated contrast/overflow, mobile action и menu clipping regressions. |
 | QA-01 | Независимое покрытие новых функций | **Готово** | Test-only агент добавил unit/component/E2E с наблюдаемыми эффектами, browser-error collection и theme/mobile loops; полный gate зелёный. |
-| DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v2, ограничениям и тестам. |
+| DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v3, миграции v2, ограничениям и тестам. |
 | SYNC-01 | Подключить Google Drive через OAuth без сохранения token | **Готово** | GIS runtime использует только `drive.appdata`; unit и mock-browser E2E проверяют connect, повторный вход после reload/401 и отсутствие token в localStorage/remote envelope. Live smoke честно вынесен за scope без credentials. |
 | SYNC-02 | Загружать существующие данные и не перезаписывать конфликт молча | **Готово** | ID/revision/base hash определяют create/upload/download/conflict; UI сравнивает копии, импорт создаёт восстанавливаемый backup; race-тесты покрывают локальную правку во время download/upload и reset. |
 | SYNC-03 | Задел под новые хранилища | **Готово** | Второй configurable interactive provider полностью подключается через registry descriptor/runtime; component-тест проверяет defaults, required public config, connect и upload без Google-specific ветки. Secret config registry отклоняет. |
 
-Итого по явному scope браузерного MVP: **29 готовых**, **0 частично
+Итого по явному scope браузерного MVP: **31 готовый**, **0 частично
 готовых**, **0 отсутствующих** критериев.
 
 ## Тестовая трассировка
 
 ### Unit и component
 
-- `src/domain/voiceParser.test.ts` — 5 сценариев русского парсинга с
+- `src/domain/voiceParser.test.ts` — 9 сценариев русского парсинга с
   фиксированным `now`, включая Unicode-safe границы кириллических токенов.
+- `src/components/TaskEditor.test.tsx` — применение голосовой даты к началу или
+  дедлайну, очистка второго поля и сброс невалидного ручного ввода.
+- `src/components/TaskDetails.test.tsx` — read mode, подзадачи, task actions и
+  focus restore; `SettingsTypography.test.tsx` — применение/миграция шрифта.
 - `src/NewFeatures.test.tsx` — Today, Projects, Search, soft delete/restore,
   permanent delete confirmation, archive/restore, сортировка, три Inbox
   layout, Pomodoro, deadline-only week/month, `Escape` внутри `SelectMenu` и
@@ -117,6 +123,9 @@ Done браузерного MVP. Они честно вынесены в отд�
     `/trash` на desktop/mobile.
 13. Google OAuth → remote conflict → download → auto-upload → reload без
     сохранения token → восстановление backup до импорта.
+
+`e2e/task-details.spec.ts` отдельно проверяет, что карточка открывает просмотр,
+редактирование остаётся явным, а timer/menu actions меняют DOM и persisted state.
 
 `e2e/app.spec.ts` сохраняет регрессионное покрытие базового task flow,
 календаря, матрицы, привычек, настроек, mobile dialog и доступных имён.

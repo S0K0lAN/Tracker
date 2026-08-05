@@ -24,7 +24,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Toast } from '../components/Toast'
 import { pluginRegistry } from '../core/plugins/PluginRegistry'
 import { useApp } from '../state/AppContext'
-import type { BackgroundPreset } from '../domain/models'
+import type { AppFontFamily, AppFontScale, BackgroundPreset } from '../domain/models'
 import './settings-backgrounds.css'
 
 export function SettingsPage() {
@@ -74,6 +74,8 @@ export function SettingsPage() {
   const appearanceKey = JSON.stringify({
     theme: state.settings.theme,
     accent: state.settings.accent,
+    fontFamily: state.settings.fontFamily,
+    fontScale: state.settings.fontScale,
     backgroundPreset: state.settings.backgroundPreset,
     customBackgroundDataUrl: state.settings.customBackgroundDataUrl,
     backgroundDim: state.settings.backgroundDim,
@@ -137,7 +139,7 @@ export function SettingsPage() {
         </nav>
         <div className="settings-sections">
           <section className="settings-card" id="appearance">
-            <header><span><Palette /></span><div><h2>Внешний вид</h2><p>Тема и визуальный акцент</p></div></header>
+            <header><span><Palette /></span><div><h2>Внешний вид</h2><p>Тема, шрифт и визуальный акцент</p></div></header>
             <div className="setting-row">
               <div><strong>Тема</strong><span>Выберите комфортный режим</span></div>
               <div className="segmented">
@@ -153,6 +155,35 @@ export function SettingsPage() {
               <div className="accent-picker">
                 {(['sage', 'violet', 'coral'] as const).map((accent) => (
                   <button key={accent} className={`${state.settings.accent === accent ? 'is-selected' : ''} accent-${accent}`} onClick={() => updateAppearance({ accent })} aria-label={`Акцент ${accent}`} />
+                ))}
+              </div>
+            </div>
+            <label className="setting-row">
+              <div><strong>Шрифт интерфейса</strong><span>Без загрузки внешних файлов</span></div>
+              <select
+                aria-label="Шрифт интерфейса"
+                value={state.settings.fontFamily}
+                onChange={(event) => updateAppearance({ fontFamily: event.target.value as AppFontFamily })}
+              >
+                <option value="system">Системный</option>
+                <option value="humanist">Гуманистический</option>
+                <option value="readable">Повышенная читаемость</option>
+              </select>
+            </label>
+            <div className="setting-row">
+              <div><strong>Размер текста</strong><span>Меняет текст во всём приложении</span></div>
+              <div className="segmented font-scale-picker" aria-label="Размер текста">
+                {([90, 100, 110, 120] as AppFontScale[]).map((fontScale) => (
+                  <button
+                    type="button"
+                    key={fontScale}
+                    className={state.settings.fontScale === fontScale ? 'is-selected' : ''}
+                    aria-pressed={state.settings.fontScale === fontScale}
+                    aria-label={`Размер текста ${fontScale}%`}
+                    onClick={() => updateAppearance({ fontScale })}
+                  >
+                    {fontScale}%
+                  </button>
                 ))}
               </div>
             </div>

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { NavLink, useRouter } from './core/router/Router'
 import type { Task } from './domain/models'
+import { TaskDetails } from './components/TaskDetails'
 import { TaskEditor } from './components/TaskEditor'
 import { InboxPage } from './pages/InboxPage'
 import { CalendarPage } from './pages/CalendarPage'
@@ -146,14 +147,26 @@ function NotFoundPage() {
 }
 
 export function App() {
+  const [viewTaskId, setViewTaskId] = useState<string>()
+  const taskOpenerRef = useRef<HTMLElement | null>(null)
   const [editorTask, setEditorTask] = useState<Task | null | undefined>(undefined)
   const [editorDefaults, setEditorDefaults] = useState<Partial<Pick<Task, 'startAt' | 'deadline'>> | undefined>()
   const [menuOpen, setMenuOpen] = useState(false)
   const { path, navigate } = useRouter()
-  const { completionNotice, undoTaskCompletion, dismissCompletionNotice } = useApp()
+  const { state, completionNotice, undoTaskCompletion, dismissCompletionNotice } = useApp()
+  const viewedTask = state.tasks.find((task) => task.id === viewTaskId && task.status !== 'deleted' && task.status !== 'archived')
   const openEditor = (task: Task | null, defaults?: Partial<Pick<Task, 'startAt' | 'deadline'>>) => {
+    if (!task) setViewTaskId(undefined)
     setEditorDefaults(task ? undefined : defaults)
     setEditorTask(task)
+  }
+  const openTask = (task: Task | null, defaults?: Partial<Pick<Task, 'startAt' | 'deadline'>>) => {
+    if (task) {
+      taskOpenerRef.current = document.activeElement as HTMLElement | null
+      setViewTaskId(task.id)
+      return
+    }
+    openEditor(null, defaults)
   }
   const closeEditor = () => {
     setEditorTask(undefined)
@@ -167,10 +180,11 @@ export function App() {
         openEditor(null)
       }
       if (event.key === 'Escape' && editorTask !== undefined) closeEditor()
+      else if (event.key === 'Escape' && viewTaskId) setViewTaskId(undefined)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [editorTask])
+  }, [editorTask, viewTaskId])
 
   useEffect(() => {
     if (path === '/') navigate('/inbox', { replace: true })
@@ -178,7 +192,7 @@ export function App() {
   }, [navigate, path])
 
   useEffect(() => {
-    const selectors = editorTask !== undefined
+    const selectors = editorTask !== undefined || viewedTask
       ? ['.sidebar', '.workspace', '.global-add', '.bottom-nav', '.pomodoro-dock']
       : menuOpen
         ? ['.workspace', '.global-add', '.bottom-nav', '.pomodoro-dock']
@@ -186,15 +200,15 @@ export function App() {
     const elements = selectors.flatMap((selector) => [...document.querySelectorAll(selector)])
     setInert(elements, true)
     return () => setInert(elements, false)
-  }, [editorTask, menuOpen])
+  }, [editorTask, menuOpen, viewedTask])
 
   const page =
-    path === '/' || path === '/inbox' ? <InboxPage onEditTask={openEditor} />
-    : path === '/today' ? <TodayPage onEditTask={openEditor} />
-    : path === '/projects' ? <ProjectsPage onEditTask={openEditor} />
-    : path === '/calendar' ? <CalendarPage onEditTask={openEditor} />
-    : path === '/matrix' ? <MatrixPage onEditTask={openEditor} />
-    : path === '/search' ? <SearchPage onEditTask={openEditor} />
+    path === '/' || path === '/inbox' ? <InboxPage onEditTask={openTask} />
+    : path === '/today' ? <TodayPage onEditTask={openTask} />
+    : path === '/projects' ? <ProjectsPage onEditTask={openTask} />
+    : path === '/calendar' ? <CalendarPage onEditTask={openTask} />
+    : path === '/matrix' ? <MatrixPage onEditTask={openTask} />
+    : path === '/search' ? <SearchPage onEditTask={openTask} />
     : path === '/habits' ? <HabitsPage />
     : path === '/trash' ? <TrashPage />
     : path === '/settings' ? <SettingsPage />
@@ -234,6 +248,16 @@ export function App() {
             Задача «{completionNotice.title}» выполнена
           </Toast>
         </div>
+      )}
+      {viewedTask && editorTask === undefined && (
+        <TaskDetails
+          task={viewedTask}
+          returnFocusTo={taskOpenerRef.current}
+          onClose={() => setViewTaskId(undefined)}
+          onEdit={(task) => {
+            openEditor(task)
+          }}
+        />
       )}
       {editorTask !== undefined && <TaskEditor task={editorTask ?? undefined} defaults={editorDefaults} onClose={closeEditor} />}
     </div>
