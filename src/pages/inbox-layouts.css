@@ -42,10 +42,6 @@
   margin-left: auto;
 }
 
-.inbox-calendar-link {
-  min-height: 39px;
-}
-
 .inbox-sort .select-menu__trigger {
   min-height: 39px;
 }
@@ -255,8 +251,6 @@
     width: 100%;
     margin-left: 0;
   }
-
-  .inbox-calendar-link { width: 100%; }
 
   .inbox-calendar {
     min-width: 680px;

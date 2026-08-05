@@ -283,7 +283,7 @@ describe('task lifecycle', () => {
 })
 
 describe('inbox layouts and focus', () => {
-  it('switches list and board views, sorts tasks and links to the dedicated calendar', async () => {
+  it('switches list and board views and sorts tasks without a calendar shortcut', async () => {
     const user = userEvent.setup()
     const templateState = createSeedState()
     const template = templateState.tasks.find((task) => task.status === 'active')!
@@ -315,8 +315,7 @@ describe('inbox layouts and focus', () => {
     expect(container.querySelector('.inbox-board')).toBeInTheDocument()
 
     expect(screen.queryByRole('button', { name: 'Вид: Календарь' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('link', { name: 'Планировать в календаре' }))
-    expect(await screen.findByRole('heading', { name: 'Календарь', level: 1 })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Планировать в календаре' })).not.toBeInTheDocument()
   })
 
   it('launches a task-bound Pomodoro and exposes working timer controls', async () => {

@@ -690,7 +690,7 @@ test('inbox sort, layouts and a running task Pomodoro persist', async ({ page })
   await expect(page.locator('.inbox-board')).toBeVisible()
 
   await expect(page.getByRole('button', { name: 'Вид: Календарь' })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: 'Планировать в календаре' })).toHaveAttribute('href', '/calendar')
+  await expect(page.getByRole('link', { name: 'Планировать в календаре' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Вид: Список' }).click()
   await page.getByRole('button', { name: 'Действия задачи Подготовить план недели' }).click()
   await page.getByRole('menuitem', { name: 'Таймер фокуса · 25 минут' }).click()

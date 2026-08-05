@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Archive, CalendarDays, CheckCircle2, Columns3, Filter, LayoutList, ListFilter, Plus, Search, SlidersHorizontal, X } from 'lucide-react'
+import { Archive, CheckCircle2, Columns3, Filter, LayoutList, ListFilter, Plus, Search, SlidersHorizontal, X } from 'lucide-react'
 import type { InboxSort, InboxView, Task } from '../domain/models'
 import { getTaskUrgency, isSameLocalDay } from '../domain/models'
 import { sortTasks } from '../domain/taskFilters'
@@ -7,7 +7,6 @@ import { useApp } from '../state/AppContext'
 import { PageHeader } from '../components/PageHeader'
 import { SelectMenu } from '../components/SelectMenu'
 import { TaskCard } from '../components/TaskCard'
-import { NavLink } from '../core/router/Router'
 import './inbox-layouts.css'
 
 type FilterMode = 'all' | 'today' | 'important' | 'urgent'
@@ -175,9 +174,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
             </button>
           ))}
         </div>
-        <NavLink className="button button--ghost inbox-calendar-link" to="/calendar">
-          <CalendarDays size={16} /> Планировать в календаре
-        </NavLink>
       </section>
 
       <section className={`task-list task-list--${view}`} aria-live="polite">
