@@ -11,6 +11,11 @@ function pad(value: number) {
   return String(value).padStart(2, '0')
 }
 
+function parseTimeValue(value: string): [number, number] | null {
+  const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)$/)
+  return match ? [Number(match[1]), Number(match[2])] : null
+}
+
 function isValidDateParts(year: number, month: number, day: number, hours: number, minutes: number) {
   const date = new Date(year, month - 1, day, hours, minutes, 0, 0)
   return date.getFullYear() === year
@@ -123,6 +128,10 @@ export function DateTimePicker({
   const [draft, setDraft] = useState(() => formatDateTimeInput(value))
   const [invalid, setInvalid] = useState(false)
   const [anchor, setAnchor] = useState(() => dateFromLocalValue(value) ?? new Date())
+  const [timeDraft, setTimeDraft] = useState(() => {
+    const date = dateFromLocalValue(value)
+    return date ? `${pad(date.getHours())}:${pad(date.getMinutes())}` : defaultTime
+  })
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -136,8 +145,13 @@ export function DateTimePicker({
     setDraft(formatDateTimeInput(value))
     setInvalid(false)
     const date = dateFromLocalValue(value)
-    if (date) setAnchor(date)
-  }, [resetToken, value])
+    if (date) {
+      setAnchor(date)
+      setTimeDraft(`${pad(date.getHours())}:${pad(date.getMinutes())}`)
+    } else {
+      setTimeDraft(defaultTime)
+    }
+  }, [defaultTime, resetToken, value])
 
   useEffect(() => {
     if (!open) return
@@ -190,9 +204,12 @@ export function DateTimePicker({
   }, [anchor])
 
   const setValue = (next: Date) => {
+    if (!Number.isFinite(next.getTime())) return
     const nextValue = toLocalDateTimeValue(next)
+    if (!nextValue) return
     onChange(nextValue)
     setDraft(formatDateTimeInput(nextValue))
+    setTimeDraft(`${pad(next.getHours())}:${pad(next.getMinutes())}`)
     setInvalid(false)
     onValidityChange?.(true)
     setAnchor(next)
@@ -335,12 +352,21 @@ export function DateTimePicker({
             <span>Время</span>
             <input
               type="time"
-              value={selected ? `${pad(selected.getHours())}:${pad(selected.getMinutes())}` : defaultTime}
+              value={timeDraft}
               onChange={(event) => {
-                const [hours, minutes] = event.target.value.split(':').map(Number)
+                const nextTime = event.currentTarget.value
+                setTimeDraft(nextTime)
+                const parsedTime = parseTimeValue(nextTime)
+                if (!parsedTime) return
+                const [hours, minutes] = parsedTime
                 const next = selected ? new Date(selected) : new Date()
                 next.setHours(hours, minutes, 0, 0)
                 setValue(next)
+              }}
+              onBlur={() => {
+                if (!parseTimeValue(timeDraft)) {
+                  setTimeDraft(selected ? `${pad(selected.getHours())}:${pad(selected.getMinutes())}` : defaultTime)
+                }
               }}
             />
           </label>

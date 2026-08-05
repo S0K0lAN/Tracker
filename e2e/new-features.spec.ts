@@ -115,6 +115,27 @@ test('manual date entry keeps the week aligned and deadlines stack as strips wit
   await expect(page.getByText('Исправьте дату и время перед сохранением')).toBeVisible()
 })
 
+test('task creation survives replacing time manually inside the calendar popover', async ({ page }) => {
+  await page.getByRole('button', { name: 'Создать новую задачу' }).click()
+  await page.getByLabel('Название').fill('Время из календаря E2E')
+
+  await page.getByRole('button', { name: 'Открыть календарь начала' }).click()
+  await page.getByRole('dialog', { name: 'Выбор даты: Начало' }).getByRole('button', { name: 'Сегодня' }).click()
+  await page.getByRole('button', { name: 'Открыть календарь начала' }).click()
+
+  const popover = page.getByRole('dialog', { name: 'Выбор даты: Начало' })
+  const timeInput = popover.getByLabel('Время')
+  await timeInput.fill('')
+  await expect(popover).toBeVisible()
+  await timeInput.fill('14:35')
+  await expect(page.getByRole('textbox', { name: 'Начало', exact: true })).toHaveValue(/, 14:35$/)
+
+  await timeInput.press('Escape')
+  await expect(popover).toBeHidden()
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
+  await expect(page.getByText('Время из календаря E2E', { exact: true })).toBeVisible()
+})
+
 test('overlapping week tasks are laid out side by side', async ({ page }) => {
   await page.goto('/calendar')
   await page.evaluate((storageKey) => {

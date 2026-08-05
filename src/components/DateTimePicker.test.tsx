@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -56,5 +56,28 @@ describe('manual date input', () => {
     await user.tab()
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByRole('alert')).toHaveTextContent('Проверьте дату и время')
+  })
+
+  it('does not crash while the popover time is cleared before being replaced', async () => {
+    function Example() {
+      const [value, setValue] = useState('2026-08-05T09:00')
+      return <><DateTimePicker label="Начало" value={value} onChange={setValue} /><output>{value}</output></>
+    }
+    render(<Example />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть календарь начала' }))
+    const dialog = screen.getByRole('dialog', { name: 'Выбор даты: Начало' })
+    const timeInput = screen.getByLabelText('Время')
+
+    fireEvent.focus(timeInput)
+    fireEvent.change(timeInput, { target: { value: '' } })
+    expect(dialog).toBeInTheDocument()
+    expect(timeInput).toHaveValue('')
+    expect(screen.getByText('2026-08-05T09:00', { selector: 'output' })).toBeInTheDocument()
+    fireEvent.blur(timeInput)
+    expect(timeInput).toHaveValue('09:00')
+
+    fireEvent.change(timeInput, { target: { value: '14:35' } })
+    expect(screen.getByText('2026-08-05T14:35', { selector: 'output' })).toBeInTheDocument()
   })
 })
