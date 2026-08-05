@@ -95,6 +95,18 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
           <CheckCircle2 size={17} /> {showCompleted ? 'Скрыть завершённые' : 'Показать завершённые'}
         </button>
         {showCompleted && completedCount > 0 && <button className="button button--ghost" onClick={archiveCompletedTasks}><Archive size={17} /> Архивировать</button>}
+        <SelectMenu<InboxSort>
+          className="inbox-sort"
+          label="Сортировка входящих"
+          value={state.settings.inboxSort}
+          onChange={(inboxSort) => updateSettings({ inboxSort })}
+          options={[
+            { value: 'created-desc', label: 'Сначала новые' },
+            { value: 'deadline-asc', label: 'По ближайшему дедлайну' },
+            { value: 'importance-desc', label: 'Сначала важные' },
+            { value: 'title-asc', label: 'По названию' },
+          ]}
+        />
       </section>
 
       {filtersOpen && (
@@ -166,18 +178,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         <NavLink className="button button--ghost inbox-calendar-link" to="/calendar">
           <CalendarDays size={16} /> Планировать в календаре
         </NavLink>
-        <SelectMenu<InboxSort>
-          className="inbox-sort"
-          label="Сортировка входящих"
-          value={state.settings.inboxSort}
-          onChange={(inboxSort) => updateSettings({ inboxSort })}
-          options={[
-            { value: 'created-desc', label: 'Сначала новые' },
-            { value: 'deadline-asc', label: 'По ближайшему дедлайну' },
-            { value: 'importance-desc', label: 'Сначала важные' },
-            { value: 'title-asc', label: 'По названию' },
-          ]}
-        />
       </section>
 
       <section className={`task-list task-list--${view}`} aria-live="polite">
