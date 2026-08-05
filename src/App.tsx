@@ -108,7 +108,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       >
         <div className="brand">
           <span className="brand__mark"><Sparkles size={20} /></span>
-          <span><strong>Focus Flow</strong><small>пространство ясности</small></span>
+          <span><strong>Focus Flow</strong></span>
           <button ref={closeRef} className="icon-button sidebar__close" onClick={onClose} aria-label="Закрыть меню"><X size={20} /></button>
         </div>
         <nav className="main-nav" aria-label="Основная навигация">
