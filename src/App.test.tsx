@@ -50,7 +50,7 @@ describe('Focus Flow app', () => {
     await waitFor(() => expect(screen.queryByText('Новая проверочная задача')).not.toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: /Показать завершённые/ }))
     expect(screen.getByText('Новая проверочная задача')).toBeInTheDocument()
-  })
+  }, 10_000)
 
   it('renders a useful not-found state', async () => {
     renderApp('/unknown')

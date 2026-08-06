@@ -17,15 +17,9 @@ export const googleDriveDescriptor: SyncProviderDescriptor = {
   description: 'Скрытая папка приложения в вашем Google Drive',
   connection: 'interactive',
   consistency: 'best-effort',
-  privacyNote: 'Используется скрытая папка приложения и минимальный доступ drive.appdata.',
-  configFields: [{
-    key: 'clientId',
-    label: 'Google OAuth Client ID',
-    persistence: 'public',
-    description: 'Публичный Client ID сохраняется только на этом устройстве. Access token хранится только в памяти.',
-    placeholder: 'Можно задать через VITE_GOOGLE_CLIENT_ID',
-    required: true,
-  }],
+  privacyNote: 'Focus Flow откроет защищённое окно Google и получит доступ только к своей скрытой папке в Google Drive. Пароль и остальные файлы недоступны приложению.',
+  connectLabel: 'Войти через Google',
+  resumeLabel: 'Продолжить с Google',
   capabilities: { download: true, upload: true },
 }
 
@@ -158,11 +152,16 @@ export class GoogleDriveAdapter implements SyncAdapter {
   async upload(payload: unknown, options: UploadOptions = {}): Promise<RemoteHead> {
     const file = await this.findDataFile()
     if (!file) {
-      if (options.expectedRevision) throw new SyncProviderError('conflict', 'Копия Google Drive была удалена на другом устройстве')
+      if (typeof options.expectedRevision === 'string') {
+        throw new SyncProviderError('conflict', 'Копия Google Drive была удалена на другом устройстве')
+      }
       return this.create(payload)
     }
+    if (options.expectedRevision === null) {
+      throw new SyncProviderError('conflict', 'Копия Google Drive уже создана на другом устройстве')
+    }
     const current = toRemoteHead(file)
-    if (options.expectedRevision && current.revision !== options.expectedRevision) {
+    if (typeof options.expectedRevision === 'string' && current.revision !== options.expectedRevision) {
       throw new SyncProviderError('conflict', 'Копия Google Drive изменилась на другом устройстве')
     }
     return this.update(file, payload)

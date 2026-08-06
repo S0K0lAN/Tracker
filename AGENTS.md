@@ -42,6 +42,7 @@ Focus Flow — персональный local-first таск-трекер для
   встроенные/пользовательский фон и синхронизация;
 - schema v3, миграция schema v2 и backup/recovery localStorage;
 - localStorage-адаптер с import-backup/restore;
+- переносимый JSON-export/import с preview, ограничением размера и отменой через import-backup;
 - OAuth Google Identity Services, скачивание/загрузка Drive, ручная и автоматическая синхронизация;
 - универсальный реестр sync provider runtime с device-local конфигурацией;
 - глубокая проверка snapshot, quarantine и безопасные URL вложений;

@@ -23,6 +23,33 @@ describe('LocalStorageAdapter remote import safety', () => {
     expect(JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!).tasks[0].title).toBe('Локальная версия')
   })
 
+  it('leaves the primary and prior rollback copy intact when an imported snapshot cannot be saved', async () => {
+    const adapter = new LocalStorageAdapter()
+    const local = createSeedState()
+    const priorRollback = createSeedState()
+    const imported = createSeedState()
+    local.tasks[0].title = 'Текущая версия'
+    priorRollback.tasks[0].title = 'Прежняя rollback-копия'
+    imported.tasks[0].title = 'Новый импорт'
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(local))
+    localStorage.setItem(IMPORT_BACKUP_KEY, JSON.stringify(priorRollback))
+    const originalPrimary = localStorage.getItem(STORAGE_KEY)
+    const originalRollback = localStorage.getItem(IMPORT_BACKUP_KEY)
+    const originalSetItem = Storage.prototype.setItem
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === STORAGE_KEY && value.includes('Новый импорт')) {
+        throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      }
+      return originalSetItem.call(this, key, value)
+    })
+
+    await expect(adapter.replaceWithBackup(imported)).rejects.toThrow('Quota exceeded')
+    setItem.mockRestore()
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(originalPrimary)
+    expect(localStorage.getItem(IMPORT_BACKUP_KEY)).toBe(originalRollback)
+  })
+
   it('restores the pre-import copy and keeps the replaced state available for undo', async () => {
     const adapter = new LocalStorageAdapter()
     const local = createSeedState()
@@ -134,6 +161,33 @@ describe('LocalStorageAdapter remote import safety', () => {
 
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('После импорта')
     expect(JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!).tasks[0].title).toBe('До импорта')
+  })
+
+  it('does not change the primary when the rollback swap fails on an auxiliary copy', async () => {
+    const adapter = new LocalStorageAdapter()
+    const beforeImport = createSeedState()
+    const afterImport = createSeedState()
+    beforeImport.tasks[0].title = 'До импорта'
+    afterImport.tasks[0].title = 'После импорта'
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(beforeImport))
+    await adapter.replaceWithBackup(afterImport)
+    const primaryBeforeRestore = localStorage.getItem(STORAGE_KEY)
+    const backupBeforeRestore = localStorage.getItem(BACKUP_KEY)
+    const importBeforeRestore = localStorage.getItem(IMPORT_BACKUP_KEY)
+    const originalSetItem = Storage.prototype.setItem
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === IMPORT_BACKUP_KEY && value.includes('После импорта')) {
+        throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      }
+      return originalSetItem.call(this, key, value)
+    })
+
+    await expect(adapter.restoreImportBackup()).rejects.toThrow('Quota exceeded')
+    setItem.mockRestore()
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(primaryBeforeRestore)
+    expect(localStorage.getItem(BACKUP_KEY)).toBe(backupBeforeRestore)
+    expect(localStorage.getItem(IMPORT_BACKUP_KEY)).toBe(importBeforeRestore)
   })
 
   it('clears primary and both backup snapshots', async () => {

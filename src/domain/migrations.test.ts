@@ -59,7 +59,10 @@ describe('state migrations for simplified navigation and habit icons', () => {
     const persisted = createSeedState()
     persisted.settings.syncProvider = 'google-drive'
     persisted.settings.syncProviderConfigs = {
-      'google-drive': { clientId: 'public-client.apps.googleusercontent.com' },
+      'google-drive': {
+        clientId: 'public-client.apps.googleusercontent.com',
+        futureOption: 'preserve-me',
+      },
     }
     persisted.settings.autoSync = true
     persisted.sync = {
@@ -75,7 +78,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     const migrated = normalizeAppState(persisted)
 
     expect(migrated.settings.syncProvider).toBe('google-drive')
-    expect(migrated.settings.syncProviderConfigs['google-drive'].clientId).toBe('public-client.apps.googleusercontent.com')
+    expect(migrated.settings.syncProviderConfigs['google-drive']).toEqual({ futureOption: 'preserve-me' })
     expect(migrated.settings.autoSync).toBe(true)
     expect(migrated.sync).toMatchObject({
       status: 'success',
@@ -106,7 +109,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     })
   })
 
-  it('moves the legacy Google Client ID into the provider configuration bag', () => {
+  it('removes legacy Google Client IDs because OAuth is configured by the build', () => {
     const persisted = createSeedState() as ReturnType<typeof createSeedState> & {
       settings: ReturnType<typeof createSeedState>['settings'] & { googleDriveClientId?: string }
     }
@@ -114,9 +117,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
 
     const migrated = normalizeAppState(persisted)
 
-    expect(migrated.settings.syncProviderConfigs['google-drive']).toEqual({
-      clientId: 'legacy.apps.googleusercontent.com',
-    })
+    expect(migrated.settings.syncProviderConfigs['google-drive']).toBeUndefined()
     expect(migrated.settings).not.toHaveProperty('googleDriveClientId')
   })
 

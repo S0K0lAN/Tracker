@@ -110,7 +110,8 @@ function defaultLoadScript(source: string): Promise<void> {
 }
 
 function oauthErrorCode(reason?: string): AuthorizationError['code'] {
-  if (reason === 'access_denied' || reason === 'popup_closed' || reason === 'user_cancel') {
+  if (reason === 'access_denied') return 'access-denied'
+  if (reason === 'popup_closed' || reason === 'user_cancel') {
     return 'cancel'
   }
   if (
@@ -128,9 +129,11 @@ function oauthError(reason: string | undefined, message: string | undefined, cau
   const code = oauthErrorCode(reason)
   const fallback = code === 'cancel'
     ? 'Google authorization was cancelled'
-    : code === 'config'
-      ? 'Google OAuth is not configured correctly'
-      : 'Google authorization is unavailable'
+    : code === 'access-denied'
+      ? 'Google denied access to this application'
+      : code === 'config'
+        ? 'Google OAuth is not configured correctly'
+        : 'Google authorization is unavailable'
   return new AuthorizationError(code, message || fallback, cause)
 }
 

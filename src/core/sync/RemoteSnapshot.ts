@@ -27,12 +27,12 @@ export interface SnapshotSummary {
   recentTaskTitles: string[]
 }
 
-export function createRemoteEnvelope(state: AppState): RemoteSnapshotEnvelope {
+export function createRemoteEnvelope(state: AppState, generatedAt = new Date().toISOString()): RemoteSnapshotEnvelope {
   return {
     format: REMOTE_SNAPSHOT_FORMAT,
     formatVersion: REMOTE_SNAPSHOT_FORMAT_VERSION,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     data: getSyncableData(state),
   }
 }

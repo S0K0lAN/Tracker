@@ -1,6 +1,7 @@
 import type { AppState, Habit, Project, SavedFilter, Task, TaskStatus } from './models'
 import { createSeedState } from './seed'
 import { attachmentDataUrlMimeType, MAX_ATTACHMENT_BYTES, safeAttachmentDataUrl } from './attachments'
+import { safeCustomBackgroundDataUrl } from './backgrounds'
 
 export const CURRENT_SCHEMA_VERSION = 3
 
@@ -163,6 +164,11 @@ function assertSettingsShape(
   numberField(settings, 'defaultUrgencyThresholdHours', strict, path, (value) => value >= 0)
   numberField(settings, 'backgroundDim', strict, path, (value) => value >= 0 && value <= 100)
   stringField(settings, 'customBackgroundDataUrl', false, path)
+  if ('customBackgroundDataUrl' in settings
+    && settings.customBackgroundDataUrl !== undefined
+    && !safeCustomBackgroundDataUrl(settings.customBackgroundDataUrl)) {
+    throw invalidField(`${path}.customBackgroundDataUrl`)
+  }
 
   booleanField(settings, 'autoSync', requireLocal && strict, path)
   stringField(settings, 'syncProvider', requireLocal && strict, path)
@@ -273,8 +279,12 @@ export function normalizeAppState(input: unknown): AppState {
   const rawSettings = raw.settings as (Partial<AppState['settings']> & { inboxView?: string; googleDriveClientId?: string }) | undefined
   const providerId = typeof rawSettings?.syncProvider === 'string' ? rawSettings.syncProvider : seed.settings.syncProvider
   const syncProviderConfigs = normalizeProviderConfigs(rawSettings?.syncProviderConfigs)
-  if (rawSettings?.googleDriveClientId?.trim() && !syncProviderConfigs['google-drive']?.clientId) {
-    syncProviderConfigs['google-drive'] = { clientId: rawSettings.googleDriveClientId.trim() }
+  const googleDriveConfig = syncProviderConfigs['google-drive']
+  if (googleDriveConfig?.clientId !== undefined) {
+    const remainingConfig = { ...googleDriveConfig }
+    delete remainingConfig.clientId
+    if (Object.keys(remainingConfig).length) syncProviderConfigs['google-drive'] = remainingConfig
+    else delete syncProviderConfigs['google-drive']
   }
   const rawSync = raw.sync as Partial<AppState['sync']> | undefined
   const allowedSyncStatuses: AppState['sync']['status'][] = ['idle', 'connecting', 'syncing', 'success', 'error', 'conflict']

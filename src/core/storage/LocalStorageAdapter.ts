@@ -64,29 +64,27 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async replaceWithBackup(state: AppState): Promise<void> {
     const previous = localStorage.getItem(STORAGE_KEY)
-    if (previous) {
+    if (!previous) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+      return
+    }
+    const previousBackup = localStorage.getItem(BACKUP_KEY)
+    const previousImportBackup = localStorage.getItem(IMPORT_BACKUP_KEY)
+    try {
       localStorage.setItem(BACKUP_KEY, previous)
       localStorage.setItem(IMPORT_BACKUP_KEY, previous)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    } catch (error) {
+      restoreStorageValue(BACKUP_KEY, previousBackup)
+      restoreStorageValue(IMPORT_BACKUP_KEY, previousImportBackup)
+      throw error
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }
 
   async restoreImportBackup(): Promise<AppState | null> {
     const restored = await this.loadImportBackup()
     if (!restored) return null
-    const current = localStorage.getItem(STORAGE_KEY)
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(restored))
-      if (current) {
-        localStorage.setItem(BACKUP_KEY, current)
-        localStorage.setItem(IMPORT_BACKUP_KEY, current)
-      }
-    } catch (error) {
-      if (current) {
-        try { localStorage.setItem(STORAGE_KEY, current) } catch { /* Keep the untouched import backup as the final recovery source. */ }
-      }
-      throw error
-    }
+    await this.replaceWithBackup(restored)
     return restored
   }
 
@@ -97,5 +95,14 @@ export class LocalStorageAdapter implements StorageAdapter {
     localStorage.removeItem(CORRUPT_KEY)
     localStorage.removeItem(BACKUP_CORRUPT_KEY)
     localStorage.removeItem(IMPORT_CORRUPT_KEY)
+  }
+}
+
+function restoreStorageValue(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // The primary snapshot is still untouched and remains the authoritative recovery source.
   }
 }

@@ -5,7 +5,6 @@ import { GoogleDriveAdapter, googleDriveDescriptor } from './GoogleDriveAdapter'
 import {
   SyncProviderError,
   type SyncAdapter,
-  type SyncProviderConfig,
   type SyncProviderDefinition,
   type SyncProviderRuntime,
 } from './SyncAdapter'
@@ -23,17 +22,22 @@ class ImplicitSyncRuntime implements SyncProviderRuntime {
 
 class GoogleDriveSyncRuntime implements SyncProviderRuntime {
   private authorization?: AuthorizationProvider
-  private adapter?: { accessToken: string; value: GoogleDriveAdapter }
+  private adapter?: { accessToken: string; value: SyncAdapter }
 
   constructor(
     private readonly clientId: string,
     private readonly createAuthorization: (clientId: string) => AuthorizationProvider,
-    private readonly createAdapter: (accessToken: string) => GoogleDriveAdapter,
+    private readonly createAdapter: (accessToken: string) => SyncAdapter,
   ) {}
 
   async acquireAdapter({ interactive, resume }: { interactive: boolean; resume: boolean }): Promise<SyncAdapter> {
     const clientId = this.clientId.trim()
-    if (!clientId) throw new SyncProviderError('unavailable', 'Укажите Google OAuth Client ID')
+    if (!clientId) {
+      throw new SyncProviderError(
+        'unavailable',
+        'Вход через Google не настроен в этой сборке Focus Flow. Обратитесь к разработчику приложения.',
+      )
+    }
     this.authorization ??= this.createAuthorization(clientId)
     let session = this.authorization.getSession()
     if (!session) {
@@ -60,7 +64,7 @@ function configuredGoogleClientId() {
 export interface GoogleDriveProviderOptions {
   defaultClientId?: string
   createAuthorization?: (clientId: string) => AuthorizationProvider
-  createAdapter?: (accessToken: string) => GoogleDriveAdapter
+  createAdapter?: (accessToken: string) => SyncAdapter
 }
 
 export function createGoogleDriveProviderDefinition(
@@ -68,14 +72,9 @@ export function createGoogleDriveProviderDefinition(
 ): SyncProviderDefinition {
   const defaultClientId = options.defaultClientId ?? configuredGoogleClientId()
   return {
-    descriptor: {
-      ...googleDriveDescriptor,
-      configFields: googleDriveDescriptor.configFields?.map((field) => (
-        field.key === 'clientId' ? { ...field, defaultValue: defaultClientId || undefined } : field
-      )),
-    },
-    createRuntime: (config: SyncProviderConfig) => new GoogleDriveSyncRuntime(
-      config.clientId || defaultClientId,
+    descriptor: googleDriveDescriptor,
+    createRuntime: () => new GoogleDriveSyncRuntime(
+      defaultClientId.trim(),
       options.createAuthorization ?? ((clientId) => new GoogleIdentityAuthorization(clientId)),
       options.createAdapter ?? ((accessToken) => new GoogleDriveAdapter(accessToken)),
     ),

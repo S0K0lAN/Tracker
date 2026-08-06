@@ -20,6 +20,8 @@ export interface SyncProviderDescriptor {
   connection: SyncConnectionMode
   consistency: SyncConsistency
   privacyNote?: string
+  connectLabel?: string
+  resumeLabel?: string
   configFields?: readonly SyncProviderConfigField[]
   capabilities: {
     download: boolean
@@ -40,7 +42,7 @@ export interface RemoteSnapshot {
 }
 
 export interface UploadOptions {
-  expectedRevision?: string
+  expectedRevision?: string | null
 }
 
 export interface SyncAdapter {

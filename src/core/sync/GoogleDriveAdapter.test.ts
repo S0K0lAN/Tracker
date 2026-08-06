@@ -52,6 +52,26 @@ describe('GoogleDriveAdapter', () => {
     expect(String(fetcher.mock.calls[1][1]?.body)).toContain('appDataFolder')
   })
 
+  it('refuses to create when a remote snapshot appeared after the absence check', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ files: [remoteFile] }), { status: 200 }))
+    const adapter = new GoogleDriveAdapter('token', fetcher)
+
+    await expect(adapter.upload({ data: 'local' }, { expectedRevision: null })).rejects.toMatchObject({
+      code: 'conflict',
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses to update when the expected remote snapshot no longer exists', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ files: [] }), { status: 200 }))
+    const adapter = new GoogleDriveAdapter('token', fetcher)
+
+    await expect(adapter.upload({ data: 'local' }, { expectedRevision: '7' })).rejects.toMatchObject({
+      code: 'conflict',
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
   it('updates an existing snapshot only when the expected revision still matches', async () => {
     const updated = { ...remoteFile, version: '8', modifiedTime: '2026-08-03T10:01:00.000Z' }
     const fetcher = vi

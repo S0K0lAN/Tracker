@@ -391,6 +391,8 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
   const secretToken = 'e2e-secret-google-token'
   let remoteVersion = 7
   let uploadedBody = ''
+  let uploadCount = 0
+  let driveReadCount = 0
   const remoteState = await page.evaluate((storageKey) => {
     const state = JSON.parse(localStorage.getItem(storageKey)!)
     const template = state.tasks.find((task: { status: string }) => task.status === 'active')
@@ -409,8 +411,23 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
       value: {
         accounts: {
           oauth2: {
-            initTokenClient: (configuration: { callback(response: { access_token: string; expires_in: number }): void }) => ({
-              requestAccessToken: () => window.setTimeout(() => configuration.callback({ access_token: token, expires_in: 3600 }), 0),
+            initTokenClient: (configuration: {
+              client_id: string
+              scope: string
+              callback(response: { access_token: string; expires_in: number }): void
+            }) => ({
+              requestAccessToken: (options?: { prompt?: string }) => {
+                const testWindow = window as Window & {
+                  __e2eGoogleOAuthRequests?: Array<{ clientId: string; scope: string; prompt: string }>
+                }
+                testWindow.__e2eGoogleOAuthRequests ??= []
+                testWindow.__e2eGoogleOAuthRequests.push({
+                  clientId: configuration.client_id,
+                  scope: configuration.scope,
+                  prompt: options?.prompt ?? '',
+                })
+                window.setTimeout(() => configuration.callback({ access_token: token, expires_in: 3600 }), 0)
+              },
             }),
             revoke: (_accessToken: string, callback?: () => void) => callback?.(),
           },
@@ -423,6 +440,7 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
     const request = route.request()
     const url = request.url()
     if (url.includes('/drive/v3/files?') && request.method() === 'GET') {
+      driveReadCount += 1
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -439,11 +457,13 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
       return
     }
     if (url.includes('/drive/v3/files/remote-id?alt=media') && request.method() === 'GET') {
+      driveReadCount += 1
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(remoteState) })
       return
     }
     if (url.includes('/upload/drive/v3/files/remote-id') && request.method() === 'PATCH') {
       uploadedBody = request.postData() ?? ''
+      uploadCount += 1
       remoteVersion += 1
       await route.fulfill({
         status: 200,
@@ -460,27 +480,64 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
     await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
   })
 
+  await page.evaluate((storageKey) => {
+    const state = JSON.parse(localStorage.getItem(storageKey)!)
+    state.settings.syncProviderConfigs['google-drive'] = {
+      clientId: 'legacy-client.apps.googleusercontent.com',
+    }
+    localStorage.setItem(storageKey, JSON.stringify(state))
+  }, STORAGE_KEY)
+
   await page.reload()
   await page.goto('/settings')
   await page.getByLabel('Провайдер синхронизации').selectOption('google-drive')
-  await page.getByLabel('Google OAuth Client ID').fill('e2e-client.apps.googleusercontent.com')
-  await page.getByRole('button', { name: 'Подключить Google Drive' }).click()
+  await expect(page.getByLabel('Google OAuth Client ID')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Войти через Google' }).click()
+
+  const oauthRequest = await page.evaluate(() => {
+    const testWindow = window as Window & {
+      __e2eGoogleOAuthRequests?: Array<{ clientId: string; scope: string; prompt: string }>
+    }
+    return testWindow.__e2eGoogleOAuthRequests?.at(-1)
+  })
+  expect(oauthRequest).toMatchObject({
+    scope: 'https://www.googleapis.com/auth/drive.appdata',
+    prompt: 'select_account',
+  })
+  expect(oauthRequest?.clientId).not.toBe('legacy-client.apps.googleusercontent.com')
+  expect(oauthRequest?.clientId).toMatch(/\.apps\.googleusercontent\.com$/)
+  await expect(page.getByText(/Выберите действие с данными/)).toBeVisible()
+  expect(driveReadCount).toBe(0)
+  await expect(page.getByRole('button', { name: 'Синхронизировать данные с Google Drive' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Отправить локальные данные в Google Drive' })).toBeEnabled()
+
+  await page.getByRole('button', { name: 'Получить данные из Google Drive' }).click()
 
   const conflict = page.getByRole('alert', { name: 'Конфликт синхронизации' })
   await expect(conflict).toBeVisible()
   await expect(conflict.getByText(/Ничего не будет перезаписано/)).toBeVisible()
-  await conflict.getByRole('button', { name: 'Загрузить из хранилища' }).click()
+  await conflict.getByRole('button', { name: 'Получить копию из хранилища' }).click()
   await expect(page.getByText(/Загружена копия из хранилища/)).toBeVisible()
-  await page.getByRole('checkbox', { name: /Автосинхронизация/ }).check()
 
   await page.getByRole('link', { name: 'Входящие' }).click()
   await expect(page.getByText('Загружено из Google Drive', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Создать новую задачу' }).click()
+  await page.getByLabel('Название').fill('Ручная отправка E2E')
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
+  await page.getByRole('link', { name: 'Настройки' }).click()
+  await page.getByRole('button', { name: 'Отправить локальные данные в Google Drive' }).click()
+  await expect.poll(() => uploadCount).toBe(1)
+  expect(uploadedBody).toContain('Ручная отправка E2E')
+
+  await page.getByRole('checkbox', { name: /Автосинхронизация/ }).check()
+  await page.getByRole('link', { name: 'Входящие' }).click()
+  await page.getByRole('button', { name: 'Создать новую задачу' }).click()
   await page.getByLabel('Название').fill('Автосинхронизация E2E')
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
-  await expect.poll(() => uploadedBody).not.toBe('')
+  await expect.poll(() => uploadCount).toBe(2)
 
   expect(uploadedBody).toContain('Автосинхронизация E2E')
+  expect(uploadedBody).toContain('Ручная отправка E2E')
   expect(uploadedBody).not.toContain(secretToken)
   expect(uploadedBody).not.toContain('syncProviderConfigs')
   expect(uploadedBody).not.toContain('syncProvider')
@@ -489,11 +546,12 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
     .map((key) => `${key}:${localStorage.getItem(key)}`)
     .join('\n'))
   expect(persistedStorage).not.toContain(secretToken)
+  expect(persistedStorage).not.toContain('legacy-client.apps.googleusercontent.com')
   await expect.poll(() => page.evaluate(() => Boolean(localStorage.getItem('focus-flow.state.v1.import-backup')))).toBe(true)
 
   await page.reload()
   await page.goto('/settings')
-  await expect(page.getByRole('button', { name: 'Продолжить с Google Drive' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Продолжить с Google' })).toBeVisible()
   await page.getByRole('button', { name: 'Восстановить', exact: true }).click()
   await page.getByRole('link', { name: 'Входящие' }).click()
   await expect(page.getByText('Загружено из Google Drive', { exact: true })).toHaveCount(0)
@@ -875,6 +933,73 @@ test('a habit keeps its icon and description and toggles independently after rel
   await expect(habit.getByText('Обновлённое описание привычки')).toBeVisible()
   await expect(habit.getByRole('button', { name: /Отменить E2E вечернее чтение/ }).last()).toBeVisible()
   await expect(page.getByRole('article', { name: 'Привычка Пить воду' }).getByRole('button', { name: /Отметить Пить воду/ }).last()).toBeVisible()
+})
+
+test('portable JSON backup previews, imports, persists, and restores the previous local copy', async ({ page }) => {
+  await page.goto('/settings')
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Скачать JSON' }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toMatch(/^focus-flow-backup-.*\.json$/)
+  const stream = await download.createReadStream()
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk))
+  const backupBuffer = Buffer.concat(chunks)
+  const payload = JSON.parse(backupBuffer.toString('utf8'))
+  expect(payload.format).toBe('focus-flow')
+  expect(payload.data.tasks.length).toBeGreaterThan(0)
+  expect(payload.data).not.toHaveProperty('sync')
+  expect(payload.data.settings).not.toHaveProperty('syncProviderConfigs')
+  const downloadedTitle = payload.data.tasks[0].title
+  const recentDownloadedTitle = [...payload.data.tasks]
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0].title
+
+  await page.evaluate((storageKey) => {
+    const state = JSON.parse(localStorage.getItem(storageKey)!)
+    state.tasks[0].title = 'Локальная версия перед ручным импортом'
+    state.settings.theme = 'dark'
+    state.settings.fontScale = 120
+    localStorage.setItem(storageKey, JSON.stringify(state))
+  }, STORAGE_KEY)
+  await page.reload()
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.getByLabel('Файл резервной копии').setInputFiles({
+    name: 'focus-flow-roundtrip.json',
+    mimeType: 'application/json',
+    buffer: backupBuffer,
+  })
+  const dialog = page.getByRole('dialog', { name: 'Импортировать резервную копию?' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText(`${payload.data.tasks.length} задач`)
+  await expect(dialog).toContainText(recentDownloadedTitle)
+  expect(await page.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)!).tasks[0].title, STORAGE_KEY))
+    .toBe('Локальная версия перед ручным импортом')
+  const dialogBox = await dialog.boundingBox()
+  expect(dialogBox).not.toBeNull()
+  expect(dialogBox!.x).toBeGreaterThanOrEqual(0)
+  expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations).toEqual([])
+
+  await dialog.getByRole('button', { name: 'Импортировать и заменить' }).click()
+  await expect(page.getByText('Резервная копия импортирована. Предыдущие локальные данные сохранены', { exact: true })).toBeVisible()
+  await expect.poll(
+    () => page.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)!).tasks[0].title, STORAGE_KEY),
+  ).toBe(downloadedTitle)
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('focus-flow.state.v1.import-backup')!).tasks[0].title))
+    .toBe('Локальная версия перед ручным импортом')
+
+  await page.reload()
+  await expect(page.getByText('Предыдущая локальная копия')).toBeVisible()
+  await page.getByRole('button', { name: 'Восстановить' }).click()
+  await expect.poll(
+    () => page.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)!).tasks[0].title, STORAGE_KEY),
+  ).toBe('Локальная версия перед ручным импортом')
+  await page.reload()
+  expect(await page.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)!).tasks[0].title, STORAGE_KEY))
+    .toBe('Локальная версия перед ручным импортом')
 })
 
 test('new pages keep text contrast and avoid horizontal overflow in both themes', async ({ page }) => {

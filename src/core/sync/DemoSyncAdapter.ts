@@ -25,12 +25,16 @@ export class DemoSyncAdapter implements SyncAdapter {
   }
 
   async upload(payload: unknown, options: UploadOptions = {}): Promise<RemoteHead> {
-    if (options.expectedRevision && (
-      this.payload === undefined || options.expectedRevision !== String(this.revision)
-    )) {
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    const remoteExists = this.payload !== undefined
+    const expectsRemoteToBeAbsent = options.expectedRevision === null
+    const expectsExactRevision = typeof options.expectedRevision === 'string'
+    if (
+      (expectsRemoteToBeAbsent && remoteExists)
+      || (expectsExactRevision && (!remoteExists || options.expectedRevision !== String(this.revision)))
+    ) {
       throw new SyncProviderError('conflict', 'Демо-копия изменилась')
     }
-    await new Promise((resolve) => setTimeout(resolve, 120))
     this.payload = structuredClone(payload)
     this.revision += 1
     return this.createHead()

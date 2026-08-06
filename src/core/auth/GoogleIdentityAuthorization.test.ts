@@ -135,6 +135,22 @@ describe('GoogleIdentityAuthorization', () => {
     })
   })
 
+  it('reports Google access denial separately from a user-cancelled popup', async () => {
+    const google = installGoogle()
+    const authorization = new GoogleIdentityAuthorization('client-id', {
+      loadScript: async () => undefined,
+    })
+
+    const connecting = authorization.connect()
+    await vi.waitFor(() => expect(google.requestAccessToken).toHaveBeenCalled())
+    google.config()?.callback({ error: 'access_denied' })
+
+    await expect(connecting).rejects.toMatchObject({
+      name: 'AuthorizationError',
+      code: 'access-denied',
+    })
+  })
+
   it('reports missing configuration and GIS load failures with typed errors', async () => {
     const loadScript = vi.fn().mockRejectedValue(new Error('network error'))
 

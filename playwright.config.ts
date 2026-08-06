@@ -16,5 +16,8 @@ export default defineConfig({
     command: 'npm run dev',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: true,
+    env: {
+      VITE_GOOGLE_CLIENT_ID: 'e2e-build-client.apps.googleusercontent.com',
+    },
   },
 })

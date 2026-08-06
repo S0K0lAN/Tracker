@@ -61,16 +61,17 @@ Done браузерного MVP. Они честно вынесены в отд�
 | BG-01 | Встроенные фоны | **Готово** | Presets, «без фона», dim и global application реализованы; E2E проверяет preset/reload, все страницы — light/dark desktop/mobile contrast и overflow. |
 | BG-02 | Собственный фон | **Готово** | MIME/size validation, upload, global application и reload покрыты E2E в честно документированных browser/localStorage лимитах. |
 | TYPE-01 | Настройка шрифта всего приложения | **Готово** | Три локальных системных стека и масштаб 90–120% применяются CSS variables; schema v2 мигрирует в v3, component/E2E проверяют persistence и отсутствие mobile overflow при 120%. |
+| DATA-01 | Скачать и импортировать переносимую JSON-копию | **Готово** | Экспорт исключает OAuth/device-local sync config; импорт до изменения данных проверяет 10 МБ, схему, вложения и фон, показывает preview, требует подтверждение, сохраняется после reload и оставляет восстанавливаемую предыдущую копию. |
 | VOICE-01 | Надиктовывание задачи | **Готово** | Web Speech ru-RU и ручной fallback интегрированы; fallback остаётся рабочим при отсутствии API и проверен E2E. |
 | VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет default `startAt`, явные «до»/«дедлайн»/«срок», weekday, time, importance, tags и project; component/E2E — preview → взаимоисключающее применение даты → saved task. |
 | DES-01 | Лаконичный дизайн Todoist/Singularity | **Готово** | Новые страницы используют общие tokens и progressive disclosure; пройдены independent visual QA, automated contrast/overflow, mobile action и menu clipping regressions. |
 | QA-01 | Независимое покрытие новых функций | **Готово** | Test-only агент добавил unit/component/E2E с наблюдаемыми эффектами, browser-error collection и theme/mobile loops; полный gate зелёный. |
 | DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v3, миграции v2, ограничениям и тестам. |
-| SYNC-01 | Подключить Google Drive через OAuth без сохранения token | **Готово** | GIS runtime использует только `drive.appdata`; unit и mock-browser E2E проверяют connect, повторный вход после reload/401 и отсутствие token в localStorage/remote envelope. Live smoke честно вынесен за scope без credentials. |
-| SYNC-02 | Загружать существующие данные и не перезаписывать конфликт молча | **Готово** | ID/revision/base hash определяют create/upload/download/conflict; UI сравнивает копии, импорт создаёт восстанавливаемый backup; race-тесты покрывают локальную правку во время download/upload и reset. |
+| SYNC-01 | Подключить Google Drive через OAuth без сохранения token | **Готово** | GIS runtime использует только `drive.appdata`; подключение лишь авторизует и не переносит данные. Unit и mock-browser E2E проверяют connect, повторный вход после reload/401 и отсутствие token в localStorage/remote envelope. Live smoke честно вынесен за scope без credentials. |
+| SYNC-02 | Разделить получение, отправку и согласование данных | **Готово** | «Получить» не пишет remote, при отсутствии файла ничего не меняет, а применение отличающейся копии требует preview/confirm и создаёт rollback backup. «Отправить» не применяет remote локально, использует revision precondition и требует confirm при различии. Ручное «Синхронизировать» и авто-sync используют reconcile; component/unit и mock-browser E2E проверяют наблюдаемые эффекты каждого направления и конфликтов. |
 | SYNC-03 | Задел под новые хранилища | **Готово** | Второй configurable interactive provider полностью подключается через registry descriptor/runtime; component-тест проверяет defaults, required public config, connect и upload без Google-specific ветки. Secret config registry отклоняет. |
 
-Итого по явному scope браузерного MVP: **31 готовый**, **0 частично
+Итого по явному scope браузерного MVP: **32 готовых**, **0 частично
 готовых**, **0 отсутствующих** критериев.
 
 ## Тестовая трассировка
@@ -100,9 +101,10 @@ Done браузерного MVP. Они честно вынесены в отд�
 - `src/core/storage/LocalStorageAdapter.test.ts` и
   `src/components/AttachmentViewer.test.tsx` — quarantine/transactional restore,
   совместимость исторической schema v2 и блокировка executable attachment URL.
-- `src/state/AppContext.sync.test.tsx` — download/upload/reset races и новый
-  runtime после `401`; `SettingsSyncProvider.test.tsx` — второй configurable
-  interactive provider без специальных веток.
+- `src/state/AppContext.sync.test.tsx` — независимые pull/push/reconcile,
+  download/upload/reset races и новый runtime после `401`;
+  `SettingsSyncProvider.test.tsx` — три отдельные операции и второй
+  configurable interactive provider без специальных веток.
 
 ### Browser E2E
 
@@ -121,8 +123,10 @@ Done браузерного MVP. Они честно вынесены в отд�
 11. habit icon/description/completion independence → reload;
 12. light/dark contrast и overflow для `/today`, `/projects`, `/search`,
     `/trash` на desktop/mobile.
-13. Google OAuth → remote conflict → download → auto-upload → reload без
-    сохранения token → восстановление backup до импорта.
+13. Google OAuth без переноса данных при входе → отдельное получение remote с
+    preview/backup → отдельная отправка local с revision guard → reconcile
+    автосинхронизации → reload без сохранения token → восстановление backup до
+    импорта.
 
 `e2e/task-details.spec.ts` отдельно проверяет, что карточка открывает просмотр,
 редактирование остаётся явным, а timer/menu actions меняют DOM и persisted state.

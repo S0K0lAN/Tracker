@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   CheckCircle2,
   CircleAlert,
@@ -22,10 +22,27 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { Toast } from '../components/Toast'
+import { trapTabKey } from '../components/focusTrap'
 import { pluginRegistry } from '../core/plugins/PluginRegistry'
+import {
+  assertPortableBackupFile,
+  createPortableBackup,
+  parsePortableBackup,
+  PortableBackupError,
+} from '../core/storage/PortableBackup'
+import { summarizeSnapshot, type SnapshotSummary } from '../core/sync/RemoteSnapshot'
 import { useApp } from '../state/AppContext'
-import type { AppFontFamily, AppFontScale, BackgroundPreset } from '../domain/models'
+import type { AppFontFamily, AppFontScale, AppState, BackgroundPreset } from '../domain/models'
+import { safeCustomBackgroundDataUrl } from '../domain/backgrounds'
 import './settings-backgrounds.css'
+
+interface PendingBackupImport {
+  fileName: string
+  fileSize: number
+  generatedAt?: string
+  state: AppState
+  summary: SnapshotSummary
+}
 
 export function SettingsPage() {
   const {
@@ -35,12 +52,16 @@ export function SettingsPage() {
     persistState,
     syncProviders,
     syncConflict,
+    activeSyncIntent,
     importBackupAvailable,
     selectSyncProvider,
     connectSyncProvider,
     disconnectSyncProvider,
+    pullFromSyncProvider,
+    pushToSyncProvider,
     syncNow,
     resolveSyncConflict,
+    importLocalBackup,
     restoreImportBackup,
     resetDemo,
   } = useApp()
@@ -48,9 +69,18 @@ export function SettingsPage() {
   const [showPluginDetails, setShowPluginDetails] = useState(false)
   const [confirmLocalOverwrite, setConfirmLocalOverwrite] = useState(false)
   const [backgroundError, setBackgroundError] = useState('')
+  const [backupError, setBackupError] = useState('')
+  const [backupStatus, setBackupStatus] = useState('')
+  const [pendingBackup, setPendingBackup] = useState<PendingBackupImport>()
+  const [importingBackup, setImportingBackup] = useState(false)
+  const [restoringBackup, setRestoringBackup] = useState(false)
   const [appearanceStatus, setAppearanceStatus] = useState<'saved' | 'saving' | 'error'>('saved')
   const appearanceReadyRef = useRef(false)
   const backgroundRef = useRef<HTMLInputElement>(null)
+  const backupInputRef = useRef<HTMLInputElement>(null)
+  const backupImportTriggerRef = useRef<HTMLButtonElement>(null)
+  const backupDialogRef = useRef<HTMLElement>(null)
+  const backupCancelRef = useRef<HTMLButtonElement>(null)
   const plugins = pluginRegistry.list()
   const syncing = state.sync.status === 'syncing' || state.sync.status === 'connecting'
   const selectedProvider = syncProviders.find((provider) => provider.id === state.settings.syncProvider)
@@ -61,16 +91,31 @@ export function SettingsPage() {
     field.required && !fieldValue(field.key, field.defaultValue).trim()
   )) ?? false
   const connected = state.sync.connectionStatus === 'connected'
+  const syncActionsBlocked = syncing
+    || Boolean(syncConflict)
+    || importingBackup
+    || restoringBackup
+    || !selectedProvider
+    || missingRequiredConfig
   const authorizationRequired = state.sync.connectionStatus === 'authorization-required'
+  const connectLabel = authorizationRequired
+    ? selectedProvider?.resumeLabel ?? `Продолжить с ${selectedProvider?.name ?? 'хранилищем'}`
+    : selectedProvider?.connectLabel ?? `Подключить ${selectedProvider?.name ?? 'хранилище'}`
   const statusLabel = state.sync.status === 'conflict'
     ? 'Нужен выбор'
     : syncing
-      ? 'Синхронизация'
+      ? activeSyncIntent === 'pull'
+        ? 'Получение'
+        : activeSyncIntent === 'push'
+          ? 'Отправка'
+          : state.sync.status === 'connecting' ? 'Подключение' : 'Синхронизация'
       : authorizationRequired
         ? 'Нужен вход'
+        : state.sync.status === 'error'
+          ? 'Ошибка'
         : connected
           ? state.sync.status === 'success' ? 'Синхронизировано' : 'Подключено'
-          : state.sync.status === 'error' ? 'Ошибка' : 'Отключено'
+          : 'Отключено'
   const appearanceKey = JSON.stringify({
     theme: state.settings.theme,
     accent: state.settings.accent,
@@ -105,6 +150,14 @@ export function SettingsPage() {
     setConfirmLocalOverwrite(false)
   }, [syncConflict])
 
+  useLayoutEffect(() => {
+    if (!pendingBackup) return
+    backupCancelRef.current?.focus()
+    return () => {
+      requestAnimationFrame(() => backupImportTriggerRef.current?.focus())
+    }
+  }, [pendingBackup])
+
   const readBackground = async (file?: File) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
@@ -115,14 +168,102 @@ export function SettingsPage() {
       setBackgroundError('Фон должен быть меньше 1,5 МБ')
       return
     }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
+    let dataUrl: string
+    try {
+      dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+    } catch {
+      setBackgroundError('Не удалось прочитать изображение')
+      return
+    }
+    if (!safeCustomBackgroundDataUrl(dataUrl)) {
+      setBackgroundError('Не удалось безопасно прочитать изображение')
+      return
+    }
     updateAppearance({ backgroundPreset: 'custom', customBackgroundDataUrl: dataUrl })
     setBackgroundError('')
+  }
+
+  const downloadBackup = () => {
+    try {
+      const backup = createPortableBackup(state)
+      const url = URL.createObjectURL(new Blob([backup.contents], { type: 'application/json;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = backup.fileName
+      document.body.append(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 0)
+      setBackupError('')
+      setBackupStatus('Резервная копия скачана')
+    } catch (error) {
+      setBackupStatus('')
+      setBackupError(error instanceof PortableBackupError
+        ? error.message
+        : 'Не удалось подготовить резервную копию. Локальные данные не изменены')
+    }
+  }
+
+  const previewBackup = async (file?: File) => {
+    if (!file) return
+    setBackupError('')
+    setBackupStatus('')
+    try {
+      assertPortableBackupFile(file)
+      const parsed = parsePortableBackup(await readFileAsText(file))
+      setPendingBackup({
+        fileName: file.name,
+        fileSize: file.size,
+        generatedAt: parsed.generatedAt,
+        state: parsed.state,
+        summary: summarizeSnapshot(parsed.state),
+      })
+    } catch (error) {
+      setPendingBackup(undefined)
+      setBackupError(error instanceof PortableBackupError
+        ? error.message
+        : 'Не удалось прочитать резервную копию. Текущие данные не изменены')
+    }
+  }
+
+  const confirmBackupImport = async () => {
+    if (!pendingBackup) return
+    setImportingBackup(true)
+    setBackupError('')
+    try {
+      await importLocalBackup(pendingBackup.state)
+      setPendingBackup(undefined)
+      setBackupStatus('Резервная копия импортирована. Предыдущие локальные данные сохранены')
+    } catch (error) {
+      setBackupError(error instanceof Error && error.message.startsWith('Дождитесь')
+        ? error.message
+        : 'Не удалось сохранить резервную копию. Текущие данные не изменены')
+    } finally {
+      setImportingBackup(false)
+    }
+  }
+
+  const restorePreviousBackup = async () => {
+    if (restoringBackup) return
+    setRestoringBackup(true)
+    setBackupError('')
+    try {
+      const restored = await restoreImportBackup()
+      if (restored) {
+        setBackupStatus('Предыдущая локальная копия восстановлена')
+        setBackupError('')
+      } else {
+        setBackupStatus('')
+        setBackupError('Не удалось восстановить предыдущую копию. Текущие данные не изменены')
+      }
+    } finally {
+      setRestoringBackup(false)
+    }
   }
 
   return (
@@ -282,16 +423,46 @@ export function SettingsPage() {
               <div><strong>Автосинхронизация</strong><span>Через 1,8 секунды после локальных изменений, пока подключение активно</span></div>
               <input className="switch" type="checkbox" checked={state.settings.autoSync} onChange={(event) => updateSettings({ autoSync: event.target.checked })} />
             </label>
-            <div className="sync-actions">
+            <div className="sync-actions" aria-busy={syncing}>
               {interactiveSelected && !connected ? (
                 <button className="button button--primary" disabled={syncing || missingRequiredConfig} onClick={() => void connectSyncProvider()}>
                   {syncing ? <RefreshCw className="spin" size={17} /> : <Link2 size={17} />}
-                  {syncing ? 'Подключение…' : authorizationRequired ? `Продолжить с ${selectedProvider.name}` : `Подключить ${selectedProvider.name}`}
+                  {syncing ? 'Подключение…' : connectLabel}
                 </button>
               ) : (
-                <button className="button button--primary" disabled={syncing || !selectedProvider || missingRequiredConfig} onClick={() => void syncNow()}>
-                  <RefreshCw className={syncing ? 'spin' : ''} size={17} /> {syncing ? 'Синхронизация…' : 'Проверить и синхронизировать'}
-                </button>
+                <>
+                  <button
+                    className="button button--primary"
+                    disabled={syncActionsBlocked}
+                    onClick={() => void syncNow()}
+                    aria-label={`Синхронизировать данные с ${selectedProvider?.name ?? 'хранилищем'}`}
+                  >
+                    <RefreshCw className={activeSyncIntent === 'reconcile' ? 'spin' : ''} size={17} />
+                    {activeSyncIntent === 'reconcile' ? 'Синхронизация…' : 'Синхронизировать'}
+                  </button>
+                  {selectedProvider?.capabilities.download && (
+                    <button
+                      className="button button--ghost"
+                      disabled={syncActionsBlocked}
+                      onClick={() => void pullFromSyncProvider()}
+                      aria-label={`Получить данные из ${selectedProvider.name}`}
+                    >
+                      <Download size={16} />
+                      {activeSyncIntent === 'pull' ? 'Получаем…' : `Получить из «${selectedProvider.name}»`}
+                    </button>
+                  )}
+                  {selectedProvider?.capabilities.upload && (
+                    <button
+                      className="button button--ghost"
+                      disabled={syncActionsBlocked}
+                      onClick={() => void pushToSyncProvider()}
+                      aria-label={`Отправить локальные данные в ${selectedProvider.name}`}
+                    >
+                      <Upload size={16} />
+                      {activeSyncIntent === 'push' ? 'Отправляем…' : `Отправить в «${selectedProvider.name}»`}
+                    </button>
+                  )}
+                </>
               )}
               {interactiveSelected && connected && (
                 <button className="button button--ghost" disabled={syncing} onClick={() => void disconnectSyncProvider()}><LogOut size={16} /> Отключить</button>
@@ -300,18 +471,24 @@ export function SettingsPage() {
             </div>
             {syncConflict && (
               <section className="sync-conflict" role="alert" aria-label="Конфликт синхронизации">
-                <header><CircleAlert size={20} /><div><strong>В хранилище уже есть другая копия</strong><span>Ничего не будет перезаписано без вашего выбора.</span></div></header>
+                <header><CircleAlert size={20} /><div><strong>{syncConflict.intent === 'pull'
+                  ? 'Удалённая копия отличается от локальной'
+                  : syncConflict.intent === 'push'
+                    ? 'В хранилище уже есть другая копия'
+                    : 'Локальная и удалённая копии различаются'}</strong><span>Ничего не будет перезаписано без вашего выбора.</span></div></header>
                 <div className="sync-conflict__compare">
                   <span><strong>Это устройство</strong><small>{syncConflict.local.tasks} задач · {syncConflict.local.projects} проектов · {syncConflict.local.habits} привычек</small><em>{syncConflict.local.recentTaskTitles.join(' · ') || 'Нет задач'}</em></span>
                   <span><strong>Хранилище</strong><small>{syncConflict.remote.tasks} задач · {syncConflict.remote.projects} проектов · {syncConflict.remote.habits} привычек</small><em>{syncConflict.remote.recentTaskTitles.join(' · ') || 'Нет задач'}</em></span>
                 </div>
                 <div className="sync-conflict__actions">
-                  <button className="button button--primary" disabled={syncing} onClick={() => void resolveSyncConflict('remote')}><Download size={16} /> Загрузить из хранилища</button>
-                  {!confirmLocalOverwrite ? (
+                  {syncConflict.intent !== 'push' && (
+                    <button className="button button--primary" disabled={syncing} onClick={() => void resolveSyncConflict('remote')}><Download size={16} /> Получить копию из хранилища</button>
+                  )}
+                  {syncConflict.intent !== 'pull' && (!confirmLocalOverwrite ? (
                     <button className="button button--danger-ghost" disabled={syncing} onClick={() => setConfirmLocalOverwrite(true)}>Заменить копию локальными данными</button>
                   ) : (
                     <button className="button button--danger-ghost" disabled={syncing} onClick={() => void resolveSyncConflict('local')}>Точно заменить копию в хранилище</button>
-                  )}
+                  ))}
                   <button className="button button--ghost" disabled={syncing} onClick={() => { setConfirmLocalOverwrite(false); void resolveSyncConflict('cancel') }}>Отмена</button>
                 </div>
                 {state.sync.status === 'error' && <p className="sync-conflict__error">{state.sync.message}</p>}
@@ -340,20 +517,139 @@ export function SettingsPage() {
           </section>
 
           <section className="settings-card" id="data">
-            <header><span><Database /></span><div><h2>Локальные данные</h2><p>Управление демонстрационным пространством</p></div></header>
+            <header><span><Database /></span><div><h2>Локальные данные</h2><p>Резервные копии, перенос и восстановление</p></div></header>
+            {backupStatus && (
+              <Toast
+                tone="success"
+                action={importBackupAvailable && backupStatus.includes('импортирована')
+                  ? { label: 'Отменить импорт', disabled: syncing || importingBackup || restoringBackup, onClick: () => void restorePreviousBackup() }
+                  : undefined}
+                onClose={() => setBackupStatus('')}
+              >
+                {backupStatus}
+              </Toast>
+            )}
+            {backupError && !pendingBackup && <p className="backup-message backup-message--error" role="alert"><CircleAlert size={17} /> {backupError}</p>}
+            <div className="setting-row">
+              <div><strong>Скачать резервную копию</strong><span>Задачи, проекты, привычки, оформление и вложения в переносимом JSON без OAuth-настроек</span></div>
+              <button type="button" className="button button--ghost" disabled={importingBackup || restoringBackup} onClick={downloadBackup}><Download size={16} /> Скачать JSON</button>
+            </div>
+            <div className="setting-row">
+              <div><strong>Импортировать из файла</strong><span>Сначала покажем содержимое; данные заменятся только после подтверждения</span></div>
+              <button
+                ref={backupImportTriggerRef}
+                type="button"
+                className="button button--ghost"
+                disabled={syncing || importingBackup || restoringBackup}
+                onClick={() => backupInputRef.current?.click()}
+              >
+                <Upload size={16} /> Выбрать JSON-файл
+              </button>
+              <input
+                ref={backupInputRef}
+                hidden
+                type="file"
+                accept=".json,application/json"
+                aria-label="Файл резервной копии"
+                disabled={syncing || importingBackup || restoringBackup}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0]
+                  event.currentTarget.value = ''
+                  void previewBackup(file)
+                }}
+              />
+            </div>
             {importBackupAvailable && (
               <div className="setting-row">
-                <div><strong>Копия до импорта</strong><span>Вернуть локальные данные, которые были до загрузки из хранилища</span></div>
-                <button className="button button--ghost" disabled={syncing} onClick={() => void restoreImportBackup()}><RotateCcw size={16} /> Восстановить</button>
+                <div><strong>Предыдущая локальная копия</strong><span>Вернуть данные, которые были до последнего импорта; текущая копия останется для повторной отмены</span></div>
+                <button type="button" className="button button--ghost" disabled={syncing || importingBackup || restoringBackup} onClick={() => void restorePreviousBackup()}><RotateCcw className={restoringBackup ? 'spin' : undefined} size={16} /> {restoringBackup ? 'Восстанавливаем…' : 'Восстановить'}</button>
               </div>
             )}
             <div className="setting-row">
               <div><strong>Восстановить демо-данные</strong><span>Текущие локальные изменения будут заменены</span></div>
-              <button className="button button--danger-ghost" disabled={syncing} onClick={() => void resetDemo()}><RotateCcw size={16} /> Сбросить</button>
+              <button className="button button--danger-ghost" disabled={syncing || importingBackup || restoringBackup} onClick={() => void resetDemo()}><RotateCcw size={16} /> Сбросить</button>
             </div>
           </section>
         </div>
       </div>
+
+      {pendingBackup && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !importingBackup) setPendingBackup(undefined)
+        }}>
+          <section
+            ref={backupDialogRef}
+            className="backup-import-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="backup-import-title"
+            aria-describedby="backup-import-description"
+            tabIndex={-1}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && !importingBackup) {
+                event.preventDefault()
+                setPendingBackup(undefined)
+                return
+              }
+              trapTabKey(event, backupDialogRef.current)
+            }}
+          >
+            <header>
+              <span><Upload size={20} /></span>
+              <div>
+                <h2 id="backup-import-title">Импортировать резервную копию?</h2>
+                <p id="backup-import-description">Текущие локальные данные будут заменены. Перед импортом Focus Flow сохранит их для восстановления.</p>
+              </div>
+            </header>
+            <div className="backup-import-dialog__content">
+              <dl className="backup-import-file">
+                <div><dt>Файл</dt><dd>{pendingBackup.fileName}</dd></div>
+                <div><dt>Размер</dt><dd>{formatFileSize(pendingBackup.fileSize)}</dd></div>
+                {pendingBackup.generatedAt && <div><dt>Создан</dt><dd>{formatBackupDate(pendingBackup.generatedAt)}</dd></div>}
+              </dl>
+              <div className="backup-import-summary" aria-label="Содержимое резервной копии">
+                <span><strong>{pendingBackup.summary.tasks}</strong> задач</span>
+                <span><strong>{pendingBackup.summary.projects}</strong> проектов</span>
+                <span><strong>{pendingBackup.summary.habits}</strong> привычек</span>
+                <span><strong>{pendingBackup.summary.savedFilters}</strong> фильтров</span>
+              </div>
+              {pendingBackup.summary.recentTaskTitles.length > 0 && (
+                <div className="backup-import-recent">
+                  <strong>Недавние задачи</strong>
+                  <ul>{pendingBackup.summary.recentTaskTitles.map((title, index) => <li key={`${index}:${title}`}>{title}</li>)}</ul>
+                </div>
+              )}
+              {backupError && <p className="backup-message backup-message--error" role="alert"><CircleAlert size={17} /> {backupError}</p>}
+            </div>
+            <footer>
+              <button ref={backupCancelRef} type="button" className="button button--ghost" disabled={importingBackup} onClick={() => setPendingBackup(undefined)}>Отмена</button>
+              <button type="button" className="button button--danger-ghost" disabled={importingBackup} onClick={() => void confirmBackupImport()}>
+                {importingBackup ? <><RefreshCw className="spin" size={16} /> Импортируем…</> : <><Upload size={16} /> Импортировать и заменить</>}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </main>
   )
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('File read failed'))
+    reader.readAsText(file)
+  })
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} Б`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} КБ`
+  return `${(size / 1024 / 1024).toFixed(1)} МБ`
+}
+
+function formatBackupDate(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'неизвестно' : date.toLocaleString('ru-RU')
 }

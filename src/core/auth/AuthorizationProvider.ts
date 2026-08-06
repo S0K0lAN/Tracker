@@ -15,7 +15,7 @@ export interface AuthorizationProvider {
   disconnect(): Promise<void>
 }
 
-export type AuthorizationErrorCode = 'cancel' | 'config' | 'unavailable'
+export type AuthorizationErrorCode = 'access-denied' | 'cancel' | 'config' | 'unavailable'
 
 export class AuthorizationError extends Error {
   constructor(
