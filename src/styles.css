@@ -624,7 +624,7 @@ h1, h2, h3, p {
   position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
-  align-items: end;
+  align-items: start;
   gap: 24px;
   margin-bottom: 16px;
   padding: 17px 19px;
