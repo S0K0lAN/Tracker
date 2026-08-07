@@ -142,7 +142,6 @@ export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => 
         {hasCriteria && tasks.length + projects.length + tags.length + savedFilters.length === 0 && <div className="empty-state workspace-empty"><span><Search /></span><h2>Ничего не найдено</h2><p>Попробуйте изменить запрос или сбросить часть условий.</p></div>}
       </div>
 
-      <button className="search-quick-add button button--primary" onClick={() => onEditTask(null)}><Plus size={17} /> Новая задача</button>
     </main>
   )
 }

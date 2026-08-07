@@ -231,10 +231,6 @@
   font-style: normal;
 }
 
-.search-quick-add {
-  display: none;
-}
-
 @media (max-width: 800px) {
   .search-filters__grid {
     grid-template-columns: 1fr 1fr;
@@ -266,11 +262,5 @@
   .save-filter {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .search-quick-add {
-    width: 100%;
-    display: flex;
-    margin-top: 14px;
   }
 }
