@@ -26,12 +26,6 @@ export function TodayPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         actions={<button className="button button--primary" onClick={() => onEditTask(null)}><Plus size={18} /> Добавить</button>}
       />
 
-      <section className="today-focus">
-        <span><Sunrise size={21} /></span>
-        <div><strong>Спокойный план на день</strong><p>Начните с просроченного, затем выберите одну важную задачу и оставьте место для неожиданного.</p></div>
-        <em>{active.filter((task) => task.importance === 'high' && (isSameLocalDay(task.startAt, now) || isSameLocalDay(task.deadline, now))).length} важных</em>
-      </section>
-
       {overdue.length > 0 && (
         <TaskSection icon={<AlertTriangle />} title="Просрочено" tone="danger" tasks={overdue} onEditTask={onEditTask} />
       )}
