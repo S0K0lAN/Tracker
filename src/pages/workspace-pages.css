@@ -163,7 +163,7 @@
 }
 
 .project-card__deadline {
-  grid-column: 2 / -1;
+  grid-column: 1 / -1;
   align-self: end;
   display: flex;
   align-items: center;
