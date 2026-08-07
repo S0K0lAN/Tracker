@@ -41,6 +41,8 @@ type Action =
   | { type: 'task/archive-completed' }
   | { type: 'task/focus-minutes'; id: string; minutes: number }
   | { type: 'project/add'; project: Project }
+  | { type: 'project/update'; project: Project }
+  | { type: 'project/remove'; id: string }
   | { type: 'filter/add'; filter: SavedFilter }
   | { type: 'filter/remove'; id: string }
   | { type: 'pomodoro/update'; pomodoro: Partial<PomodoroState> }
@@ -159,6 +161,21 @@ function reducer(state: AppState, action: Action): AppState {
       }
     case 'project/add':
       return { ...state, projects: [...state.projects, action.project] }
+    case 'project/update':
+      return {
+        ...state,
+        projects: state.projects.map((project) => (project.id === action.project.id ? action.project : project)),
+      }
+    case 'project/remove': {
+      if (action.id === 'inbox') return state
+      const updatedAt = new Date().toISOString()
+      return {
+        ...state,
+        projects: state.projects.filter((project) => project.id !== action.id),
+        tasks: state.tasks.map((task) => task.projectId === action.id ? { ...task, projectId: 'inbox', updatedAt } : task),
+        savedFilters: state.savedFilters.map((filter) => filter.projectId === action.id ? { ...filter, projectId: undefined } : filter),
+      }
+    }
     case 'filter/add':
       return { ...state, savedFilters: [action.filter, ...state.savedFilters] }
     case 'filter/remove':
@@ -221,6 +238,8 @@ interface AppContextValue {
   archiveCompletedTasks(): void
   addFocusMinutes(id: string, minutes: number): void
   addProject(project: Project): void
+  updateProject(project: Project): void
+  removeProject(id: string): void
   addSavedFilter(filter: SavedFilter): void
   removeSavedFilter(id: string): void
   updatePomodoro(pomodoro: Partial<PomodoroState>): void
@@ -1024,6 +1043,8 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
       archiveCompletedTasks: () => dispatch({ type: 'task/archive-completed' }),
       addFocusMinutes: (id, minutes) => dispatch({ type: 'task/focus-minutes', id, minutes }),
       addProject: (project) => dispatch({ type: 'project/add', project }),
+      updateProject: (project) => dispatch({ type: 'project/update', project }),
+      removeProject: (id) => dispatch({ type: 'project/remove', id }),
       addSavedFilter: (filter) => dispatch({ type: 'filter/add', filter }),
       removeSavedFilter: (id) => dispatch({ type: 'filter/remove', id }),
       updatePomodoro: (pomodoro) => dispatch({ type: 'pomodoro/update', pomodoro }),
