@@ -3,9 +3,10 @@
 ## Назначение
 
 Матрица переводит расширенные продуктовые запросы в наблюдаемые критерии
-приёмки. Актуальный срез повторно проверен 5 августа 2026 года после интеграции
-режима просмотра задачи, голосового маршрута даты, глобальной типографики,
-task lifecycle, Pomodoro, вложений, фонов и браузерной синхронизации.
+приёмки. Документация актуализирована 11 августа 2026 года по результатам
+статического аудита 10 августа и повторной тестовой проверки 11 августа.
+Текущий результат команд отделён ниже от исторического зелёного browser gate:
+наличие теста в репозитории само по себе не считается свежим evidence.
 
 Статусы:
 
@@ -26,7 +27,8 @@ task lifecycle, Pomodoro, вложений, фонов и браузерной �
 1. локальное действие и результат сохраняются после reload;
 2. прямой URL, навигация и browser history работают;
 3. интерактивные элементы имеют доступные имена и keyboard/focus UX;
-4. desktop 1440×900 и mobile 390×844 не имеют horizontal overflow;
+4. desktop 1440×900, промежуточный viewport 1024×900 и mobile 390×844 не
+   имеют horizontal overflow и сохраняют доступную навигацию;
 5. светлая и тёмная темы проходят WCAG AA color-contrast;
 6. нет `pageerror` и необработанных `console.error`;
 7. проходят `npm test`, `npm run build` и `npm run test:e2e`.
@@ -39,12 +41,13 @@ Done браузерного MVP. Они честно вынесены в отд�
 | ID | Требование | Статус | Evidence текущего scope |
 |---|---|---|---|
 | UX-01 | Выровнять положения всех иконок | **Готово** | Единые размеры Lucide и control CSS, исправленный mobile containing block; независимый visual QA desktop/mobile и pointer E2E task-actions подтверждают отсутствие смещения, clipping и interception. |
-| UX-02 | Единые dropdown в редакторе задачи | **Готово** | `SelectMenu` используется для проекта, важности, порога и override; поддерживает поиск, стрелки, `Home/End`, `Enter/Space`, `Escape` и возврат focus. Регрессия доказывает, что `Escape` закрывает только dropdown и сохраняет draft. |
+| UX-02 | Единые dropdown в редакторе задачи | **Частично** | `SelectMenu` используется для проекта, важности, порога и override; keyboard/component-поведение покрыто. Статический аудит выявил, что portal имеет `z-index: 80` при modal backdrop `z-index: 100`, поэтому визуальный и pointer-сценарий редактора требует исправления и повторного E2E. |
 | UX-03 | Понятное отображение важности | **Готово** | `TaskCard` показывает текст «Обычно/Важно» и контурный/заполненный флаг, поэтому значение не зависит только от цвета и одинаково читается в task layouts. |
-| UX-04 | Улучшенный выбор проекта | **Готово** | Searchable `SelectMenu` показывает цвет и описание; E2E доказывает create project → select in task → reload → project detail. |
+| UX-04 | Улучшенный выбор проекта | **Частично** | Searchable `SelectMenu` показывает цвет и описание; исторический E2E покрывает create project → select in task → reload → project detail. Текущий modal stacking defect из UX-02 требует исправления и повторной pointer-проверки. |
 | UX-05 | Просмотр задачи до редактирования | **Готово** | `TaskDetails` показывает содержимое без полей ввода; component и отдельный E2E проверяют явный переход к редактору, таймер, завершение/возврат и focus restore. |
 | NAV-01 | Отдельная страница «Сегодня» | **Готово** | `/today` есть в desktop/mobile navigation; component-тест проверяет секции и отсутствие дубля scheduled deadline, E2E — direct URL, Back/Forward и heading. |
-| PRJ-01 | Страница и создание проектов | **Готово** | `/projects`, форма с названием/цветом/описанием, detail и задача проекта работают и переживают reload; пустое имя блокируется. |
+| NAV-02 | Доступная навигация на промежуточной ширине | **Частично** | При 821–1100 px Sidebar получает `inert`, но drawer-trigger появляется только до 820 px. Нужны единый breakpoint и E2E на 1024 px. |
+| PRJ-01 | Создание и lifecycle проектов | **Готово** | `/projects` поддерживает создание и редактирование названия/цвета/описания, detail и подтверждаемое удаление. Component проверяет menu/edit; reducer при удалении переносит задачи в system Inbox и очищает `projectId` сохранённых фильтров. Архив/иерархия и duplicate-name UX остаются вне критерия. |
 | ATT-01 | Просмотр фото и файлов | **Готово** | Viewer открывает image/PDF/text, поддерживает zoom, download, `Escape` и возврат focus; E2E загружает text attachment и повторно открывает после reload в пределах лимита браузерного MVP. |
 | FLT-01 | Составной и сохраняемый фильтр | **Готово** | Есть status/project/importance/urgency/tags ANY/ALL; UI показывает активные условия, сброс; E2E сохраняет и применяет named filter после reload. |
 | SEARCH-01 | Поиск задач, проектов, тегов и фильтров | **Готово** | `/search` регистронезависимо группирует четыре типа результатов; component/E2E подтверждают кириллический поиск, empty state, сохранение и повторное применение фильтра. |
@@ -56,22 +59,22 @@ Done браузерного MVP. Они честно вынесены в отд�
 | HAB-01 | Правильный «Ваш ритм» и серии | **Готово** | Pure test с фиксированным временем проверяет independent schedule/progress/streak, UI считает только плановые прошедшие дни привычки. |
 | HAB-02 | Независимое выполнение привычек | **Готово** | Component/E2E отмечают одну привычку, доказывают неизменность другой и persistence после reload. |
 | HAB-03 | 10 векторных иконок привычки | **Готово** | Component проверяет все 10 Lucide radio-options и выбранную «Книгу»; E2E подтверждает иконку после reload. |
-| HAB-04 | Описание и редактирование привычки | **Готово** | Создание, редактирование и reload имени, optional description, иконки и истории покрыты component/E2E. |
-| INB-02 | List/board и отдельный календарь | **Готово** | Component переключает список/доску и проверяет явный переход в `/calendar`; E2E проверяет общий sort и persistence вида. |
+| HAB-04 | Описание и редактирование привычки | **Готово** | Создание, редактирование и reload имени, optional description, иконки и истории покрыты component/E2E. Настройка `targetDays` и цвета в этот критерий не входит и ещё не реализована. |
+| INB-02 | List/board и отдельный календарь | **Готово** | Component проверяет list/board, persistence и отсутствие устаревших calendar view/shortcut; `/calendar` остаётся самостоятельным маршрутом общей навигации. |
 | BG-01 | Встроенные фоны | **Готово** | Presets, «без фона», dim и global application реализованы; E2E проверяет preset/reload, все страницы — light/dark desktop/mobile contrast и overflow. |
 | BG-02 | Собственный фон | **Готово** | MIME/size validation, upload, global application и reload покрыты E2E в честно документированных browser/localStorage лимитах. |
 | TYPE-01 | Настройка шрифта всего приложения | **Готово** | Три локальных системных стека и масштаб 90–120% применяются CSS variables; schema v2 мигрирует в v3, component/E2E проверяют persistence и отсутствие mobile overflow при 120%. |
 | DATA-01 | Скачать и импортировать переносимую JSON-копию | **Готово** | Экспорт исключает OAuth/device-local sync config; импорт до изменения данных проверяет 10 МБ, схему, вложения и фон, показывает preview, требует подтверждение, сохраняется после reload и оставляет восстанавливаемую предыдущую копию. |
 | VOICE-01 | Надиктовывание задачи | **Готово** | Web Speech ru-RU и ручной fallback интегрированы; fallback остаётся рабочим при отсутствии API и проверен E2E. |
 | VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет default `startAt`, явные «до»/«дедлайн»/«срок», weekday, time, importance, tags и project; component/E2E — preview → взаимоисключающее применение даты → saved task. |
-| DES-01 | Лаконичный дизайн Todoist/Singularity | **Готово** | Новые страницы используют общие tokens и progressive disclosure; пройдены independent visual QA, automated contrast/overflow, mobile action и menu clipping regressions. |
-| QA-01 | Независимое покрытие новых функций | **Готово** | Test-only агент добавил unit/component/E2E с наблюдаемыми эффектами, browser-error collection и theme/mobile loops; полный gate зелёный. |
+| DES-01 | Лаконичный дизайн Todoist/Singularity | **Частично** | Общие tokens и progressive disclosure реализованы, исторический visual QA desktop/mobile пройден. Текущие breakpoint и modal stacking регрессии требуют исправления и повторной проверки, включая 1024 px. |
+| QA-01 | Независимое покрытие новых функций | **Частично** | Набор содержит unit/component/E2E с наблюдаемыми эффектами, browser-error collection и theme/mobile loops. Unit/build повторно прошли 11 августа, но актуальный E2E 10 августа не стартовал без системного Chrome; непрерывного CI нет. |
 | DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v3, миграции v2, ограничениям и тестам. |
 | SYNC-01 | Подключить Google Drive через OAuth без сохранения token | **Готово** | GIS runtime использует только `drive.appdata`; подключение лишь авторизует и не переносит данные. Unit и mock-browser E2E проверяют connect, повторный вход после reload/401 и отсутствие token в localStorage/remote envelope. Live smoke честно вынесен за scope без credentials. |
 | SYNC-02 | Разделить получение, отправку и согласование данных | **Готово** | «Получить» не пишет remote, при отсутствии файла ничего не меняет, а применение отличающейся копии требует preview/confirm и создаёт rollback backup. «Отправить» не применяет remote локально, использует revision precondition и требует confirm при различии. Ручное «Синхронизировать» и авто-sync используют reconcile; component/unit и mock-browser E2E проверяют наблюдаемые эффекты каждого направления и конфликтов. |
 | SYNC-03 | Задел под новые хранилища | **Готово** | Второй configurable interactive provider полностью подключается через registry descriptor/runtime; component-тест проверяет defaults, required public config, connect и upload без Google-specific ветки. Secret config registry отклоняет. |
 
-Итого по явному scope браузерного MVP: **32 готовых**, **0 частично
+Итого по явному scope браузерного MVP: **28 готовых**, **5 частично
 готовых**, **0 отсутствующих** критериев.
 
 ## Тестовая трассировка
@@ -84,9 +87,11 @@ Done браузерного MVP. Они честно вынесены в отд�
   дедлайну, очистка второго поля и сброс невалидного ручного ввода.
 - `src/components/TaskDetails.test.tsx` — read mode, подзадачи, task actions и
   focus restore; `SettingsTypography.test.tsx` — применение/миграция шрифта.
+- `src/pages/ProjectsPage.test.tsx` — menu проекта, редактирование и сохранение
+  обновлённого названия/описания/цвета.
 - `src/NewFeatures.test.tsx` — Today, Projects, Search, soft delete/restore,
-  permanent delete confirmation, archive/restore, сортировка, три Inbox
-  layout, Pomodoro, deadline-only week/month, `Escape` внутри `SelectMenu` и
+  permanent delete confirmation, archive/restore, сортировка, list/board
+  Входящих и отдельный календарь, Pomodoro, deadline-only week/month, `Escape` внутри `SelectMenu` и
   keyboard navigation task action-menu, 42-cell calendar и focus trap/restore
   TaskEditor, AttachmentViewer и mobile Sidebar.
 - `src/pages/HabitsPage.test.tsx` — rhythm/streak, независимый toggle,
@@ -141,12 +146,12 @@ Done браузерного MVP. Они честно вынесены в отд�
 - performance gate списка из 500 задач: первая отрисовка < 2 секунд,
   p95 кадра < 40 мс и доля кадров > 50 мс < 8%.
 
-### Независимый visual QA
+### Исторический независимый visual QA
 
-Вручную и через Playwright осмотрены `/today`, `/projects`, `/search`,
+В срезе 3 августа 2026 года вручную и через Playwright осмотрены `/today`, `/projects`, `/search`,
 `/trash`, `/inbox`, `/calendar`, `/habits`, `/settings` на 1440×900 и
 390×844, в светлой и тёмной темах. Проверялись TaskEditor, четыре dropdown,
-viewer image/text, list/board/calendar, создание проекта, фильтры,
+viewer image/text, Inbox list/board и отдельная страница Calendar, создание проекта, фильтры,
 trash/archive, Pomodoro, привычки, preset/custom background и voice fallback.
 
 Аудит дал 0 Axe A/AA нарушений, 0 document overflow, 0 console/pageerror.
@@ -155,7 +160,7 @@ calendar, скрытых mobile deadline markers, hit targets, animation/route
 flicker и focus trap/restore были исправлены и повторно проверены. Chrome
 runtime подтвердил exact focus return к preview, task opener и menu opener.
 
-### Финальный gate 3 августа 2026 года
+### Исторический зелёный gate 3 августа 2026 года
 
 - `npm test`: **18 файлов, 126/126 тестов**;
 - `npm run build`: TypeScript и production Vite build — **успешно**;
@@ -166,15 +171,38 @@ runtime подтвердил exact focus return к preview, task opener и menu 
 - пороги не ослаблялись; Playwright использует один worker, чтобы performance
   gate не измерял конкуренцию нескольких Axe/Chrome процессов за CPU.
 
+Этот результат относится к тогдашнему набору и не доказывает текущие 34
+сценария после последующих изменений.
+
+### Текущий локальный аудит 10–11 августа 2026 года
+
+- inventory: **25 Vitest-файлов / 184 теста** и **4 Playwright-файла /
+  34 сценария**;
+- на Node.js 26 обычный `npm test` падает в setup из-за конфликта
+  экспериментального Web Storage Node с jsdom;
+- 11 августа `NODE_OPTIONS=--no-experimental-webstorage npm test`:
+  **184/184 успешно**;
+- 11 августа `npm run build`: TypeScript и production Vite build — **успешно**;
+- 10 августа `npm run test:e2e`: browser assertions не выполнялись, потому что
+  конфигурация требует отсутствующий в среде системный Google Chrome;
+- CI в репозитории отсутствует, а `npm run check` не включает E2E.
+
+Поэтому текущий full gate не считается зелёным до успешного запуска всех 34
+Playwright-сценариев после исправления известных UI-регрессий.
+
 ## Известные ограничения перед следующим этапом
 
 1. Перенести attachments и custom background из data URL/localStorage в
    IndexedDB BlobStore, затем в platform storage.
 2. Добавить fake-clock тест полного Pomodoro cycle и историю сессий.
 3. Реализовать date-range filter и табличный contract suite комбинаций.
-4. Довести project lifecycle: rename/archive/delete и duplicate-name UX.
-5. Добавить habit editing.
-6. Вынести Web Speech за adapter и явно показать permission/error states.
-7. Добавить visual snapshots/geometry assertions для иконок, menus и focus.
-8. Реализовать platform/Tauri adapters и настоящие Ubuntu/Android/Windows
+4. Добавить иерархию/архив проектов и duplicate-name UX; rename/delete уже
+   реализованы.
+5. Исправить Sidebar breakpoint 1100/820 и stacking portal `SelectMenu`, затем
+   добавить E2E на 1024 px и pointer-проверку dropdown редактора.
+6. Зафиксировать проверяемую Node-линию и CI; сделать Chrome/Chromium
+   prerequisite E2E воспроизводимым.
+7. Вынести Web Speech за adapter и явно показать permission/error states.
+8. Добавить visual snapshots/geometry assertions для иконок, menus и focus.
+9. Реализовать platform/Tauri adapters и настоящие Ubuntu/Android/Windows
    build/install/launch smoke; браузерный MVP не является их доказательством.
