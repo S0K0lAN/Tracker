@@ -245,7 +245,7 @@ export const createSeedState = (): AppState => {
       task({
         id: 'task-book',
         title: 'Прочитать главу книги',
-        description: 'Недатированная задача для проверки Входящих и поиска.',
+        description: 'Недатированная задача для проверки проекта и поиска.',
         projectId: 'personal',
         tags: ['развитие', 'чтение'],
         createdAt: dateAt(-4, 20),

@@ -9,6 +9,16 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/inbox')
   await page.evaluate(() => localStorage.clear())
   await page.reload()
+  await page.waitForFunction((storageKey) => localStorage.getItem(storageKey), STORAGE_KEY)
+  await page.evaluate((storageKey) => {
+    const state = JSON.parse(localStorage.getItem(storageKey)!)
+    const task = state.tasks.find((item: { id: string }) => item.id === 'task-plan')
+    task.projectId = 'inbox'
+    delete task.startAt
+    delete task.deadline
+    localStorage.setItem(storageKey, JSON.stringify(state))
+  }, STORAGE_KEY)
+  await page.reload()
 })
 
 test('an existing task opens in read mode and its explicit actions have visible effects', async ({ page }) => {
@@ -44,7 +54,7 @@ test('an existing task opens in read mode and its explicit actions have visible 
 })
 
 test('ellipsis actions complete a task and open the read view instead of the editor', async ({ page }) => {
-  const title = 'Прочитать главу книги'
+  const title = 'Подготовить план недели'
   const trigger = page.getByRole('button', { name: `Действия задачи ${title}` })
 
   await trigger.click()

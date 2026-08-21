@@ -64,10 +64,11 @@ parser, подзадачи, даты, проект, теги, напоминан
 
 ### Входящие
 
-Подтверждённая концепция удачна: это единое представление всех задач, включая
-проектные, с list/board, фильтрами и сортировкой. Нельзя реализовывать issue #22
-как изменение смысла маршрута. Совместимое решение — сохранённый фильтр
-«Неразобранное»: `projectId=inbox AND no startAt AND no deadline`.
+Позднейшим продуктовым решением от 21 августа 2026 года default маршрута
+изменён на очередь неразобранного
+`projectId=inbox AND no startAt AND no deadline`. Быстрый фильтр «Все»
+возвращает прежний общий список; list/board, фильтры и сортировка применяются к
+выбранному набору.
 
 Исправлено:
 
@@ -176,17 +177,18 @@ Production-ready Google Drive нельзя заявлять без live OAuth sm
 | [#31 Порог срочности проекта](https://github.com/S0K0lAN/Tracker/issues/31) | Конфликт требований | Сохранить per-task threshold; возможен project default с явным inherit/override. |
 | [#30 Google auth](https://github.com/S0K0lAN/Tracker/issues/30) | UI/code закрыто с оговоркой | GIS одна кнопка, build-time client ID и `drive.appdata`; credentialed live smoke остаётся отдельным release gate. |
 | [#27 Выбор времени](https://github.com/S0K0lAN/Tracker/issues/27) | Закрыто как выполненное | Общий DateTimePicker, manual mask, date/time popover, keyboard/component/E2E. |
-| [#22 Смысл Входящих](https://github.com/S0K0lAN/Tracker/issues/22) | Конфликт требований | Не сужать Inbox; добавить smart filter «Неразобранное». |
+| [#22 Смысл Входящих](https://github.com/S0K0lAN/Tracker/issues/22) | Решение пересмотрено после аудита | Использовать `projectId=inbox AND no startAt AND no deadline` по умолчанию, сохранив общий список за фильтром «Все»; обновить счётчики, bulk archive и тесты. |
 | [#21 Статистика дня/AI](https://github.com/S0K0lAN/Tracker/issues/21) | Future/question | Сначала локальная deterministic card: completed today, planned done/total, overdue carry, focus minutes. AI — отдельный opt-in/privacy/cost design. |
 | [#18 Команды](https://github.com/S0K0lAN/Tracker/issues/18) | Новое направление, вне scope | Потребуются tenant/auth/ACL/server sync/audit/concurrency; текущий продукт single-user. |
 | [#17 Гант](https://github.com/S0K0lAN/Tracker/issues/17) | Future/plan | Текущий deadline view — light Gantt. Полный Gantt требует duration, dependencies, progress и keyboard drag parity. |
 | [#16 Календари проектов](https://github.com/S0K0lAN/Tracker/issues/16) | Future/plan | Предпочтительно project filter в едином Calendar + URL/query/deep-link из Project, не отдельные копии календаря. |
 | [#12 Дедлайны на календаре](https://github.com/S0K0lAN/Tracker/issues/12) | Needs thought/duplicate | Консолидировать с #33/#35/#45 после выбора all-day/date-only модели. |
 
-Повторная проверка после исправлений показала ровно 14 открытых issues:
-#12, #16, #17, #18, #21, #22, #31, #34 и #44–#49. Все относятся к
-future/needs-thought/conflict scope; новых однозначно исполнимых issues нет,
-поэтому они оставлены открытыми без изменения.
+Повторная проверка в момент аудита показала ровно 14 открытых issues:
+#12, #16, #17, #18, #21, #22, #31, #34 и #44–#49. Позднее 21 августа
+продуктовое решение по #22 было пересмотрено и реализовано локально; статус
+внешнего issue этим отчётом не изменяется. Остальные относятся к
+future/needs-thought/conflict scope.
 
 ## 4. Security и privacy
 
