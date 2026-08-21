@@ -166,13 +166,13 @@ Production-ready Google Drive нельзя заявлять без live OAuth sm
 | [#46 Длительность задачи](https://github.com/S0K0lAN/Tracker/issues/46) | Нужна смена модели | Сейчас deadline заменяет end. Возможное будущее: `durationMinutes`/`endAt`, deadline отдельно; следующая schema migration, DST и overnight tests. |
 | [#45 Плашка сроков/all-day](https://github.com/S0K0lAN/Tracker/issues/45) | Future/dependency | Зависит от #44/#46. После date-only модели объединить all-day events и deadline bands, сохраняя семантическое различие. |
 | [#44 Задачи на весь день](https://github.com/S0K0lAN/Tracker/issues/44) | Future/open question | `allDay` + локальная дата `YYYY-MM-DD`, без UTC midnight; migration, timezone/DST/import tests. |
-| [#39 Кнопка в Поиске](https://github.com/S0K0lAN/Tracker/issues/39) | Реализовано, закрыть | Нижний дубликат удалён `12f95c8`; общая page/global create affordance сохранена. |
-| [#35 Кликабельность сроков](https://github.com/S0K0lAN/Tracker/issues/35) | Исправлено | `Ещё N`/deadline panel открывает полный доступный список дня, item открывает task details, focus возвращается. |
+| [#39 Кнопка в Поиске](https://github.com/S0K0lAN/Tracker/issues/39) | Закрыто как выполненное | Нижний дубликат удалён `12f95c8`; общая page/global create affordance сохранена. |
+| [#35 Кликабельность сроков](https://github.com/S0K0lAN/Tracker/issues/35) | Исправлено и закрыто | `Ещё N`/deadline panel открывает полный доступный список дня, item открывает task details, focus возвращается. |
 | [#34 Новые фоны](https://github.com/S0K0lAN/Tracker/issues/34) | Needs thought | Нужны brief, лицензии, light/dark screenshots, contrast и size/performance budget. Исправить только доказанный contrast defect. |
-| [#33 Дедлайны на месяце](https://github.com/S0K0lAN/Tracker/issues/33) | Исправлено по конкретному UPD | Непрерывные bands в week row, stable lanes, continuation на границах, deadline-only = 1 день, keyboard/mobile; число видимых lane ограничено тремя. |
+| [#33 Дедлайны на месяце](https://github.com/S0K0lAN/Tracker/issues/33) | Исправлено и закрыто по конкретному UPD | Непрерывные bands в week row, stable lanes, continuation на границах, deadline-only = 1 день, keyboard/mobile; число видимых lane ограничено тремя. |
 | [#31 Порог срочности проекта](https://github.com/S0K0lAN/Tracker/issues/31) | Конфликт требований | Сохранить per-task threshold; возможен project default с явным inherit/override. |
-| [#30 Google auth](https://github.com/S0K0lAN/Tracker/issues/30) | Реализовано в UI/code, закрыть с оговоркой | GIS одна кнопка, build-time client ID и `drive.appdata`; credentialed live smoke остаётся отдельным release gate. |
-| [#27 Выбор времени](https://github.com/S0K0lAN/Tracker/issues/27) | Реализовано, закрыть | Общий DateTimePicker, manual mask, date/time popover, keyboard/component/E2E. |
+| [#30 Google auth](https://github.com/S0K0lAN/Tracker/issues/30) | UI/code закрыто с оговоркой | GIS одна кнопка, build-time client ID и `drive.appdata`; credentialed live smoke остаётся отдельным release gate. |
+| [#27 Выбор времени](https://github.com/S0K0lAN/Tracker/issues/27) | Закрыто как выполненное | Общий DateTimePicker, manual mask, date/time popover, keyboard/component/E2E. |
 | [#22 Смысл Входящих](https://github.com/S0K0lAN/Tracker/issues/22) | Конфликт требований | Не сужать Inbox; добавить smart filter «Неразобранное». |
 | [#21 Статистика дня/AI](https://github.com/S0K0lAN/Tracker/issues/21) | Future/question | Сначала локальная deterministic card: completed today, planned done/total, overdue carry, focus minutes. AI — отдельный opt-in/privacy/cost design. |
 | [#18 Команды](https://github.com/S0K0lAN/Tracker/issues/18) | Новое направление, вне scope | Потребуются tenant/auth/ACL/server sync/audit/concurrency; текущий продукт single-user. |
@@ -282,6 +282,8 @@ policy.
   desktop/sidebar breakpoint и mobile project context action;
 - browser gate собирал `pageerror`/`console.error`; новых ошибок нет.
 
-GitHub-плагин подключён с write-доступом. Итоговый commit и фактическое состояние
-issues будут добавлены ниже после публикации; future/needs-thought/conflict issues
-остаются открыты и не меняются.
+Основной снимок опубликован commit
+[`f123105`](https://github.com/S0K0lAN/Tracker/commit/f123105581a44cd2818067977d143b5f3b32f580).
+Issues #27, #30, #33, #35 и #39 получили комментарии с test evidence и закрыты
+как выполненные. Future/needs-thought/conflict issues остались открыты и не
+изменялись; предложения по ним находятся в разделе 3.
