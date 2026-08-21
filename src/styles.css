@@ -2235,8 +2235,8 @@ h1, h2, h3, p {
 
 .week-labels, .habit-checks {
   display: grid;
-  grid-template-columns: repeat(7, 44px);
-  gap: 7px;
+  grid-template-columns: repeat(14, 38px);
+  gap: 4px;
 }
 
 .week-labels span {
@@ -2296,8 +2296,8 @@ h1, h2, h3, p {
 }
 
 .habit-checks button {
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
   padding: 0;

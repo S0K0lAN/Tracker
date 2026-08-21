@@ -45,6 +45,8 @@ export const HABIT_ICONS = [
   { value: 'sun', label: 'Солнце', Icon: Sun },
 ] as const satisfies ReadonlyArray<{ value: string; label: string; Icon: LucideIcon }>
 
+export const HABIT_CHECK_DAYS = 14
+
 const LEGACY_HABIT_ICONS: Record<string, (typeof HABIT_ICONS)[number]['value']> = {
   '✨': 'sparkles',
   '💧': 'water',
@@ -190,11 +192,7 @@ export function HabitsPage() {
   const [customTrendStart, setCustomTrendStart] = useState(() => toDateKey(shiftLocalDate(atStartOfDay(new Date()), -29)))
   const [customTrendEnd, setCustomTrendEnd] = useState(() => toDateKey(atStartOfDay(new Date())))
   const trendViewportRef = useRef<HTMLDivElement>(null)
-  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(today)
-    date.setDate(date.getDate() - 6 + index)
-    return date
-  }), [today])
+  const days = useMemo(() => getRollingDays(today, HABIT_CHECK_DAYS), [today])
   const trendDays = useMemo(
     () => trendPreset === 'custom'
       ? getInclusiveDays(customTrendStart, customTrendEnd)
@@ -311,7 +309,7 @@ export function HabitsPage() {
             <span className="eyebrow">Ваш ритм</span>
             <h2 id="habit-rhythm-title">Каждая привычка — в своём темпе</h2>
           </div>
-          <p>Прогресс считается только по плановым дням конкретной привычки за последние семь дней.</p>
+          <p>Прогресс считается только по плановым дням конкретной привычки за последние 14 дней.</p>
           <button className="button button--primary habit-rhythm__add" onClick={openCreate}>
             <Plus size={16} /> Новая привычка
           </button>
@@ -329,7 +327,7 @@ export function HabitsPage() {
                 <div
                   className="habit-rhythm-card__ring"
                   style={{ '--habit-progress': `${rhythm.progress * 3.6}deg` } as CSSProperties}
-                  aria-label={`${rhythm.progress}% за семь дней`}
+                  aria-label={`${rhythm.progress}% за последние 14 дней`}
                 >
                   <strong>{rhythm.progress}%</strong>
                 </div>
@@ -471,7 +469,7 @@ export function HabitsPage() {
 
       <section className="habit-list" aria-labelledby="habit-week-title">
         <div className="habit-list__header">
-          <div><h2 id="habit-week-title">Последние 7 дней</h2><p>Отмечайте выполнение отдельно для каждой привычки</p></div>
+          <div><h2 id="habit-week-title">Последние 14 дней</h2><p>Отмечайте выполнение отдельно для каждой привычки</p></div>
           <div className="week-labels">
             {days.map((day) => <span key={toDateKey(day)}>{day.toLocaleDateString('ru-RU', { weekday: 'short' })}<strong>{day.getDate()}</strong></span>)}
           </div>

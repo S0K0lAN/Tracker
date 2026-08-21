@@ -549,8 +549,13 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
 })
 
 test('habit dates align with checks, icons are centered and the daily completion chart is visible', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 })
   await page.goto('/habits')
   await expect(page.getByRole('img', { name: /График выполненных привычек и задач/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Последние 14 дней' })).toBeVisible()
+  await page.locator('.habit-list').scrollIntoViewIfNeeded()
+  await expect(page.locator('.week-labels > span')).toHaveCount(14)
+  await expect(page.locator('.habit-row').first().locator('.habit-checks > button')).toHaveCount(14)
   const alignment = await page.evaluate(() => {
     const labels = [...document.querySelectorAll('.week-labels > span')]
     const checks = [...document.querySelectorAll('.habit-row:first-of-type .habit-checks > button')]
