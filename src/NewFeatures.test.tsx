@@ -244,12 +244,12 @@ describe('task lifecycle', () => {
     renderApp('/inbox')
     await screen.findByRole('heading', { name: 'Входящие', level: 1 })
 
-    await user.click(screen.getByRole('button', { name: 'Завершить задачу Подготовить план недели' }))
-    expect(screen.queryByRole('button', { name: 'Завершить задачу Подготовить план недели' })).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('Задача «Подготовить план недели» выполнена')
+    await user.click(screen.getByRole('button', { name: 'Завершить задачу Разобрать идеи для следующих улучшений' }))
+    expect(screen.queryByRole('button', { name: 'Завершить задачу Разобрать идеи для следующих улучшений' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Задача «Разобрать идеи для следующих улучшений» выполнена')
 
     await user.click(within(screen.getByRole('status')).getByRole('button', { name: 'Отменить' }))
-    expect(screen.getByRole('button', { name: 'Завершить задачу Подготовить план недели' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Завершить задачу Разобрать идеи для следующих улучшений' })).toBeInTheDocument()
   })
 
   it('moves a task to trash and restores it to the inbox', async () => {
@@ -257,30 +257,42 @@ describe('task lifecycle', () => {
     renderApp('/inbox')
     await screen.findByRole('heading', { name: 'Входящие', level: 1 })
 
-    await user.click(screen.getByRole('button', { name: 'Действия задачи Прочитать главу книги' }))
+    await user.click(screen.getByRole('button', { name: 'Действия задачи Разобрать идеи для следующих улучшений' }))
     await user.click(screen.getByRole('menuitem', { name: 'В корзину' }))
-    expect(screen.queryByText('Прочитать главу книги')).not.toBeInTheDocument()
+    expect(screen.queryByText('Разобрать идеи для следующих улучшений')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: /Корзина/ }))
     expect(screen.getByRole('heading', { name: 'Корзина', level: 1 })).toBeInTheDocument()
-    const deletedTask = screen.getByText('Прочитать главу книги').closest('article')
+    const deletedTask = screen.getByText('Разобрать идеи для следующих улучшений').closest('article')
     expect(deletedTask).not.toBeNull()
     await user.click(within(deletedTask!).getByRole('button', { name: 'Восстановить' }))
 
-    expect(screen.queryByText('Прочитать главу книги')).not.toBeInTheDocument()
+    expect(screen.queryByText('Разобрать идеи для следующих улучшений')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Корзина', level: 1 })).toHaveFocus())
     const navigation = screen.getByRole('navigation', { name: 'Основная навигация' })
     await user.click(within(navigation).getByRole('link', { name: /Входящие/ }))
-    expect(screen.getByText('Прочитать главу книги')).toBeInTheDocument()
+    expect(screen.getByText('Разобрать идеи для следующих улучшений')).toBeInTheDocument()
   })
 
   it('archives completed tasks and restores one from the archive', async () => {
     const user = userEvent.setup()
-    renderApp('/inbox')
+    renderApp('/inbox', (state) => {
+      const completed = state.tasks.find((task) => task.id === 'task-done')!
+      completed.projectId = 'inbox'
+      completed.startAt = undefined
+      completed.deadline = undefined
+      const completedInProject = state.tasks.find((task) => task.id === 'task-plan')!
+      completedInProject.status = 'completed'
+      completedInProject.completedAt = new Date().toISOString()
+    })
     await screen.findByRole('heading', { name: 'Входящие', level: 1 })
 
     await user.click(screen.getByRole('button', { name: /Показать завершённые/ }))
     await user.click(screen.getByRole('button', { name: /^Архивировать$/ }))
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as AppState
+      expect(stored.tasks.find((task) => task.id === 'task-plan')?.status).toBe('completed')
+    })
 
     const navigation = screen.getByRole('navigation', { name: 'Основная навигация' })
     await user.click(within(navigation).getByRole('link', { name: /Корзина/ }))
@@ -346,11 +358,12 @@ describe('inbox layouts and focus', () => {
 
     const { container } = renderApp('/inbox', (state) => {
       state.tasks = [
-        makeTask({ id: 'alpha', title: 'Альфа', createdAt: '2026-07-01T10:00:00.000Z' }),
-        makeTask({ id: 'omega', title: 'Якорь', createdAt: '2026-07-02T10:00:00.000Z' }),
+        makeTask({ id: 'alpha', title: 'Альфа', projectId: 'inbox', createdAt: '2026-07-01T10:00:00.000Z' }),
+        makeTask({ id: 'omega', title: 'Якорь', projectId: 'inbox', createdAt: '2026-07-02T10:00:00.000Z' }),
       ]
     })
     await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+    expect(screen.getByRole('link', { name: /Входящие 2/ })).toBeInTheDocument()
 
     expect(container.querySelector('.task-card__title')?.textContent).toBe('Якорь')
     await user.click(screen.getByRole('combobox', { name: 'Сортировка входящих' }))
@@ -358,8 +371,11 @@ describe('inbox layouts and focus', () => {
     expect(container.querySelector('.task-card__title')?.textContent).toBe('Альфа')
 
     await user.click(screen.getByRole('button', { name: 'Вид: Доска' }))
-    expect(screen.getByRole('heading', { name: 'Доска по проектам' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Доска входящих' })).toBeInTheDocument()
     expect(container.querySelector('.inbox-board')).toBeInTheDocument()
+    expect(screen.getByText('Альфа')).toBeInTheDocument()
+    expect(screen.getByText('Якорь')).toBeInTheDocument()
+    expect(container.querySelectorAll('.board-column')).toHaveLength(1)
 
     expect(screen.queryByRole('button', { name: 'Вид: Календарь' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Планировать в календаре' })).not.toBeInTheDocument()
@@ -370,11 +386,11 @@ describe('inbox layouts and focus', () => {
     renderApp('/inbox')
     await screen.findByRole('heading', { name: 'Входящие', level: 1 })
 
-    await user.click(screen.getByRole('button', { name: 'Действия задачи Подготовить план недели' }))
+    await user.click(screen.getByRole('button', { name: 'Действия задачи Разобрать идеи для следующих улучшений' }))
     await user.click(screen.getByRole('menuitem', { name: 'Таймер фокуса · 25 минут' }))
 
     const timer = screen.getByRole('complementary', { name: 'Таймер фокуса' })
-    expect(within(timer).getByText('Подготовить план недели')).toBeInTheDocument()
+    expect(within(timer).getByText('Разобрать идеи для следующих улучшений')).toBeInTheDocument()
     expect(within(timer).getByText('25:00')).toBeInTheDocument()
     await user.click(within(timer).getByRole('button', { name: 'Запустить таймер' }))
     await waitFor(() =>
@@ -441,6 +457,9 @@ describe('task editor keyboard interactions', () => {
     const user = userEvent.setup()
     const { container } = renderApp('/inbox', (state) => {
       const task = state.tasks.find((item) => item.status === 'active')!
+      task.projectId = 'inbox'
+      task.startAt = undefined
+      task.deadline = undefined
       task.attachments = [{
         id: 'trap-attachment',
         name: 'trap.txt',
@@ -476,7 +495,7 @@ describe('task card keyboard interactions', () => {
     const user = userEvent.setup()
     renderApp('/inbox')
     await screen.findByRole('heading', { name: 'Входящие', level: 1 })
-    const trigger = screen.getByRole('button', { name: 'Действия задачи Подготовить план недели' })
+    const trigger = screen.getByRole('button', { name: 'Действия задачи Разобрать идеи для следующих улучшений' })
 
     await user.click(trigger)
     const open = screen.getByRole('menuitem', { name: 'Открыть' })

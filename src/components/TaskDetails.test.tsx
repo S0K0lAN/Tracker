@@ -7,6 +7,12 @@ import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 
 function renderInbox() {
+  const state = createSeedState()
+  const task = state.tasks.find((item) => item.id === 'task-plan')!
+  task.projectId = 'inbox'
+  task.startAt = undefined
+  task.deadline = undefined
+  localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
   return render(
     <RouterProvider initialPath="/inbox">
       <AppProvider>
@@ -36,7 +42,7 @@ describe('task details', () => {
     const details = screen.getByRole('dialog', { name: 'Подготовить план недели' })
     expect(within(details).queryByLabelText('Название')).not.toBeInTheDocument()
     expect(within(details).getByText('Сверить встречи и выбрать три главных результата.')).toBeInTheDocument()
-    expect(within(details).getAllByText('Работа').length).toBeGreaterThan(0)
+    expect(within(details).getAllByText('Без проекта').length).toBeGreaterThan(0)
     expect(within(details).getByText('#планирование')).toBeInTheDocument()
     expect(within(details).getByRole('checkbox', { name: 'Проверить календарь' })).toBeChecked()
 

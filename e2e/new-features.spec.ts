@@ -133,7 +133,13 @@ test('task creation survives replacing time manually inside the calendar popover
   await timeInput.press('Escape')
   await expect(popover).toBeHidden()
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
-  await expect(page.getByText('Время из календаря E2E', { exact: true })).toBeVisible()
+  await expect(page.locator('.task-card__title').getByText('Время из календаря E2E', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Фильтры', exact: true }).click()
+  await page.locator('.filter-panel').getByRole('button', { name: 'Все', exact: true }).click()
+  await expect(page.locator('.task-card__title').getByText('Время из календаря E2E', { exact: true })).toBeVisible()
+
+  await page.goto('/calendar')
+  await expect(page.locator('.calendar-task').getByText('Время из календаря E2E', { exact: true })).toBeVisible()
 })
 
 test('overlapping week tasks are laid out side by side', async ({ page }) => {
@@ -392,6 +398,9 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
       id: 'remote-google-task',
       title: 'Загружено из Google Drive',
       description: 'Удалённая копия для E2E',
+      projectId: 'inbox',
+      startAt: undefined,
+      deadline: undefined,
     })
     return state
   }, STORAGE_KEY)
@@ -575,7 +584,7 @@ test('habit dates align with checks, icons are centered and the daily completion
 
 test('mobile task actions launch a Pomodoro without clipping or pointer interception', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  const actions = page.getByRole('button', { name: 'Действия задачи Подготовить план недели' })
+  const actions = page.getByRole('button', { name: 'Действия задачи Разобрать идеи для следующих улучшений' })
   await expect(actions).toBeVisible()
   await actions.click()
   const launch = page.getByRole('menuitem', { name: 'Таймер фокуса · 25 минут' })
@@ -584,7 +593,7 @@ test('mobile task actions launch a Pomodoro without clipping or pointer intercep
 
   const timer = page.getByRole('complementary', { name: 'Таймер фокуса' })
   await expect(timer).toBeVisible()
-  await expect(timer.getByText('Подготовить план недели', { exact: true })).toBeVisible()
+  await expect(timer.getByText('Разобрать идеи для следующих улучшений', { exact: true })).toBeVisible()
   const bounds = await timer.boundingBox()
   expect(bounds).not.toBeNull()
   expect(bounds!.x).toBeGreaterThanOrEqual(0)
@@ -599,7 +608,7 @@ test('mobile calendar keeps deadline markers and compact controls usable', async
   await expect(page.getByRole('button', { name: 'Дедлайн: Подготовить план недели' })).toBeVisible()
 
   await page.goto('/inbox')
-  const taskCheck = page.getByRole('button', { name: 'Завершить задачу Подготовить план недели' })
+  const taskCheck = page.getByRole('button', { name: 'Завершить задачу Разобрать идеи для следующих улучшений' })
   const taskCheckBounds = await taskCheck.boundingBox()
   expect(taskCheckBounds).not.toBeNull()
   expect(taskCheckBounds!.width).toBeGreaterThanOrEqual(44)
@@ -624,7 +633,7 @@ test('dialogs and mobile drawer restore focus to their exact openers', async ({ 
     const raw = localStorage.getItem(storageKey)
     if (!raw) throw new Error('Local state was not initialized')
     const state = JSON.parse(raw)
-    const task = state.tasks.find((item: { title: string }) => item.title === 'Подготовить план недели')
+    const task = state.tasks.find((item: { title: string }) => item.title === 'Разобрать идеи для следующих улучшений')
     task.attachments = [{
       id: 'focus-return',
       name: 'focus-return.txt',
@@ -636,7 +645,7 @@ test('dialogs and mobile drawer restore focus to their exact openers', async ({ 
   }, STORAGE_KEY)
   await page.reload()
 
-  const taskBody = page.locator('.task-card').filter({ hasText: 'Подготовить план недели' }).locator('.task-card__body')
+  const taskBody = page.locator('.task-card').filter({ hasText: 'Разобрать идеи для следующих улучшений' }).locator('.task-card__body')
   await taskBody.click()
   const preview = page.getByRole('button', { name: 'Просмотреть focus-return.txt' })
   await preview.click()
@@ -753,7 +762,7 @@ test('a project urgency threshold is inherited by its tasks and updates without 
 })
 
 test('soft delete, restore, archive and archive restore keep task data', async ({ page }) => {
-  const taskTitle = 'Прочитать главу книги'
+  const taskTitle = 'Разобрать идеи для следующих улучшений'
   const navigation = page.getByRole('navigation', { name: 'Основная навигация' })
 
   await page.getByRole('button', { name: `Действия задачи ${taskTitle}` }).click()
@@ -794,6 +803,17 @@ test('soft delete, restore, archive and archive restore keep task data', async (
 })
 
 test('inbox sort, layouts and a running task Pomodoro persist', async ({ page }) => {
+  await page.evaluate((storageKey) => {
+    const state = JSON.parse(localStorage.getItem(storageKey)!)
+    const template = state.tasks.find((task: { id: string }) => task.id === 'task-ideas')
+    state.tasks.unshift(
+      { ...template, id: 'inbox-alpha', title: 'Альфа входящих', createdAt: '2026-07-01T10:00:00.000Z' },
+      { ...template, id: 'inbox-omega', title: 'Якорь входящих', createdAt: '2026-07-02T10:00:00.000Z' },
+    )
+    localStorage.setItem(storageKey, JSON.stringify(state))
+  }, STORAGE_KEY)
+  await page.reload()
+
   await page.getByRole('combobox', { name: 'Сортировка входящих' }).click()
   await page.getByRole('option', { name: 'По названию' }).click()
   const titles = await page.locator('.task-card__title').allTextContents()
@@ -811,11 +831,11 @@ test('inbox sort, layouts and a running task Pomodoro persist', async ({ page })
   await expect(page.getByRole('button', { name: 'Вид: Календарь' })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Планировать в календаре' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Вид: Список' }).click()
-  await page.getByRole('button', { name: 'Действия задачи Подготовить план недели' }).click()
+  await page.getByRole('button', { name: 'Действия задачи Разобрать идеи для следующих улучшений' }).click()
   await page.getByRole('menuitem', { name: 'Таймер фокуса · 25 минут' }).click()
 
   let timer = page.getByRole('complementary', { name: 'Таймер фокуса' })
-  await expect(timer.getByText('Подготовить план недели', { exact: true })).toBeVisible()
+  await expect(timer.getByText('Разобрать идеи для следующих улучшений', { exact: true })).toBeVisible()
   await expect(timer.locator('time')).toHaveText('25:00')
   await timer.getByRole('button', { name: 'Запустить таймер' }).click()
   await expect(timer.getByRole('button', { name: 'Поставить таймер на паузу' })).toBeVisible()
@@ -898,13 +918,16 @@ test('voice fallback populates task fields and an attachment can be reopened', a
   await expect(attachmentDialog.getByText('Focus Flow attachment acceptance', { exact: true })).toBeVisible()
   await attachmentDialog.getByRole('button', { name: 'Закрыть просмотр вложения' }).click()
   await page.getByRole('button', { name: 'Создать задачу' }).click()
-  await expect(page.getByText('Подготовить отчёт', { exact: true })).toBeVisible()
+  await expect(page.locator('.task-card__title').getByText('Подготовить отчёт', { exact: true })).toHaveCount(0)
   await expect.poll(() => page.evaluate((storageKey) => {
     const raw = localStorage.getItem(storageKey)
     const task = raw ? JSON.parse(raw).tasks.find((item: { title: string }) => item.title === 'Подготовить отчёт') : undefined
     return task ? { hasStart: Boolean(task.startAt), hasDeadline: Boolean(task.deadline) } : undefined
   }, STORAGE_KEY)).toEqual({ hasStart: true, hasDeadline: false })
 
+  await page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('link', { name: 'Проекты', exact: true }).click()
+  await page.getByRole('button', { name: 'Открыть проект Работа' }).click()
+  await expect(page.getByText('Подготовить отчёт', { exact: true })).toBeVisible()
   await page.reload()
   await page.locator('.task-card').filter({ hasText: 'Подготовить отчёт' }).locator('.task-card__body').click()
   await page.getByRole('button', { name: 'Просмотреть e2e-notes.txt' }).click()

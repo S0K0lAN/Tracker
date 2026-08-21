@@ -42,7 +42,7 @@ type Action =
   | { type: 'task/permanent-remove'; id: string }
   | { type: 'task/archive'; id: string }
   | { type: 'task/restore-archive'; id: string }
-  | { type: 'task/archive-completed' }
+  | { type: 'task/archive-completed'; ids?: string[] }
   | { type: 'task/focus-minutes'; id: string; minutes: number }
   | { type: 'project/add'; project: Project }
   | { type: 'project/update'; project: Project }
@@ -145,11 +145,12 @@ function reducer(state: AppState, action: Action): AppState {
             : task,
         ),
       }
-    case 'task/archive-completed':
+    case 'task/archive-completed': {
+      const ids = action.ids ? new Set(action.ids) : undefined
       return {
         ...state,
         tasks: state.tasks.map((task) =>
-          task.status === 'completed'
+          task.status === 'completed' && (!ids || ids.has(task.id))
             ? {
                 ...task,
                 previousStatus: 'completed',
@@ -160,6 +161,7 @@ function reducer(state: AppState, action: Action): AppState {
             : task,
         ),
       }
+    }
     case 'task/focus-minutes':
       return {
         ...state,
@@ -255,7 +257,7 @@ interface AppContextValue {
   permanentlyRemoveTask(id: string): void
   archiveTask(id: string): void
   restoreArchivedTask(id: string): void
-  archiveCompletedTasks(): void
+  archiveCompletedTasks(ids?: string[]): void
   addFocusMinutes(id: string, minutes: number): void
   addProject(project: Project): void
   updateProject(project: Project): void
@@ -1166,7 +1168,7 @@ export function AppProvider({ children, syncRegistry, storageAdapter }: AppProvi
       },
       archiveTask: (id) => dispatch({ type: 'task/archive', id }),
       restoreArchivedTask: (id) => dispatch({ type: 'task/restore-archive', id }),
-      archiveCompletedTasks: () => dispatch({ type: 'task/archive-completed' }),
+      archiveCompletedTasks: (ids) => dispatch({ type: 'task/archive-completed', ids }),
       addFocusMinutes: (id, minutes) => dispatch({ type: 'task/focus-minutes', id, minutes }),
       addProject: (project) => dispatch({ type: 'project/add', project }),
       updateProject: (project) => dispatch({ type: 'project/update', project }),
