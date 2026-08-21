@@ -167,7 +167,7 @@ describe('calendar deadline projection', () => {
     expect(tasksForLocalDate([longTask], new Date(2026, 7, 5))).toEqual([longTask])
   })
 
-  it('offers every calendar scale and opens the complete task list from a month cell', async () => {
+  it('offers every calendar view and opens the complete task list from a month cell', async () => {
     const user = userEvent.setup()
     const today = new Date()
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
@@ -181,9 +181,10 @@ describe('calendar deadline projection', () => {
       }))
     })
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
-    for (const name of ['Год', 'Месяц', 'Неделя', '3 дня', 'День', 'Дедлайны']) {
+    for (const name of ['Год', 'Месяц', 'Неделя', '3 дня', 'День']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument()
     }
+    expect(screen.queryByRole('button', { name: 'Дедлайны' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Месяц' }))
     expect(container.querySelectorAll('.month-day')).toHaveLength(42)

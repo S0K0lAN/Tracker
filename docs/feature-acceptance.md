@@ -53,7 +53,7 @@ Done браузерного MVP. Они честно вынесены в отд�
 | SEARCH-01 | Поиск задач, проектов, тегов и фильтров | **Готово** | `/search` регистронезависимо группирует четыре типа результатов; component/E2E подтверждают кириллический поиск, empty state, сохранение и повторное применение фильтра. |
 | TRASH-01 | Корзина удалённых задач | **Готово** | Soft delete → `/trash` → reload → restore → Inbox проходит E2E; permanent delete требует и component-тестом проверяет явное второе подтверждение. |
 | POM-01 | Таймер фокуса для задачи | **Готово** | Действие явно подписано «Таймер фокуса · 25 минут»; desktop/mobile E2E проверяют task binding, pause и timestamp persistence после reload. |
-| CAL-01 | Дедлайны и навигация календаря | **Готово** | Deadline-only task отображается marker в week/month; отдельный deadlines mode сохранён, а E2E проверяет смену периода горизонтальным drag. |
+| CAL-01 | Дедлайны и навигация календаря | **Готово** | Deadline-only task отображается marker в week/month, многодневные сроки — полосами месяца; отдельный deadlines mode удалён, а E2E проверяет смену периода горизонтальным drag. |
 | INB-01 | Сортировка входящих | **Готово** | Доступны created desc, nearest deadline, importance и title; component проверяет порядок, E2E — сохранение выбора после reload. |
 | ARC-01 | Архив выполненных задач | **Готово** | Individual/bulk archive, отдельный Archive tab, restore и reload реализованы; component/E2E проверяют полный цикл возврата в completed Inbox. |
 | HAB-01 | Правильный «Ваш ритм» и серии | **Готово** | Pure test с фиксированным временем проверяет independent schedule/progress/streak, UI считает только плановые прошедшие дни привычки. |

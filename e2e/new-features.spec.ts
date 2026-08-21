@@ -188,7 +188,7 @@ test('calendar changes period by horizontal mouse drag', async ({ page }) => {
   await expect(period).not.toHaveText(previousPeriod)
 })
 
-test('calendar scales, full month cell list and deadline ranges stay connected', async ({ page }) => {
+test('calendar views, full month cell list and deadline ranges stay connected', async ({ page }) => {
   await page.goto('/calendar')
   const localDate = await page.evaluate((storageKey) => {
     const state = JSON.parse(localStorage.getItem(storageKey))
@@ -196,6 +196,7 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
     const now = new Date()
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0)
     const pad = (value: number) => String(value).padStart(2, '0')
+    state.tasks = state.tasks.filter((task: { id: string }) => task.id === 'task-plan')
     state.tasks.push({
       ...template,
       id: 'long-day-slot',
@@ -214,8 +215,8 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
       ...template,
       id: 'project-range',
       title: 'Диапазон проекта',
-      startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0).toISOString(),
-      deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 16, 0).toISOString(),
+      startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 14, 0).toISOString(),
+      deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 3, 16, 0).toISOString(),
     })
     for (let index = 0; index < 5; index++) {
       state.tasks.push({
@@ -231,9 +232,10 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
   }, STORAGE_KEY)
   await page.reload()
 
-  for (const view of ['Год', 'Месяц', 'Неделя', '3 дня', 'День', 'Дедлайны']) {
+  for (const view of ['Год', 'Месяц', 'Неделя', '3 дня', 'День']) {
     await expect(page.getByRole('button', { name: view, exact: true })).toBeVisible()
   }
+  await expect(page.getByRole('button', { name: 'Дедлайны', exact: true })).toHaveCount(0)
 
   const wrappingWeekSlot = page.locator('.calendar-task').filter({ hasText: 'Подготовить подробный план презентации для общей встречи' })
   const wrappingTitleBox = await wrappingWeekSlot.locator('strong').boundingBox()
@@ -277,29 +279,18 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
   for (let index = 1; index <= 5; index++) await expect(dialog.getByText(`Полный список ${index}`, { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Закрыть список задач' }).click()
 
-  await page.getByRole('button', { name: 'Дедлайны', exact: true }).click()
-  const monthRange = page.locator('.deadline-month-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })
+  const monthRange = page.locator('.month-calendar__range').filter({ hasText: 'Диапазон проекта' })
   await expect(monthRange.first()).toBeVisible()
   const monthSpans = await monthRange.evaluateAll((nodes) =>
     nodes.map((node) => Number(node.getAttribute('data-range-span'))),
   )
   expect(monthSpans.reduce((total, span) => total + span, 0)).toBe(3)
-
-  await page.getByRole('button', { name: 'Дедлайны: неделя' }).click()
-  const weekRange = page.locator('.deadline-week-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })
-  await expect(weekRange).toHaveCount(1)
-  const weekSpan = Number(await weekRange.getAttribute('data-range-span'))
-  expect(weekSpan).toBeGreaterThan(0)
-  expect(weekSpan).toBeLessThanOrEqual(3)
-  if (weekSpan < 3) await expect(weekRange).toHaveClass(/continues-after/)
-  await page.getByRole('button', { name: 'Дедлайны: год' }).click()
-  await expect(page.locator('.deadline-year-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })).toHaveAttribute('data-range-span', '3')
 })
 
-test('deadline calendar updates the task color when importance changes', async ({ page }) => {
+test('month deadline range updates its color when importance changes', async ({ page }) => {
   await page.goto('/calendar')
-  await page.getByRole('button', { name: 'Дедлайны', exact: true }).click()
-  const range = page.locator('.deadline-range').filter({ hasText: 'Купить продукты на неделю' })
+  await page.getByRole('button', { name: 'Месяц', exact: true }).click()
+  const range = page.locator('.month-calendar__range').filter({ hasText: 'Купить продукты на неделю' })
   await expect(range).toHaveAttribute('data-importance', 'low')
   const lowColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
 

@@ -126,7 +126,7 @@ export const createSeedState = (): AppState => {
       task({
         id: 'task-release',
         title: 'Подготовить демонстрационный релиз',
-        description: 'Многодневный пример для диапазонной диаграммы дедлайнов.',
+        description: 'Многодневный пример для диапазонной полосы в календаре.',
         projectId: 'work',
         startAt: dateAt(-1, 14),
         deadline: dateAt(4, 17),

@@ -92,9 +92,9 @@ parser, подзадачи, даты, проект, теги, напоминан
 
 ### Календарь и дедлайны
 
-Режимы год/месяц/неделя/3 дня/день/дедлайны реализованы. Timed events используют
-`startAt`; deadline остаётся отдельной семантикой. Пересечения раскладываются по
-колонкам.
+Режимы год/месяц/неделя/3 дня/день реализованы. Timed events используют
+`startAt`; deadline остаётся отдельной семантикой и показывается маркерами либо
+месячной диапазонной полосой. Пересечения раскладываются по колонкам.
 
 Исправленные дефекты текущего цикла:
 
@@ -179,7 +179,7 @@ Production-ready Google Drive нельзя заявлять без live OAuth sm
 | [#22 Смысл Входящих](https://github.com/S0K0lAN/Tracker/issues/22) | Конфликт требований | Не сужать Inbox; добавить smart filter «Неразобранное». |
 | [#21 Статистика дня/AI](https://github.com/S0K0lAN/Tracker/issues/21) | Future/question | Сначала локальная deterministic card: completed today, planned done/total, overdue carry, focus minutes. AI — отдельный opt-in/privacy/cost design. |
 | [#18 Команды](https://github.com/S0K0lAN/Tracker/issues/18) | Новое направление, вне scope | Потребуются tenant/auth/ACL/server sync/audit/concurrency; текущий продукт single-user. |
-| [#17 Гант](https://github.com/S0K0lAN/Tracker/issues/17) | Future/plan | Текущий deadline view — light Gantt. Полный Gantt требует duration, dependencies, progress и keyboard drag parity. |
+| [#17 Гант](https://github.com/S0K0lAN/Tracker/issues/17) | Future/plan | Отдельного deadline view больше нет. Полный Gantt потребует duration, dependencies, progress и keyboard drag parity. |
 | [#16 Календари проектов](https://github.com/S0K0lAN/Tracker/issues/16) | Future/plan | Предпочтительно project filter в едином Calendar + URL/query/deep-link из Project, не отдельные копии календаря. |
 | [#12 Дедлайны на календаре](https://github.com/S0K0lAN/Tracker/issues/12) | Needs thought/duplicate | Консолидировать с #33/#35/#45 после выбора all-day/date-only модели. |
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Plus, Rows3, X } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Plus, X } from 'lucide-react'
 import type { Task } from '../domain/models'
 import { isOverdue, isSameLocalDay } from '../domain/models'
 import { useApp } from '../state/AppContext'
@@ -7,7 +7,6 @@ import { PageHeader } from '../components/PageHeader'
 import { trapTabKey } from '../components/focusTrap'
 import {
   addLocalDays,
-  differenceInLocalDays,
   layoutDeadlineRanges,
   layoutTimedDayTasks,
   sameLocalDate,
@@ -18,8 +17,7 @@ import {
 } from './calendarLayout'
 import './calendar-deadlines.css'
 
-type CalendarMode = 'year' | 'month' | 'week' | 'three-days' | 'day' | 'deadlines'
-type DeadlineScale = 'year' | 'month' | 'week'
+type CalendarMode = 'year' | 'month' | 'week' | 'three-days' | 'day'
 
 const dayLabel = new Intl.DateTimeFormat('ru-RU', { weekday: 'short' })
 const monthLabel = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' })
@@ -598,192 +596,18 @@ function YearCalendar({
   )
 }
 
-function DeadlineRangeBars({
-  tasks,
-  start,
-  dayCount,
-  onEdit,
-}: {
-  tasks: Task[]
-  start: Date
-  dayCount: number
-  onEdit: (task: Task) => void
-}) {
-  const end = addLocalDays(start, dayCount - 1)
-  const ranges = layoutDeadlineRanges(tasks, start, end)
-  const laneCount = Math.max(1, ...ranges.map((range) => range.laneCount))
-  return (
-    <div
-      className="deadline-range-bars"
-      style={{
-        gridTemplateColumns: `repeat(${dayCount}, minmax(0, 1fr))`,
-        gridTemplateRows: `repeat(${laneCount}, 24px)`,
-      }}
-      data-range-lanes={ranges.length ? laneCount : 0}
-    >
-      {ranges.map(({ task, columnStart, columnSpan, lane, startsBeforeView, endsAfterView }) => (
-        <button
-          className={`deadline-range ${task.importance === 'high' ? 'is-important' : ''} ${startsBeforeView ? 'continues-before' : ''} ${endsAfterView ? 'continues-after' : ''} ${isOverdue(task) ? 'is-overdue' : ''}`}
-          style={{ gridColumn: `${columnStart + 1} / span ${columnSpan}`, gridRow: lane + 1 }}
-          key={task.id}
-          onClick={() => onEdit(task)}
-          title={`${task.title}: ${taskDateRangeLabel(task)}`}
-          aria-label={`${task.title}: ${taskDateRangeLabel(task)}`}
-          data-range-span={columnSpan}
-          data-importance={task.importance}
-        >
-          <i aria-hidden="true" /><span>{task.title}</span>
-        </button>
-      ))}
-      {ranges.length === 0 && <span className="deadline-range-bars__empty" aria-hidden="true" />}
-    </div>
-  )
-}
-
-function DeadlineWeekRow({
-  start,
-  tasks,
-  mutedMonth,
-  onOpenDay,
-  onEdit,
-}: {
-  start: Date
-  tasks: Task[]
-  mutedMonth?: number
-  onOpenDay: (date: Date, opener?: HTMLElement) => void
-  onEdit: (task: Task) => void
-}) {
-  const days = daysFrom(start, 7)
-  return (
-    <div className="deadline-calendar__week">
-      <div className="deadline-calendar__days">
-        {days.map((date) => {
-          const count = tasksForLocalDate(tasks, date).length
-          return (
-            <button
-              className={`${mutedMonth !== undefined && date.getMonth() !== mutedMonth ? 'is-muted' : ''} ${sameLocalDate(date, new Date()) ? 'is-today' : ''}`}
-              key={date.toISOString()}
-              onClick={(event) => onOpenDay(date, event.currentTarget)}
-              aria-label={`Показать задачи на ${dateForAria(date)}`}
-            >
-              <span>{dayLabel.format(date)}</span><strong>{date.getDate()}</strong>{count > 0 && <i>{count}</i>}
-            </button>
-          )
-        })}
-      </div>
-      <DeadlineRangeBars tasks={tasks} start={start} dayCount={7} onEdit={onEdit} />
-    </div>
-  )
-}
-
-function DeadlineCalendar({
-  anchor,
-  scale,
-  tasks,
-  onScaleChange,
-  onOpenDay,
-  onOpenMonth,
-  onEdit,
-}: {
-  anchor: Date
-  scale: DeadlineScale
-  tasks: Task[]
-  onScaleChange: (scale: DeadlineScale) => void
-  onOpenDay: (date: Date, opener?: HTMLElement) => void
-  onOpenMonth: (date: Date) => void
-  onEdit: (task: Task) => void
-}) {
-  const deadlineTasks = tasks.filter((task) => task.deadline)
-  const weekStart = startOfWeek(anchor)
-  const monthDays = monthGridDays(anchor)
-  const yearStart = new Date(anchor.getFullYear(), 0, 1)
-  const yearEnd = new Date(anchor.getFullYear(), 11, 31)
-  const yearDayCount = differenceInLocalDays(yearEnd, yearStart) + 1
-  const yearMonths = Array.from({ length: 12 }, (_, month) => {
-    const start = new Date(anchor.getFullYear(), month, 1)
-    return {
-      start,
-      offset: differenceInLocalDays(start, yearStart),
-      days: new Date(anchor.getFullYear(), month + 1, 0).getDate(),
-    }
-  })
-
-  return (
-    <section className="deadline-view">
-      <div className="deadline-view__header">
-        <div><span className="eyebrow">Диаграмма дедлайнов</span><h2>Ближайшие сроки</h2></div>
-        <span className="count-badge">{deadlineTasks.length} задач</span>
-      </div>
-      <div className="deadline-view__toolbar">
-        <span>Масштаб</span>
-        <div className="segmented" aria-label="Масштаб диаграммы дедлайнов">
-          <button aria-label="Дедлайны: неделя" className={scale === 'week' ? 'is-selected' : ''} onClick={() => onScaleChange('week')}>Неделя</button>
-          <button aria-label="Дедлайны: месяц" className={scale === 'month' ? 'is-selected' : ''} onClick={() => onScaleChange('month')}>Месяц</button>
-          <button aria-label="Дедлайны: год" className={scale === 'year' ? 'is-selected' : ''} onClick={() => onScaleChange('year')}>Год</button>
-        </div>
-      </div>
-
-      {scale === 'week' && (
-        <div className="deadline-week-calendar" aria-label={`Дедлайны ${shortDate.format(weekStart)} — ${shortDate.format(addLocalDays(weekStart, 6))}`}>
-          <DeadlineWeekRow start={weekStart} tasks={deadlineTasks} onOpenDay={onOpenDay} onEdit={onEdit} />
-        </div>
-      )}
-
-      {scale === 'month' && (
-        <div className="deadline-month-calendar" aria-label={`Дедлайны, ${monthLabel.format(anchor)}`}>
-          <div className="deadline-month-calendar__weekdays" aria-hidden="true">
-            {weekdayLabels.map((label) => <span key={label}>{label}</span>)}
-          </div>
-          {Array.from({ length: 6 }, (_, index) => (
-            <DeadlineWeekRow
-              key={index}
-              start={monthDays[index * 7]}
-              tasks={deadlineTasks}
-              mutedMonth={anchor.getMonth()}
-              onOpenDay={onOpenDay}
-              onEdit={onEdit}
-            />
-          ))}
-        </div>
-      )}
-
-      {scale === 'year' && (
-        <div className="deadline-year-calendar" aria-label={`Дедлайны на ${anchor.getFullYear()} год`}>
-          <div className="deadline-year-calendar__months" style={{ gridTemplateColumns: `repeat(${yearDayCount}, minmax(0, 1fr))` }}>
-            {yearMonths.map((month) => (
-              <button
-                key={month.start.getMonth()}
-                style={{ gridColumn: `${month.offset + 1} / span ${month.days}` }}
-                onClick={() => onOpenMonth(month.start)}
-                aria-label={`Открыть дедлайны за ${monthOnlyLabel.format(month.start)}`}
-              >
-                {monthOnlyLabel.format(month.start).slice(0, 3)}
-              </button>
-            ))}
-          </div>
-          <DeadlineRangeBars tasks={deadlineTasks} start={yearStart} dayCount={yearDayCount} onEdit={onEdit} />
-        </div>
-      )}
-
-      {deadlineTasks.length === 0 && <div className="empty-state"><span><Rows3 /></span><h3>Нет дедлайнов</h3><p>Добавьте дедлайн в редакторе задачи.</p></div>}
-    </section>
-  )
-}
-
-function periodTitle(mode: CalendarMode, deadlineScale: DeadlineScale, anchor: Date) {
-  const effectiveMode = mode === 'deadlines' ? deadlineScale : mode
-  if (effectiveMode === 'year') return String(anchor.getFullYear())
-  if (effectiveMode === 'month') return monthLabel.format(anchor)
-  if (effectiveMode === 'day') return fullDate.format(anchor)
-  const count = effectiveMode === 'three-days' ? 3 : 7
-  const start = effectiveMode === 'week' ? startOfWeek(anchor) : startOfLocalDay(anchor)
+function periodTitle(mode: CalendarMode, anchor: Date) {
+  if (mode === 'year') return String(anchor.getFullYear())
+  if (mode === 'month') return monthLabel.format(anchor)
+  if (mode === 'day') return fullDate.format(anchor)
+  const count = mode === 'three-days' ? 3 : 7
+  const start = mode === 'week' ? startOfWeek(anchor) : startOfLocalDay(anchor)
   return `${shortDate.format(start)} — ${shortDate.format(addLocalDays(start, count - 1))}`
 }
 
 export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, defaults?: Partial<Pick<Task, 'startAt' | 'deadline'>>) => void }) {
   const { state } = useApp()
   const [mode, setMode] = useState<CalendarMode>('week')
-  const [deadlineScale, setDeadlineScale] = useState<DeadlineScale>('month')
   const [anchor, setAnchor] = useState(new Date())
   const [openDay, setOpenDay] = useState<Date | null>(null)
   const dayDialogOpener = useRef<HTMLElement | null>(null)
@@ -813,21 +637,19 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
 
   const openMonth = (date: Date) => {
     setAnchor(new Date(date))
-    if (mode === 'deadlines') setDeadlineScale('month')
-    else setMode('month')
+    setMode('month')
   }
 
   const move = (direction: number) => {
-    const effectiveMode = mode === 'deadlines' ? deadlineScale : mode
-    if (effectiveMode === 'year') {
+    if (mode === 'year') {
       setAnchor(new Date(anchor.getFullYear() + direction, anchor.getMonth(), 1))
       return
     }
-    if (effectiveMode === 'month') {
+    if (mode === 'month') {
       setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + direction, 1))
       return
     }
-    const dayStep = effectiveMode === 'week' ? 7 : effectiveMode === 'three-days' ? 3 : 1
+    const dayStep = mode === 'week' ? 7 : mode === 'three-days' ? 3 : 1
     setAnchor(addLocalDays(anchor, direction * dayStep))
   }
 
@@ -853,13 +675,12 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
           <button className={mode === 'week' ? 'is-selected' : ''} onClick={() => setMode('week')}>Неделя</button>
           <button className={mode === 'three-days' ? 'is-selected' : ''} onClick={() => setMode('three-days')}>3 дня</button>
           <button className={mode === 'day' ? 'is-selected' : ''} onClick={() => setMode('day')}>День</button>
-          <button className={mode === 'deadlines' ? 'is-selected' : ''} onClick={() => setMode('deadlines')}>Дедлайны</button>
         </div>
         <div className="date-navigation">
           <button className="button button--ghost button--icon" onClick={() => move(-1)} aria-label="Предыдущий период"><ChevronLeft size={18} /></button>
           <button className="button button--ghost" onClick={() => setAnchor(new Date())}>Сегодня</button>
           <button className="button button--ghost button--icon" onClick={() => move(1)} aria-label="Следующий период"><ChevronRight size={18} /></button>
-          <strong>{periodTitle(mode, deadlineScale, anchor)}</strong>
+          <strong>{periodTitle(mode, anchor)}</strong>
         </div>
       </section>
 
@@ -874,17 +695,6 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
             onCreate={(date) => onEditTask(null, { startAt: plannedDate(date) })}
             onEdit={onEditTask}
             onOpenDay={showDay}
-          />
-        )}
-        {mode === 'deadlines' && (
-          <DeadlineCalendar
-            anchor={anchor}
-            scale={deadlineScale}
-            tasks={activeTasks}
-            onScaleChange={setDeadlineScale}
-            onOpenDay={showDay}
-            onOpenMonth={openMonth}
-            onEdit={onEditTask}
           />
         )}
       </CalendarSwipeSurface>
