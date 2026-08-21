@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import {
   Activity,
   Apple,
@@ -22,6 +22,14 @@ import type { Habit, Task } from '../domain/models'
 import { INPUT_LIMITS } from '../domain/inputLimits'
 import { useApp } from '../state/AppContext'
 import { useNow } from '../hooks/useNow'
+import {
+  HABIT_TREND_MAX_DAYS,
+  HABIT_TREND_PRESETS,
+  getInclusiveDays,
+  getRollingDays,
+  parseDateKey,
+  shiftLocalDate,
+} from './habitTrendRange'
 import './habits.css'
 
 export const HABIT_ICONS = [
@@ -127,6 +135,30 @@ export interface CompletionTrendPoint {
   tasks: number
 }
 
+type HabitTrendPreset = (typeof HABIT_TREND_PRESETS)[number] | 'custom'
+
+function formatTrendRange(days: Date[]) {
+  if (!days.length) return ''
+  const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' }
+  return `${days[0].toLocaleDateString('ru-RU', options)} — ${days[days.length - 1].toLocaleDateString('ru-RU', options)}`
+}
+
+function getDayNoun(count: number) {
+  const lastTwoDigits = count % 100
+  const lastDigit = count % 10
+  return lastTwoDigits >= 11 && lastTwoDigits <= 14
+    ? 'дней'
+    : lastDigit === 1
+      ? 'день'
+      : lastDigit >= 2 && lastDigit <= 4
+        ? 'дня'
+        : 'дней'
+}
+
+function formatDayCount(count: number) {
+  return `${count} ${getDayNoun(count)}`
+}
+
 export function getCompletionTrend(habits: Habit[], tasks: Task[], days: Date[]): CompletionTrendPoint[] {
   return days.map((date) => {
     const dateKey = toDateKey(date)
@@ -154,16 +186,23 @@ export function HabitsPage() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState<(typeof HABIT_ICONS)[number]['value']>('sparkles')
+  const [trendPreset, setTrendPreset] = useState<HabitTrendPreset>(30)
+  const [customTrendStart, setCustomTrendStart] = useState(() => toDateKey(shiftLocalDate(atStartOfDay(new Date()), -29)))
+  const [customTrendEnd, setCustomTrendEnd] = useState(() => toDateKey(atStartOfDay(new Date())))
+  const trendViewportRef = useRef<HTMLDivElement>(null)
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => {
     const date = new Date(today)
     date.setDate(date.getDate() - 6 + index)
     return date
   }), [today])
-  const trendDays = useMemo(() => Array.from({ length: 14 }, (_, index) => {
-    const date = new Date(today)
-    date.setDate(date.getDate() - 13 + index)
-    return date
-  }), [today])
+  const trendDays = useMemo(
+    () => trendPreset === 'custom'
+      ? getInclusiveDays(customTrendStart, customTrendEnd)
+      : getRollingDays(today, trendPreset),
+    [customTrendEnd, customTrendStart, today, trendPreset],
+  )
+  const trendStartKey = toDateKey(trendDays[0])
+  const trendEndKey = toDateKey(trendDays.at(-1) ?? today)
 
   const rhythms = useMemo(
     () => new Map(state.habits.map((habit) => [habit.id, getHabitRhythm(habit, days, today)])),
@@ -174,6 +213,50 @@ export function HabitsPage() {
     [state.habits, state.tasks, trendDays],
   )
   const trendMaximum = Math.max(1, ...completionTrend.flatMap((point) => [point.habits, point.tasks]))
+  const trendTotals = completionTrend.reduce(
+    (totals, point) => ({ habits: totals.habits + point.habits, tasks: totals.tasks + point.tasks }),
+    { habits: 0, tasks: 0 },
+  )
+  const trendRangeLabel = formatTrendRange(trendDays)
+  const trendDayCountLabel = formatDayCount(trendDays.length)
+  const trendChartLabel = `График выполненных привычек и задач за период ${trendRangeLabel}, ${trendDayCountLabel}. Подробные значения приведены в таблице после графика.`
+
+  useEffect(() => {
+    const viewport = trendViewportRef.current
+    if (viewport) viewport.scrollLeft = viewport.scrollWidth - viewport.clientWidth
+  }, [trendEndKey, trendStartKey])
+
+  const selectTrendPreset = (preset: (typeof HABIT_TREND_PRESETS)[number]) => {
+    setTrendPreset(preset)
+  }
+
+  const changeTrendStart = (value: string) => {
+    const requestedStart = parseDateKey(value)
+    const currentEnd = parseDateKey(trendEndKey) ?? today
+    if (!requestedStart) return
+    const nextStart = requestedStart > today ? today : requestedStart
+    const latestEnd = shiftLocalDate(nextStart, HABIT_TREND_MAX_DAYS - 1)
+    const nextEnd = currentEnd < nextStart
+      ? nextStart
+      : currentEnd > latestEnd
+        ? latestEnd
+        : currentEnd
+    setCustomTrendStart(toDateKey(nextStart))
+    setCustomTrendEnd(toDateKey(nextEnd > today ? today : nextEnd))
+    setTrendPreset('custom')
+  }
+
+  const changeTrendEnd = (value: string) => {
+    const requestedEnd = parseDateKey(value)
+    const currentStart = parseDateKey(trendStartKey) ?? today
+    if (!requestedEnd) return
+    const nextEnd = requestedEnd > today ? today : requestedEnd
+    const earliestStart = shiftLocalDate(nextEnd, -(HABIT_TREND_MAX_DAYS - 1))
+    const nextStart = currentStart > nextEnd ? nextEnd : currentStart < earliestStart ? earliestStart : currentStart
+    setCustomTrendStart(toDateKey(nextStart))
+    setCustomTrendEnd(toDateKey(nextEnd))
+    setTrendPreset('custom')
+  }
 
   const closeForm = () => {
     setAdding(false)
@@ -262,26 +345,78 @@ export function HabitsPage() {
 
       <section className="habit-trend" aria-labelledby="habit-trend-title">
         <header>
-          <div><span className="eyebrow">Последние 14 дней</span><h2 id="habit-trend-title">Выполнения по дням</h2></div>
-          <div className="habit-trend__legend" aria-label="Легенда графика"><span><i className="is-habit" /> Привычки</span><span><i className="is-task" /> Задачи</span></div>
-        </header>
-        <div className="habit-trend__chart" role="img" aria-label="График выполненных привычек и задач за последние четырнадцать дней. Подробные значения приведены в таблице после графика.">
-          {completionTrend.map((point) => (
-            <div
-              className={`habit-trend__day ${point.dateKey === todayKey ? 'is-today' : ''}`}
-              key={point.dateKey}
-            >
-              <span className="habit-trend__values" aria-hidden="true">
-                <i className="is-habit" style={{ '--bar-height': `${Math.max(point.habits ? 10 : 2, (point.habits / trendMaximum) * 100)}%` } as CSSProperties}><em>{point.habits || ''}</em></i>
-                <i className="is-task" style={{ '--bar-height': `${Math.max(point.tasks ? 10 : 2, (point.tasks / trendMaximum) * 100)}%` } as CSSProperties}><em>{point.tasks || ''}</em></i>
-              </span>
-              <small>{point.date.toLocaleDateString('ru-RU', { weekday: 'short' })}<strong>{point.date.getDate()}</strong></small>
+          <div className="habit-trend__header-copy">
+            <span className="eyebrow">{trendRangeLabel}</span>
+            <h2 id="habit-trend-title">Выполнения по дням</h2>
+          </div>
+          <div className="habit-trend__toolbar">
+            <div className="habit-trend__presets" role="group" aria-label="Быстрый диапазон диаграммы">
+              {HABIT_TREND_PRESETS.map((preset) => (
+                <button
+                  type="button"
+                  className="habit-trend__preset"
+                  aria-pressed={trendPreset === preset}
+                  key={preset}
+                  onClick={() => selectTrendPreset(preset)}
+                >
+                  {preset} дней
+                </button>
+              ))}
             </div>
-          ))}
+            <div className="habit-trend__dates">
+              <label className="habit-trend__date-field">
+                <span>Начало периода</span>
+                <input
+                  type="date"
+                  value={trendStartKey}
+                  max={todayKey}
+                  onChange={(event) => changeTrendStart(event.target.value)}
+                />
+              </label>
+              <label className="habit-trend__date-field">
+                <span>Конец периода</span>
+                <input
+                  type="date"
+                  value={trendEndKey}
+                  max={todayKey}
+                  onChange={(event) => changeTrendEnd(event.target.value)}
+                />
+              </label>
+            </div>
+          </div>
+        </header>
+        <div className="habit-trend__summary" aria-live="polite">
+          <span><strong>{trendDays.length}</strong> {getDayNoun(trendDays.length)}</span>
+          <span><i className="is-habit" aria-hidden="true" /><strong>{trendTotals.habits}</strong> выполнений привычек</span>
+          <span><i className="is-task" aria-hidden="true" /><strong>{trendTotals.tasks}</strong> выполненных задач</span>
+          <div className="habit-trend__legend" aria-label="Легенда графика"><span><i className="is-habit" /> Привычки</span><span><i className="is-task" /> Задачи</span></div>
+          <span className="habit-trend__scroll-hint" id="habit-trend-scroll-hint">Прокрутите график по горизонтали</span>
+        </div>
+        <div ref={trendViewportRef} className="habit-trend__viewport" role="region" aria-label="Прокручиваемая диаграмма выполнений по дням" aria-describedby="habit-trend-scroll-hint" tabIndex={0}>
+          <div
+            className="habit-trend__chart"
+            role="img"
+            aria-label={trendChartLabel}
+            style={{ '--trend-day-count': completionTrend.length } as CSSProperties}
+          >
+            {completionTrend.map((point) => (
+              <div
+                className={`habit-trend__day ${point.dateKey === todayKey ? 'is-today' : ''}`}
+                key={point.dateKey}
+                title={`${point.date.toLocaleDateString('ru-RU')}: привычки — ${point.habits}, задачи — ${point.tasks}`}
+              >
+                <span className="habit-trend__values" aria-hidden="true">
+                  <i className="is-habit" style={{ '--bar-height': `${Math.max(point.habits ? 10 : 2, (point.habits / trendMaximum) * 100)}%` } as CSSProperties}><em>{point.habits || ''}</em></i>
+                  <i className="is-task" style={{ '--bar-height': `${Math.max(point.tasks ? 10 : 2, (point.tasks / trendMaximum) * 100)}%` } as CSSProperties}><em>{point.tasks || ''}</em></i>
+                </span>
+                <small>{point.date.toLocaleDateString('ru-RU', { weekday: 'short' })}<strong>{point.date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}</strong></small>
+              </div>
+            ))}
+          </div>
         </div>
         <div className="visually-hidden">
           <table>
-            <caption>Выполнения привычек и задач за последние четырнадцать дней</caption>
+            <caption>Выполнения привычек и задач за период {trendRangeLabel} ({trendDayCountLabel})</caption>
             <thead><tr><th scope="col">Дата</th><th scope="col">Привычки</th><th scope="col">Задачи</th></tr></thead>
             <tbody>
               {completionTrend.map((point) => (

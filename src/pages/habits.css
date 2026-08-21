@@ -246,16 +246,148 @@
 
 .habit-trend > header {
   display: flex;
-  align-items: end;
+  align-items: start;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 15px;
+}
+
+.habit-trend__header-copy {
+  min-width: 180px;
+  flex: 1 1 auto;
 }
 
 .habit-trend > header h2 {
   margin: 4px 0 0;
   font-family: inherit;
   font-size: calc(18px * var(--app-font-scale));
+}
+
+.habit-trend__toolbar {
+  min-width: 0;
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 9px 12px;
+}
+
+.habit-trend__presets {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.habit-trend__preset {
+  min-width: 44px;
+  min-height: 34px;
+  padding: 6px 10px;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: calc(12px * var(--app-font-scale));
+  font-weight: 700;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+
+.habit-trend__preset:hover {
+  color: var(--text);
+  background: var(--surface-strong);
+}
+
+.habit-trend__preset.is-active,
+.habit-trend__preset[aria-pressed='true'] {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.habit-trend__preset:focus-visible,
+.habit-trend__date-field input:focus-visible,
+.habit-trend__viewport:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.habit-trend__dates {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+
+.habit-trend__date-field {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: var(--text-soft);
+  font-size: calc(11px * var(--app-font-scale));
+  font-weight: 700;
+}
+
+.habit-trend__date-field input {
+  min-width: 0;
+  width: 145px;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  color: var(--text);
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.habit-trend__summary {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: -3px 0 12px;
+  color: var(--text-soft);
+  font-size: calc(12px * var(--app-font-scale));
+  line-height: 1.45;
+}
+
+.habit-trend__summary strong {
+  color: var(--text);
+}
+
+.habit-trend__summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.habit-trend__summary .habit-trend__scroll-hint {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: calc(11px * var(--app-font-scale));
+}
+
+.habit-trend__summary > span i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 3px;
+}
+
+.habit-trend__summary > span .is-habit {
+  background: var(--accent);
+}
+
+.habit-trend__summary > span .is-task {
+  background: var(--warning);
 }
 
 .habit-trend__legend {
@@ -288,10 +420,21 @@
   background: var(--warning);
 }
 
+.habit-trend__viewport {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 8px;
+  scrollbar-gutter: stable;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 .habit-trend__chart {
+  min-width: max(100%, calc(var(--trend-day-count, 14) * 40px));
   height: 178px;
   display: grid;
-  grid-template-columns: repeat(14, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--trend-day-count, 14), minmax(24px, 1fr));
   align-items: stretch;
   gap: 7px;
   padding: 10px 8px 0;
@@ -445,10 +588,63 @@
   .habit-trend > header {
     align-items: start;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
+  }
+
+  .habit-trend__header-copy,
+  .habit-trend__toolbar,
+  .habit-trend__dates {
+    width: 100%;
+  }
+
+  .habit-trend__toolbar {
+    display: grid;
+    justify-content: stretch;
+    gap: 10px;
+  }
+
+  .habit-trend__presets {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .habit-trend__preset {
+    min-width: 0;
+    min-height: 44px;
+    padding-inline: 6px;
+  }
+
+  .habit-trend__dates {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .habit-trend__date-field input {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .habit-trend__legend {
+    min-height: 44px;
+    flex-wrap: wrap;
+  }
+
+  .habit-trend__summary {
+    margin-top: 0;
+  }
+
+  .habit-trend__summary .habit-trend__scroll-hint {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .habit-trend__viewport {
+    margin-inline: -2px;
+    padding-bottom: 10px;
   }
 
   .habit-trend__chart {
+    min-width: max(100%, calc(var(--trend-day-count, 14) * 38px));
     height: 154px;
     gap: 3px;
     padding-inline: 2px;
