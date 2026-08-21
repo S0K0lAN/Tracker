@@ -1,6 +1,100 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeAppState, parseStoredAppState } from './migrations'
+import { normalizeAppState, parseStoredAppState, SNAPSHOT_LIMITS } from './migrations'
+import type { AppState, SavedFilter, Task } from './models'
 import { createSeedState } from './seed'
+
+const savedFilter = (id: string): SavedFilter => ({
+  id,
+  name: `Фильтр ${id}`,
+  query: '',
+  tags: [],
+  tagMode: 'any',
+  status: 'active',
+  createdAt: '2026-08-21T00:00:00.000Z',
+})
+
+function addDeepPluginState(state: AppState, depth = 10_000) {
+  let value: Record<string, unknown> = { leaf: true }
+  for (let index = 0; index < depth; index += 1) value = { child: value }
+  ;(state as AppState & Record<string, unknown>)['plugin.example/deep'] = value
+}
+
+const minimalTask = (index: number): Task => ({
+  id: `minimal-task-${index}`,
+  title: 't',
+  description: '',
+  projectId: 'inbox',
+  urgencyThresholdHours: 72,
+  importance: 'low',
+  tags: [],
+  subtasks: [],
+  attachments: [],
+  reminders: [],
+  status: 'active',
+  createdAt: '2026-08-21T00:00:00.000Z',
+  updatedAt: '2026-08-21T00:00:00.000Z',
+  focusMinutes: 0,
+})
+
+function currentIntegrityCases(): [string, (state: AppState) => void, RegExp][] {
+  return [
+    ['duplicate task ID', (state) => state.tasks.push(structuredClone(state.tasks[0])), /tasks\[\d+\]\.id/],
+    ['duplicate project ID', (state) => state.projects.push(structuredClone(state.projects[0])), /projects\[\d+\]\.id/],
+    ['duplicate habit ID', (state) => state.habits.push(structuredClone(state.habits[0])), /habits\[\d+\]\.id/],
+    ['duplicate filter ID', (state) => state.savedFilters.push(savedFilter('same'), savedFilter('same')), /savedFilters\[1\]\.id/],
+    ['missing canonical inbox', (state) => {
+      state.projects = state.projects.filter((project) => project.id !== 'inbox')
+      state.tasks.forEach((task) => {
+        if (task.projectId === 'inbox') task.projectId = 'personal'
+      })
+    }, /projects\.inbox/],
+    ['orphan task project', (state) => { state.tasks[0].projectId = 'missing-project' }, /tasks\[0\]\.projectId/],
+    ['orphan saved-filter project', (state) => {
+      state.savedFilters.push({ ...savedFilter('orphan-filter'), projectId: 'missing-project' })
+    }, /savedFilters\[0\]\.projectId/],
+    ['orphan Pomodoro task', (state) => { state.pomodoro.taskId = 'missing-task' }, /pomodoro\.taskId/],
+    ['too many projects', (state) => {
+      state.projects = Array(SNAPSHOT_LIMITS.projects + 1).fill(state.projects[0])
+    }, /Snapshot\.projects/],
+    ['too many tasks', (state) => {
+      state.tasks = Array(SNAPSHOT_LIMITS.tasks + 1).fill(state.tasks[0])
+    }, /Snapshot\.tasks/],
+    ['too many habits', (state) => {
+      state.habits = Array(SNAPSHOT_LIMITS.habits + 1).fill(state.habits[0])
+    }, /Snapshot\.habits/],
+    ['too many saved filters', (state) => {
+      const filter = savedFilter('filter')
+      state.savedFilters = Array(SNAPSHOT_LIMITS.savedFilters + 1).fill(filter)
+    }, /Snapshot\.savedFilters/],
+    ['oversized user field', (state) => {
+      state.tasks[0].title = 'x'.repeat(SNAPSHOT_LIMITS.shortTextBytes + 1)
+    }, /Snapshot\.stringData/],
+    ['cumulative user text', (state) => {
+      const description = 'x'.repeat(Math.floor(SNAPSHOT_LIMITS.userTextBytes / 20) + 1)
+      state.tasks = []
+      state.habits = []
+      state.savedFilters = []
+      state.projects = [{
+        id: 'inbox',
+        name: 'Без проекта',
+        color: '#778c70',
+        createdAt: '2026-08-21T00:00:00.000Z',
+      }, ...Array.from({ length: 20 }, (_, index) => ({
+        id: `large-project-${index}`,
+        name: `Проект ${index}`,
+        description,
+        color: '#778c70',
+        createdAt: '2026-08-21T00:00:00.000Z',
+      }))]
+    }, /Snapshot\.stringData/],
+    ['excessive structural complexity', (state) => {
+      ;(state as AppState & Record<string, unknown>)['plugin.example/nodes'] = Array(
+        SNAPSHOT_LIMITS.totalNodes + 1,
+      ).fill(0)
+    }, /Snapshot\.complexity/],
+    ['excessive nesting depth', (state) => addDeepPluginState(state), /Snapshot\.depth/],
+  ]
+}
 
 describe('state migrations for simplified navigation and habit icons', () => {
   it('moves the retired inbox calendar view to the list and converts legacy emoji icons', () => {
@@ -299,5 +393,187 @@ describe('state migrations for simplified navigation and habit icons', () => {
     const migrated = normalizeAppState(persisted)
 
     expect(migrated.savedFilters[0]).toHaveProperty('plugin.example/rule', { version: 1 })
+  })
+
+  it.each(currentIntegrityCases())('rejects current schema snapshots with %s', (_label, mutate, error) => {
+    const invalid = createSeedState()
+    mutate(invalid)
+
+    expect(() => parseStoredAppState(invalid)).toThrow(error)
+  })
+
+  it('bounds unknown plugin payloads instead of silently removing them', () => {
+    const valid = createSeedState() as AppState & Record<string, unknown>
+    valid['plugin.example/state'] = {
+      version: 1,
+      note: 'Сохранить неизвестные данные',
+    }
+
+    expect(parseStoredAppState(valid)).toHaveProperty('plugin.example/state', {
+      version: 1,
+      note: 'Сохранить неизвестные данные',
+    })
+
+    const oversized = createSeedState() as AppState & Record<string, unknown>
+    oversized['plugin.example/state'] = 'x'.repeat(SNAPSHOT_LIMITS.totalStringBytes + 1)
+    expect(() => parseStoredAppState(oversized)).toThrow(/Snapshot\.stringData/)
+  })
+
+  it('loads the largest task shape currently accepted by the draft workflow', () => {
+    const state = createSeedState()
+    state.tasks[0].title = 'я'.repeat(10_000)
+    state.tasks[0].description = 'д'.repeat(100_000)
+    state.tasks[0].tags = Array.from({ length: 10_000 }, (_, index) => `tag-${index}`)
+    state.tasks[0].subtasks = Array.from({ length: 1_000 }, (_, index) => ({
+      id: `subtask-${index}`,
+      title: `Подзадача ${index}`,
+      completed: false,
+    }))
+
+    const loaded = parseStoredAppState(state)
+
+    expect(loaded.tasks[0]).toMatchObject({
+      title: state.tasks[0].title,
+      description: state.tasks[0].description,
+    })
+    expect(loaded.tasks[0].tags).toHaveLength(10_000)
+    expect(loaded.tasks[0].subtasks).toHaveLength(1_000)
+  })
+
+  it('keeps a current snapshot with one user field near the 10 MiB transport boundary', () => {
+    const state = createSeedState()
+    const emptyDescriptionBytes = new TextEncoder().encode(JSON.stringify(state)).byteLength
+    state.tasks[0].description = 'x'.repeat(
+      SNAPSHOT_LIMITS.totalStringBytes - emptyDescriptionBytes,
+    )
+    const serialized = JSON.stringify(state)
+
+    expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(
+      SNAPSHOT_LIMITS.totalStringBytes,
+    )
+    expect(new TextEncoder().encode(state.tasks[0].description).byteLength).toBeGreaterThan(
+      SNAPSHOT_LIMITS.totalStringBytes - 64 * 1024,
+    )
+    expect(parseStoredAppState(JSON.parse(serialized)).tasks[0].description).toBe(
+      state.tasks[0].description,
+    )
+  })
+
+  it('keeps a transportable current snapshot with 20,001 minimal tasks', () => {
+    const state = createSeedState()
+    state.tasks = Array.from({ length: 20_001 }, (_, index) => minimalTask(index))
+    const serialized = JSON.stringify(state)
+
+    const loaded = parseStoredAppState(JSON.parse(serialized))
+
+    expect(new TextEncoder().encode(serialized).byteLength).toBeLessThan(10 * 1024 * 1024)
+    expect(loaded.tasks).toHaveLength(20_001)
+    expect(loaded.tasks.at(-1)?.id).toBe('minimal-task-20000')
+  })
+
+  it('keeps formerly transportable 20,001-item nested collections and provider maps', () => {
+    const state = createSeedState()
+    state.tasks[0].tags = Array.from({ length: 20_001 }, (_, index) => `tag-${index}`)
+    state.tasks[0].subtasks = Array.from({ length: 20_001 }, (_, index) => ({
+      id: `subtask-${index}`,
+      title: `s${index}`,
+      completed: false,
+    }))
+    state.habits[0].targetDays = Array(20_001).fill(1)
+    state.habits[0].completions = Array(20_001).fill('2026-08-21')
+    state.settings.syncProviderConfigs = Object.fromEntries([
+      ['provider-0', Object.fromEntries(Array.from(
+        { length: 20_001 },
+        (_, index) => [`field-${index}`, 'value'],
+      ))],
+      ...Array.from({ length: 20_000 }, (_, index) => [`provider-${index + 1}`, {}]),
+    ])
+
+    const loaded = parseStoredAppState(state)
+
+    expect(loaded.tasks[0].tags).toHaveLength(20_001)
+    expect(loaded.tasks[0].subtasks).toHaveLength(20_001)
+    expect(loaded.habits[0].targetDays).toHaveLength(20_001)
+    expect(loaded.habits[0].completions).toHaveLength(20_001)
+    expect(Object.keys(loaded.settings.syncProviderConfigs)).toHaveLength(20_001)
+    expect(Object.keys(loaded.settings.syncProviderConfigs['provider-0'])).toHaveLength(20_001)
+  })
+
+  it('keeps formerly accepted v4 nested IDs without widening top-level identity rules', () => {
+    const state = createSeedState()
+    state.tasks[0].subtasks[0].id = ''
+    state.tasks[0].reminders[0].id = ''
+    state.tasks.find((task) => task.attachments.length)!.attachments[0].id = ''
+
+    const loaded = parseStoredAppState(state)
+
+    expect(loaded.tasks[0].subtasks[0].id).toBe('')
+    expect(loaded.tasks[0].reminders[0].id).toBe('')
+    expect(loaded.tasks.find((task) => task.attachments.length)!.attachments[0].id).toBe('')
+  })
+
+  it('deterministically repairs legacy identity and project references without dropping entities or plugin data', () => {
+    const legacy = createSeedState() as AppState & Record<string, unknown>
+    legacy.schemaVersion = 3
+    legacy['plugin.example/root'] = { keep: true }
+    legacy.projects[0].id = 'legacy-project'
+    legacy.projects.push({
+      ...structuredClone(legacy.projects[1]),
+      ['plugin.example/project' as keyof never]: { keep: 'project' },
+    })
+    legacy.tasks[0].projectId = 'orphan-project'
+    legacy.tasks.push({
+      ...structuredClone(legacy.tasks[1]),
+      ['plugin.example/task' as keyof never]: { keep: 'task' },
+    })
+    legacy.habits.push({
+      ...structuredClone(legacy.habits[0]),
+      ['plugin.example/habit' as keyof never]: { keep: 'habit' },
+    })
+    legacy.savedFilters.push(
+      { ...savedFilter('duplicate-filter'), projectId: 'orphan-project' },
+      { ...savedFilter('duplicate-filter'), ['plugin.example/filter' as keyof never]: { keep: 'filter' } },
+    )
+    legacy.pomodoro.taskId = 'orphan-task'
+
+    const first = parseStoredAppState(legacy)
+    const second = parseStoredAppState(legacy)
+
+    expect(first.projects).toHaveLength(legacy.projects.length + 1)
+    expect(first.tasks).toHaveLength(legacy.tasks.length)
+    expect(first.habits).toHaveLength(legacy.habits.length)
+    expect(first.savedFilters).toHaveLength(legacy.savedFilters.length)
+    expect(new Set(first.projects.map(({ id }) => id)).size).toBe(first.projects.length)
+    expect(new Set(first.tasks.map(({ id }) => id)).size).toBe(first.tasks.length)
+    expect(new Set(first.habits.map(({ id }) => id)).size).toBe(first.habits.length)
+    expect(new Set(first.savedFilters.map(({ id }) => id)).size).toBe(first.savedFilters.length)
+    expect(first.projects.filter(({ id }) => id === 'inbox')).toHaveLength(1)
+    expect(first.tasks[0].projectId).toBe('inbox')
+    expect(first.savedFilters[0].projectId).toBeUndefined()
+    expect(first.pomodoro.taskId).toBeUndefined()
+    expect(first.projects.map(({ id }) => id)).toEqual(second.projects.map(({ id }) => id))
+    expect(first.tasks.map(({ id }) => id)).toEqual(second.tasks.map(({ id }) => id))
+    expect(first).toHaveProperty('plugin.example/root', { keep: true })
+    expect(first.projects.at(-1)).toHaveProperty('plugin.example/project', { keep: 'project' })
+    expect(first.tasks.at(-1)).toHaveProperty('plugin.example/task', { keep: 'task' })
+    expect(first.habits.at(-1)).toHaveProperty('plugin.example/habit', { keep: 'habit' })
+    expect(first.savedFilters.at(-1)).toHaveProperty('plugin.example/filter', { keep: 'filter' })
+  })
+
+  it('creates stable migration IDs for schema v1 entities that predate required IDs', () => {
+    const legacy = createSeedState() as AppState
+    legacy.schemaVersion = 1
+    delete (legacy.tasks[0] as Partial<AppState['tasks'][number]>).id
+    delete (legacy.projects[0] as Partial<AppState['projects'][number]>).id
+    delete (legacy.habits[0] as Partial<AppState['habits'][number]>).id
+
+    const first = parseStoredAppState(legacy)
+    const second = parseStoredAppState(legacy)
+
+    expect(first.tasks[0].id).toBe('migrated-task-1')
+    expect(first.habits[0].id).toBe('migrated-habit-1')
+    expect(first.projects.some(({ id }) => id === 'migrated-project-1')).toBe(true)
+    expect(first.projects.map(({ id }) => id)).toEqual(second.projects.map(({ id }) => id))
+    expect(first.projects.filter(({ id }) => id === 'inbox')).toHaveLength(1)
   })
 })

@@ -46,6 +46,7 @@ test('mobile project creation keeps its project context and survives reload', as
 
   const contextAction = page.getByRole('button', { name: 'Задача в проект «Работа»' })
   await expect(contextAction).toBeVisible()
+  await expect(page).toHaveURL(/\/projects\/p-work$/)
   await contextAction.click()
 
   const project = page.getByRole('combobox', { name: 'Проект' })
@@ -66,8 +67,35 @@ test('mobile project creation keeps its project context and survives reload', as
   }, STORAGE_KEY)).toBe('work')
 
   await page.reload()
-  await page.getByRole('button', { name: 'Открыть проект Работа' }).click()
+  await expect(page).toHaveURL(/\/projects\/p-work$/)
+  await expect(page.getByRole('heading', { name: 'Работа', level: 1 })).toBeVisible()
   await expect(page.getByText('Контекстная мобильная задача', { exact: true })).toBeVisible()
+})
+
+test('project search results support direct URL, Back and Forward navigation', async ({ page }) => {
+  await page.goto('/search')
+  await page.getByRole('textbox', { name: 'Глобальный поиск' }).fill('Работа')
+  await page.getByRole('link', { name: 'Открыть проект Работа' }).click()
+
+  await expect(page).toHaveURL(/\/projects\/p-work$/)
+  await expect(page.getByRole('heading', { name: 'Работа', level: 1 })).toBeVisible()
+
+  await page.goBack()
+  await expect(page).toHaveURL(/\/search\?q=/)
+  await expect(page.getByRole('heading', { name: 'Поиск', level: 1 })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Глобальный поиск' })).toHaveValue('Работа')
+  await expect(page.getByRole('link', { name: 'Открыть проект Работа' })).toBeVisible()
+
+  await page.goForward()
+  await expect(page).toHaveURL(/\/projects\/p-work$/)
+  await expect(page.getByRole('heading', { name: 'Работа', level: 1 })).toBeVisible()
+})
+
+test('an unknown project detail URL returns to the project overview without a stale history entry', async ({ page }) => {
+  await page.goto('/projects/p-does-not-exist')
+
+  await expect(page).toHaveURL(/\/projects$/)
+  await expect(page.getByRole('heading', { name: 'Проекты', level: 1 })).toBeVisible()
 })
 
 test('searchable project menu preserves logical Tab order inside TaskEditor', async ({ page }) => {

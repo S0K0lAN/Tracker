@@ -1,12 +1,25 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Bell, Clock3, FileImage, Flag, Folder, Paperclip, Plus, Trash2, X } from 'lucide-react'
 import type { Attachment, Importance, Task, Urgency } from '../domain/models'
+import { INPUT_LIMITS } from '../domain/inputLimits'
 import { parseVoiceTask, type ParsedVoiceTask } from '../domain/voiceParser'
 import { useApp } from '../state/AppContext'
 import { AttachmentViewer } from './AttachmentViewer'
 import { DateTimePicker } from './DateTimePicker'
 import { setInert, trapTabKey } from './focusTrap'
 import { SelectMenu } from './SelectMenu'
+import {
+  clearTaskDraft,
+  clearTaskDraftIfMatches,
+  readTaskDraft,
+  TASK_DRAFT_DEBOUNCE_MS,
+  TASK_DRAFT_MAX_REMINDERS,
+  TASK_DRAFT_MAX_SUBTASKS,
+  taskDraftsEqual,
+  writeTaskDraft,
+  type TaskDraftData,
+  type TaskDraftWriteResult,
+} from './taskDraftJournal'
 import { VoiceCaptureButton } from './VoiceCaptureButton'
 import './task-editor-enhancements.css'
 
@@ -19,6 +32,27 @@ const localInput = (value?: string) => {
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined)
 const DATE_ORDER_ERROR = 'Дедлайн не может быть раньше начала'
 
+function createInitialDraft(
+  task: Task | undefined,
+  defaults: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>> | undefined,
+  defaultUrgencyThresholdHours: number,
+): TaskDraftData {
+  return {
+    title: task?.title ?? '',
+    description: task?.description ?? '',
+    projectId: task?.projectId ?? defaults?.projectId ?? 'inbox',
+    startAt: localInput(task?.startAt ?? defaults?.startAt),
+    deadline: localInput(task?.deadline ?? defaults?.deadline),
+    importance: task?.importance ?? 'low',
+    urgencyThresholdHours: task?.urgencyThresholdHours ?? defaultUrgencyThresholdHours,
+    urgencyOverride: task?.urgencyOverride ?? '',
+    tags: task?.tags.join(', ') ?? '',
+    subtasks: task?.subtasks ?? [],
+    pendingSubtaskTitle: '',
+    reminders: task?.reminders ?? [],
+  }
+}
+
 export function TaskEditor({
   task,
   defaults,
@@ -28,41 +62,73 @@ export function TaskEditor({
   defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>
   onClose: () => void
 }) {
-  const { state, addTask, updateTask, removeTask } = useApp()
-  const [title, setTitle] = useState(task?.title ?? '')
-  const [description, setDescription] = useState(task?.description ?? '')
-  const [projectId, setProjectId] = useState(task?.projectId ?? defaults?.projectId ?? 'inbox')
-  const [startAt, setStartAt] = useState(localInput(task?.startAt ?? defaults?.startAt))
-  const [deadline, setDeadline] = useState(localInput(task?.deadline ?? defaults?.deadline))
+  const { state, saveTaskDurably, trashTaskDurably } = useApp()
+  const [initialDraft] = useState(() => createInitialDraft(task, defaults, state.settings.defaultUrgencyThresholdHours))
+  const [title, setTitle] = useState(initialDraft.title)
+  const [description, setDescription] = useState(initialDraft.description)
+  const [projectId, setProjectId] = useState(initialDraft.projectId)
+  const [startAt, setStartAt] = useState(initialDraft.startAt)
+  const [deadline, setDeadline] = useState(initialDraft.deadline)
   const [startAtValid, setStartAtValid] = useState(true)
   const [deadlineValid, setDeadlineValid] = useState(true)
   const [dateInputResetToken, setDateInputResetToken] = useState(0)
-  const [importance, setImportance] = useState<Importance>(task?.importance ?? 'low')
-  const [urgencyOverride, setUrgencyOverride] = useState<Urgency | ''>(task?.urgencyOverride ?? '')
-  const [threshold, setThreshold] = useState(task?.urgencyThresholdHours ?? state.settings.defaultUrgencyThresholdHours)
-  const [tags, setTags] = useState(task?.tags.join(', ') ?? '')
-  const [subtasks, setSubtasks] = useState(task?.subtasks ?? [])
-  const [subtaskTitle, setSubtaskTitle] = useState('')
-  const [reminders, setReminders] = useState(task?.reminders ?? [])
+  const [importance, setImportance] = useState<Importance>(initialDraft.importance)
+  const [urgencyOverride, setUrgencyOverride] = useState<Urgency | ''>(initialDraft.urgencyOverride)
+  const [threshold, setThreshold] = useState(initialDraft.urgencyThresholdHours)
+  const [tags, setTags] = useState(initialDraft.tags)
+  const [subtasks, setSubtasks] = useState(initialDraft.subtasks)
+  const [subtaskTitle, setSubtaskTitle] = useState(initialDraft.pendingSubtaskTitle)
+  const [reminders, setReminders] = useState(initialDraft.reminders)
   const [attachments, setAttachments] = useState<Attachment[]>(task?.attachments ?? [])
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
   const [voiceFallback, setVoiceFallback] = useState(false)
   const [voiceCommand, setVoiceCommand] = useState('')
   const [voicePreview, setVoicePreview] = useState<ParsedVoiceTask | null>(null)
   const [error, setError] = useState('')
+  const [committing, setCommitting] = useState(false)
+  const [draftStorageMessage, setDraftStorageMessage] = useState<{ text: string; error: boolean } | null>(null)
+  const [recoveryDraft, setRecoveryDraft] = useState(() => {
+    const loaded = readTaskDraft(task?.id, task?.updatedAt)
+    if (loaded && taskDraftsEqual(loaded.data, initialDraft)) {
+      clearTaskDraft(task?.id)
+      return null
+    }
+    return loaded
+  })
+  const [journalPresent, setJournalPresent] = useState(Boolean(recoveryDraft))
   const fileRef = useRef<HTMLInputElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
+  const restoreDraftRef = useRef<HTMLButtonElement>(null)
   const editorRef = useRef<HTMLElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null)
+  const suppressDraftWriteRef = useRef(false)
+  const latestJournalTokenRef = useRef(recoveryDraft?.token)
+  const commitInFlightRef = useRef(false)
+  const mountedRef = useRef(true)
+  const stableTaskIdRef = useRef(task?.id ?? crypto.randomUUID())
+  const stableCreatedAtRef = useRef(task?.createdAt ?? new Date().toISOString())
 
   useLayoutEffect(() => {
-    titleRef.current?.focus()
+    if (recoveryDraft) restoreDraftRef.current?.focus()
+    else titleRef.current?.focus()
     return () => {
       requestAnimationFrame(() => {
-        if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus()
+        if (returnFocusRef.current?.isConnected) {
+          returnFocusRef.current.focus()
+          return
+        }
+        if (document.querySelector('[role="dialog"]')) return
+        const fallback = document.querySelector<HTMLElement>('.workspace main h1, .workspace main h2')
+        if (fallback) {
+          fallback.tabIndex = -1
+          fallback.focus()
+        }
       })
     }
   }, [])
+
+  useEffect(() => () => { mountedRef.current = false }, [])
 
   useEffect(() => {
     const editor = editorRef.current
@@ -70,6 +136,80 @@ export function TaskEditor({
     setInert([editor], Boolean(previewAttachment))
     return () => setInert([editor], false)
   }, [previewAttachment])
+
+  useLayoutEffect(() => {
+    const content = contentRef.current
+    if (!content) return
+    const fields = [...content.children].filter((element) => !element.hasAttribute('data-task-draft-recovery'))
+    setInert(fields, Boolean(recoveryDraft))
+    return () => setInert(fields, false)
+  }, [recoveryDraft])
+
+  const draftData = useMemo<TaskDraftData>(() => ({
+    title,
+    description,
+    projectId,
+    startAt,
+    deadline,
+    importance,
+    urgencyThresholdHours: threshold,
+    urgencyOverride,
+    tags,
+    subtasks,
+    pendingSubtaskTitle: subtaskTitle,
+    reminders,
+  }), [deadline, description, importance, projectId, reminders, startAt, subtasks, subtaskTitle, tags, threshold, title, urgencyOverride])
+  const draftDataRef = useRef(draftData)
+  const recoveryDraftRef = useRef(recoveryDraft)
+  const hasUnsavedChanges = !taskDraftsEqual(draftData, initialDraft)
+  draftDataRef.current = draftData
+  recoveryDraftRef.current = recoveryDraft
+
+  const persistLatestDraft = useCallback((reportError: boolean, force = false): TaskDraftWriteResult | undefined => {
+    if (suppressDraftWriteRef.current || recoveryDraftRef.current || commitInFlightRef.current) return undefined
+    const latest = draftDataRef.current
+    if (!force && taskDraftsEqual(latest, initialDraft)) {
+      const token = latestJournalTokenRef.current
+      if (token && clearTaskDraftIfMatches(token)) {
+        latestJournalTokenRef.current = undefined
+        if (mountedRef.current) setJournalPresent(false)
+      }
+      return undefined
+    }
+    const result = writeTaskDraft(latest, task?.id, task?.updatedAt)
+    if (result.status === 'saved') {
+      latestJournalTokenRef.current = result.token
+      if (reportError && mountedRef.current) setJournalPresent(true)
+    }
+    if (!reportError) return result
+    setDraftStorageMessage(result.status === 'too-large'
+      ? { text: 'Черновик слишком большой для безопасного локального восстановления.', error: true }
+      : result.status === 'unavailable'
+        ? { text: 'Не удалось сохранить аварийный черновик в браузере.', error: true }
+        : result.status === 'invalid'
+          ? { text: 'Черновик содержит слишком много элементов или некорректные данные.', error: true }
+        : null)
+    return result
+  }, [initialDraft, task?.id, task?.updatedAt])
+
+  useEffect(() => {
+    if (recoveryDraft) return
+    if (taskDraftsEqual(draftData, initialDraft)) {
+      persistLatestDraft(false)
+      return
+    }
+    const timeout = window.setTimeout(() => persistLatestDraft(true), TASK_DRAFT_DEBOUNCE_MS)
+    return () => window.clearTimeout(timeout)
+  }, [draftData, initialDraft, persistLatestDraft, recoveryDraft])
+
+  useEffect(() => {
+    const flush = () => persistLatestDraft(false)
+    window.addEventListener('pagehide', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      flush()
+    }
+  }, [persistLatestDraft])
 
   const uniqueTags = useMemo(
     () =>
@@ -90,10 +230,96 @@ export function TaskEditor({
     setError((current) => current === DATE_ORDER_ERROR ? '' : current)
   }
 
-  const save = () => {
+  const closePreservingDraft = () => {
+    if (commitInFlightRef.current) {
+      setDraftStorageMessage({ text: 'Дождитесь завершения локального сохранения.', error: true })
+      return
+    }
+    const result = persistLatestDraft(true)
+    if (result && result.status !== 'saved') return
+    onClose()
+  }
+
+  const discardDraftAndClose = () => {
+    if (commitInFlightRef.current) return
+    suppressDraftWriteRef.current = true
+    clearTaskDraft(task?.id)
+    latestJournalTokenRef.current = undefined
+    setJournalPresent(false)
+    onClose()
+  }
+
+  const removeRecoveryDraft = () => {
+    if (!recoveryDraft) return
+    if (!clearTaskDraftIfMatches(recoveryDraft.token)) {
+      const current = readTaskDraft(task?.id, task?.updatedAt)
+      recoveryDraftRef.current = current
+      setRecoveryDraft(current)
+      setDraftStorageMessage({ text: 'Черновик уже обновлён в другой вкладке. Проверьте новую версию.', error: true })
+      return
+    }
+    recoveryDraftRef.current = null
+    setRecoveryDraft(null)
+    latestJournalTokenRef.current = undefined
+    setJournalPresent(false)
+    setDraftStorageMessage({ text: 'Аварийный черновик удалён.', error: false })
+    requestAnimationFrame(() => titleRef.current?.focus())
+  }
+
+  const restoreRecoveryDraft = () => {
+    if (!recoveryDraft) return
+    const recovered = recoveryDraft.data
+    setTitle(recovered.title)
+    setDescription(recovered.description)
+    setProjectId(state.projects.some((project) => project.id === recovered.projectId) ? recovered.projectId : 'inbox')
+    setStartAt(recovered.startAt)
+    setDeadline(recovered.deadline)
+    setImportance(recovered.importance)
+    setUrgencyOverride(recovered.urgencyOverride)
+    setThreshold(recovered.urgencyThresholdHours)
+    setTags(recovered.tags)
+    setSubtasks(recovered.subtasks.map((subtask) => ({ ...subtask })))
+    setSubtaskTitle(recovered.pendingSubtaskTitle)
+    setReminders(recovered.reminders.map((reminder) => ({ ...reminder })))
+    setStartAtValid(true)
+    setDeadlineValid(true)
+    setDateInputResetToken((current) => current + 1)
+    recoveryDraftRef.current = null
+    setRecoveryDraft(null)
+    latestJournalTokenRef.current = recoveryDraft.token
+    setJournalPresent(true)
+    setDraftStorageMessage({
+      text: state.projects.some((project) => project.id === recovered.projectId)
+        ? 'Черновик восстановлен. Проверьте данные и сохраните задачу.'
+        : 'Черновик восстановлен, но удалённый проект заменён на «Входящие».',
+      error: false,
+    })
+    requestAnimationFrame(() => titleRef.current?.focus())
+  }
+
+  const save = async () => {
+    if (commitInFlightRef.current) return
+    if (recoveryDraftRef.current) {
+      setDraftStorageMessage({ text: 'Сначала восстановите или удалите найденный черновик.', error: true })
+      restoreDraftRef.current?.focus()
+      return
+    }
     if (!title.trim()) {
       setError('Добавьте название задачи')
       titleRef.current?.focus()
+      return
+    }
+    if (title.length > INPUT_LIMITS.taskTitle) {
+      setError(`Название не может быть длиннее ${INPUT_LIMITS.taskTitle} символов`)
+      titleRef.current?.focus()
+      return
+    }
+    if (description.length > INPUT_LIMITS.taskDescription || tags.length > INPUT_LIMITS.tagsText) {
+      setError('Сократите дополнительный текст или список тегов перед сохранением')
+      return
+    }
+    if (subtasks.length > TASK_DRAFT_MAX_SUBTASKS || reminders.length > TASK_DRAFT_MAX_REMINDERS || attachments.length > 5) {
+      setError('Слишком много подзадач, напоминаний или вложений для безопасного сохранения')
       return
     }
     if (!startAtValid || !deadlineValid) {
@@ -108,7 +334,7 @@ export function TaskEditor({
     }
     const now = new Date().toISOString()
     const nextTask: Task = {
-      id: task?.id ?? crypto.randomUUID(),
+      id: stableTaskIdRef.current,
       title: title.trim(),
       description: description.trim(),
       projectId,
@@ -122,7 +348,7 @@ export function TaskEditor({
       attachments,
       reminders,
       status: task?.status ?? 'active',
-      createdAt: task?.createdAt ?? now,
+      createdAt: stableCreatedAtRef.current,
       updatedAt: now,
       completedAt: task?.completedAt,
       archivedAt: task?.archivedAt,
@@ -130,9 +356,64 @@ export function TaskEditor({
       previousStatus: task?.previousStatus,
       focusMinutes: task?.focusMinutes ?? 0,
     }
-    if (task) updateTask(nextTask)
-    else addTask(nextTask)
-    onClose()
+    const journalWrite = persistLatestDraft(true, true)
+    if (!journalWrite || journalWrite.status !== 'saved') return
+
+    commitInFlightRef.current = true
+    setCommitting(true)
+    setError('')
+    try {
+      await saveTaskDurably(nextTask)
+      suppressDraftWriteRef.current = true
+      if (clearTaskDraftIfMatches(journalWrite.token)) {
+        latestJournalTokenRef.current = undefined
+        setJournalPresent(false)
+      }
+      onClose()
+    } catch {
+      setError('Не удалось надёжно сохранить задачу. Черновик оставлен — повторите попытку.')
+    } finally {
+      commitInFlightRef.current = false
+      if (mountedRef.current) setCommitting(false)
+    }
+  }
+
+  const saveRef = useRef(save)
+  saveRef.current = save
+
+  const saveFromKeyboard = () => {
+    // DateTimePicker and the pending-subtask input commit Enter first. Waiting
+    // for that React update prevents the shortcut from saving stale field data.
+    queueMicrotask(() => void saveRef.current())
+  }
+
+  const moveToTrash = async () => {
+    if (!task || commitInFlightRef.current) return
+    if (recoveryDraftRef.current) {
+      setDraftStorageMessage({ text: 'Сначала восстановите или удалите найденный черновик.', error: true })
+      restoreDraftRef.current?.focus()
+      return
+    }
+    const journalWrite = persistLatestDraft(true, true)
+    if (!journalWrite || journalWrite.status !== 'saved') return
+
+    commitInFlightRef.current = true
+    setCommitting(true)
+    setError('')
+    try {
+      await trashTaskDurably(task.id)
+      suppressDraftWriteRef.current = true
+      if (clearTaskDraftIfMatches(journalWrite.token)) {
+        latestJournalTokenRef.current = undefined
+        setJournalPresent(false)
+      }
+      onClose()
+    } catch {
+      setError('Не удалось надёжно переместить задачу в корзину. Черновик оставлен — повторите попытку.')
+    } finally {
+      commitInFlightRef.current = false
+      if (mountedRef.current) setCommitting(false)
+    }
   }
 
   const addSubtask = () => {
@@ -210,7 +491,7 @@ export function TaskEditor({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closePreservingDraft()}>
       <section
         ref={editorRef}
         className="task-editor"
@@ -218,26 +499,55 @@ export function TaskEditor({
         aria-modal="true"
         aria-labelledby="task-editor-title"
         tabIndex={-1}
-        onKeyDown={(event) => trapTabKey(event, editorRef.current)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !(event.target as Element).closest('button')) {
+            event.preventDefault()
+            saveFromKeyboard()
+            return
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            closePreservingDraft()
+            return
+          }
+          trapTabKey(event, editorRef.current)
+        }}
         onPaste={readClipboardFiles}
       >
         <header className="task-editor__header">
           <div>
-            <span className="eyebrow">{task ? 'Редактирование' : 'Новая задача'}</span>
+            <span className="eyebrow">{task ? 'Редактирование' : 'Новая задача'} · Ctrl/Cmd + Enter</span>
             <h2 id="task-editor-title">{task ? task.title : 'Что нужно сделать?'}</h2>
           </div>
-          <button className="icon-button" onClick={onClose} aria-label="Закрыть редактор">
+          <button className="icon-button" onClick={closePreservingDraft} aria-label="Закрыть редактор">
             <X />
           </button>
         </header>
 
-        <div className="task-editor__content">
+        <div ref={contentRef} className="task-editor__content">
+          {recoveryDraft && (
+            <div data-task-draft-recovery className="voice-preview field--full" role="status" aria-labelledby="task-draft-recovery-title">
+              <div>
+                <span className="eyebrow">Локальное восстановление</span>
+                <strong id="task-draft-recovery-title">Найден несохранённый черновик</strong>
+                <span className="voice-preview__chips">
+                  <em>{new Date(recoveryDraft.updatedAt).toLocaleString('ru-RU')}</em>
+                  {recoveryDraft.savedTaskChanged && <em>Сохранённая задача изменялась позже</em>}
+                </span>
+              </div>
+              <div>
+                <button type="button" className="button button--ghost" onClick={removeRecoveryDraft}>Удалить черновик</button>
+                <button ref={restoreDraftRef} type="button" className="button button--primary" onClick={restoreRecoveryDraft}>Восстановить</button>
+              </div>
+            </div>
+          )}
           <div className="field field--full">
             <span className="field__label-row">
               <label htmlFor="task-title">Название</label>
               <VoiceCaptureButton onTranscript={previewVoiceTranscript} onUnavailable={() => setVoiceFallback(true)} />
             </span>
-            <input id="task-title" ref={titleRef} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например, подготовить отчёт" />
+            <input id="task-title" ref={titleRef} value={title} maxLength={INPUT_LIMITS.taskTitle} onChange={(event) => setTitle(event.target.value)} placeholder="Например, подготовить отчёт" />
           </div>
           {voiceFallback && (
             <div className="voice-fallback field--full">
@@ -266,7 +576,7 @@ export function TaskEditor({
           )}
           <label className="field field--full">
             <span>Дополнительный текст</span>
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Контекст, ссылки и заметки…" rows={3} />
+            <textarea value={description} maxLength={INPUT_LIMITS.taskDescription} onChange={(event) => setDescription(event.target.value)} placeholder="Контекст, ссылки и заметки…" rows={3} />
           </label>
           <div className="field">
             <span>Проект</span>
@@ -328,7 +638,7 @@ export function TaskEditor({
           </div>
           <label className="field field--full">
             <span>Теги через запятую</span>
-            <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="работа, фокус, звонки" />
+            <input value={tags} maxLength={INPUT_LIMITS.tagsText} onChange={(event) => setTags(event.target.value)} placeholder="работа, фокус, звонки" />
           </label>
 
           <div className="editor-section">
@@ -347,7 +657,7 @@ export function TaskEditor({
               </label>
             ))}
             <div className="inline-add">
-              <input value={subtaskTitle} onChange={(event) => setSubtaskTitle(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && (event.preventDefault(), addSubtask())} placeholder="Добавить подзадачу" />
+              <input value={subtaskTitle} maxLength={INPUT_LIMITS.subtaskTitle} onChange={(event) => setSubtaskTitle(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && (event.preventDefault(), addSubtask())} placeholder="Добавить подзадачу" />
               <button type="button" className="icon-button" onClick={addSubtask} aria-label="Добавить подзадачу"><Plus size={18} /></button>
             </div>
           </div>
@@ -389,6 +699,7 @@ export function TaskEditor({
             </div>
             <input ref={fileRef} hidden type="file" multiple accept="image/*,.pdf,.txt,.md" onChange={(event) => void readFiles(event.target.files)} />
             {attachments.length === 0 && <p className="empty-inline">До 5 файлов по 1 МБ в MVP</p>}
+            <p className="empty-inline">Вложения не входят в аварийный черновик.</p>
             <div className="attachment-grid">
               {attachments.map((file) => (
                 <div className="attachment" key={file.id}>
@@ -401,16 +712,26 @@ export function TaskEditor({
               ))}
             </div>
           </div>
+          {!recoveryDraft && (hasUnsavedChanges || journalPresent) && (
+            <div className="field--full">
+              <button type="button" className="text-button" disabled={committing} onClick={discardDraftAndClose}>Удалить черновик и закрыть</button>
+            </div>
+          )}
+          {draftStorageMessage && (
+            <p className={draftStorageMessage.error ? 'form-error' : 'empty-inline field--full'} role={draftStorageMessage.error ? 'alert' : 'status'}>
+              {draftStorageMessage.text}
+            </p>
+          )}
           {error && <p className="form-error" role="alert">{error}</p>}
         </div>
 
         <footer className="task-editor__footer">
           {task ? (
-            <button className="button button--danger-ghost" onClick={() => { removeTask(task.id); onClose() }}><Trash2 size={17} /> В корзину</button>
+            <button className="button button--danger-ghost" disabled={committing || Boolean(recoveryDraft)} onClick={() => void moveToTrash()}><Trash2 size={17} /> {committing ? 'Сохраняем…' : 'В корзину'}</button>
           ) : <span />}
           <div>
-            <button className="button button--ghost" onClick={onClose}>Отмена</button>
-            <button className="button button--primary" onClick={save}>{task ? 'Сохранить' : 'Создать задачу'}</button>
+            <button className="button button--ghost" onClick={closePreservingDraft}>Закрыть</button>
+            <button className="button button--primary" onClick={() => void save()} disabled={committing || Boolean(recoveryDraft)}>{committing ? 'Сохраняем…' : task ? 'Сохранить' : 'Создать задачу'}</button>
           </div>
         </footer>
       </section>

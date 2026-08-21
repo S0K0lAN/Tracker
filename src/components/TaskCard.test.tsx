@@ -3,10 +3,16 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { App } from '../App'
 import { RouterProvider } from '../core/router/Router'
+import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 import { formatTaskDate } from './TaskCard'
 
-function renderInbox() {
+function renderInbox(onlyTask = false) {
+  if (onlyTask) {
+    const state = createSeedState()
+    state.tasks = [state.tasks.find((task) => task.id === 'task-plan')!]
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+  }
   return render(
     <RouterProvider initialPath="/inbox">
       <AppProvider>
@@ -14,6 +20,14 @@ function renderInbox() {
       </AppProvider>
     </RouterProvider>,
   )
+}
+
+function storeSingleActiveTask(configure: (task: ReturnType<typeof createSeedState>['tasks'][number]) => void) {
+  const state = createSeedState()
+  const task = state.tasks.find((item) => item.id === 'task-plan')!
+  configure(task)
+  state.tasks = [task]
+  localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
 }
 
 describe('TaskCard safety and focus', () => {
@@ -33,5 +47,70 @@ describe('TaskCard safety and focus', () => {
     const timer = screen.getByRole('complementary', { name: 'Таймер фокуса' })
     const primaryAction = within(timer).getByRole('button', { name: 'Запустить таймер' })
     await waitFor(() => expect(primaryAction).toHaveFocus())
+  })
+
+  it('moves focus to the next card when completing the focused task removes its card', async () => {
+    const user = userEvent.setup()
+    renderInbox()
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+
+    await user.click(screen.getByRole('button', { name: 'Завершить задачу Подготовить план недели' }))
+
+    await waitFor(() => expect(document.activeElement?.closest('.task-card')).not.toBeNull())
+    expect(document.activeElement).toHaveAccessibleName(/задач/i)
+    expect(document.activeElement?.isConnected).toBe(true)
+  })
+
+  it('moves focus to the list heading when removing the only task', async () => {
+    const user = userEvent.setup()
+    renderInbox(true)
+    const heading = await screen.findByRole('heading', { name: 'Все задачи', level: 2 })
+
+    await user.click(screen.getByRole('button', { name: 'Действия задачи Подготовить план недели' }))
+    await user.click(screen.getByRole('menuitem', { name: 'В корзину' }))
+
+    await waitFor(() => expect(heading).toHaveFocus())
+  })
+
+  it('moves focus to the durable Today page heading when its only task section disappears', async () => {
+    const user = userEvent.setup()
+    storeSingleActiveTask((task) => {
+      const today = new Date()
+      today.setHours(9, 0, 0, 0)
+      task.startAt = today.toISOString()
+      task.deadline = undefined
+    })
+    render(
+      <RouterProvider initialPath="/today">
+        <AppProvider>
+          <App />
+        </AppProvider>
+      </RouterProvider>,
+    )
+    const pageHeading = await screen.findByRole('heading', { name: 'Сегодня', level: 1 })
+
+    await user.click(screen.getByRole('button', { name: 'Завершить задачу Подготовить план недели' }))
+
+    await waitFor(() => expect(pageHeading).toHaveFocus())
+  })
+
+  it('moves focus to the durable Search page heading when its only result section disappears', async () => {
+    const user = userEvent.setup()
+    storeSingleActiveTask((task) => {
+      task.title = 'Единственный результат'
+    })
+    render(
+      <RouterProvider initialPath="/search">
+        <AppProvider>
+          <App />
+        </AppProvider>
+      </RouterProvider>,
+    )
+    const pageHeading = await screen.findByRole('heading', { name: 'Поиск', level: 1 })
+    await user.type(screen.getByRole('textbox', { name: 'Глобальный поиск' }), 'Единственный результат')
+
+    await user.click(screen.getByRole('button', { name: 'Завершить задачу Единственный результат' }))
+
+    await waitFor(() => expect(pageHeading).toHaveFocus())
   })
 })

@@ -1,15 +1,94 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CURRENT_SCHEMA_VERSION } from '../../domain/migrations'
-import type { AppState } from '../../domain/models'
+import { CURRENT_SCHEMA_VERSION, SNAPSHOT_LIMITS } from '../../domain/migrations'
+import type { AppState, SavedFilter } from '../../domain/models'
 import { createSeedState } from '../../domain/seed'
 import { SyncProviderError } from './SyncAdapter'
 import {
   createRemoteEnvelope,
   decodeRemoteSnapshot,
   mergeRemoteState,
+  type RemoteSnapshotEnvelope,
   summarizeSnapshot,
   syncableHash,
 } from './RemoteSnapshot'
+
+const remoteFilter = (id: string): SavedFilter => ({
+  id,
+  name: id,
+  query: '',
+  tags: [],
+  tagMode: 'any',
+  status: 'active',
+  createdAt: '2026-08-21T00:00:00.000Z',
+})
+
+function uncheckedRemoteEnvelope(state: AppState): RemoteSnapshotEnvelope {
+  const {
+    autoSync: _autoSync,
+    syncProvider: _syncProvider,
+    syncProviderConfigs: _syncProviderConfigs,
+    ...settings
+  } = state.settings
+  const { schemaVersion, sync: _sync, settings: _settings, ...data } = state
+  return {
+    format: 'focus-flow',
+    formatVersion: 1,
+    schemaVersion,
+    generatedAt: '2026-08-21T00:00:00.000Z',
+    data: { ...data, settings },
+  }
+}
+
+function addDeepRemotePlugin(state: AppState) {
+  let value: Record<string, unknown> = { leaf: true }
+  for (let index = 0; index < 10_000; index += 1) value = { child: value }
+  ;(state as AppState & Record<string, unknown>)['plugin.example/deep'] = value
+}
+
+function invalidRemoteStates(): [string, (state: AppState) => void][] {
+  return [
+    ['duplicate task IDs', (state) => state.tasks.push(structuredClone(state.tasks[0]))],
+    ['duplicate project IDs', (state) => state.projects.push(structuredClone(state.projects[0]))],
+    ['duplicate habit IDs', (state) => state.habits.push(structuredClone(state.habits[0]))],
+    ['duplicate filter IDs', (state) => state.savedFilters.push(remoteFilter('same'), remoteFilter('same'))],
+    ['a missing inbox', (state) => {
+      state.projects = state.projects.filter(({ id }) => id !== 'inbox')
+      state.tasks.forEach((task) => { if (task.projectId === 'inbox') task.projectId = 'personal' })
+    }],
+    ['an orphan project reference', (state) => { state.tasks[0].projectId = 'missing-project' }],
+    ['an orphan saved-filter project', (state) => {
+      state.savedFilters.push({ ...remoteFilter('orphan-filter'), projectId: 'missing-project' })
+    }],
+    ['an orphan Pomodoro task', (state) => { state.pomodoro.taskId = 'missing-task' }],
+    ['too many entities', (state) => {
+      state.projects = Array(SNAPSHOT_LIMITS.projects + 1).fill(state.projects[0])
+    }],
+    ['an oversized user string', (state) => {
+      state.tasks[0].title = 'x'.repeat(SNAPSHOT_LIMITS.shortTextBytes + 1)
+    }],
+    ['too much cumulative user text', (state) => {
+      const description = 'x'.repeat(Math.floor(SNAPSHOT_LIMITS.userTextBytes / 20) + 1)
+      state.tasks = []
+      state.habits = []
+      state.savedFilters = []
+      state.projects = [{
+        id: 'inbox', name: 'Без проекта', color: '#778c70', createdAt: '2026-08-21T00:00:00.000Z',
+      }, ...Array.from({ length: 20 }, (_, index) => ({
+        id: `large-project-${index}`,
+        name: `Проект ${index}`,
+        description,
+        color: '#778c70',
+        createdAt: '2026-08-21T00:00:00.000Z',
+      }))]
+    }],
+    ['excessive structural complexity', (state) => {
+      ;(state as AppState & Record<string, unknown>)['plugin.example/nodes'] = Array(
+        SNAPSHOT_LIMITS.totalNodes + 1,
+      ).fill(0)
+    }],
+    ['excessive nesting depth', (state) => addDeepRemotePlugin(state)],
+  ]
+}
 
 afterEach(() => {
   vi.useRealTimers()
@@ -56,6 +135,8 @@ describe('remote snapshots', () => {
     const envelope = createRemoteEnvelope(state)
     envelope.schemaVersion = 1
     envelope.data.settings.inboxView = 'list'
+    envelope.data.savedFilters.push({ ...remoteFilter('legacy-envelope-orphan'), projectId: 'missing-project' })
+    envelope.data.pomodoro.taskId = 'missing-task'
 
     const decoded = decodeRemoteSnapshot(envelope)
 
@@ -63,17 +144,23 @@ describe('remote snapshots', () => {
     expect(decoded.tasks).toEqual(state.tasks)
     expect(decoded.settings.theme).toBe(state.settings.theme)
     expect(decoded.sync.status).toBe('idle')
+    expect(decoded.savedFilters[0].projectId).toBeUndefined()
+    expect(decoded.pomodoro.taskId).toBeUndefined()
   })
 
   it('accepts a legacy full AppState snapshot', () => {
     const legacy = createSeedState()
     legacy.schemaVersion = 1
+    legacy.savedFilters.push({ ...remoteFilter('legacy-orphan'), projectId: 'missing-project' })
+    legacy.pomodoro.taskId = 'missing-task'
 
     const decoded = decodeRemoteSnapshot(legacy)
 
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(decoded.tasks).toEqual(legacy.tasks)
     expect(decoded.projects).toEqual(legacy.projects)
+    expect(decoded.savedFilters[0].projectId).toBeUndefined()
+    expect(decoded.pomodoro.taskId).toBeUndefined()
   })
 
   it.each([
@@ -218,5 +305,42 @@ describe('remote snapshots', () => {
       savedFilters: 1,
       recentTaskTitles: expect.arrayContaining([expect.any(String)]),
     })
+  })
+
+  it.each(invalidRemoteStates())('rejects outgoing schema v4 data with %s', (_label, mutate) => {
+    const state = createSeedState()
+    mutate(state)
+
+    expect(() => createRemoteEnvelope(state)).toThrow(expect.objectContaining({
+      name: 'SyncProviderError',
+      code: 'invalid-remote',
+    }))
+  })
+
+  it.each(invalidRemoteStates())('rejects incoming remote schema v4 data with %s', (_label, mutate) => {
+    const state = createSeedState()
+    mutate(state)
+
+    expect(() => decodeRemoteSnapshot(uncheckedRemoteEnvelope(state))).toThrow(expect.objectContaining({
+      name: 'SyncProviderError',
+      code: 'invalid-remote',
+    }))
+  })
+
+  it('rejects excessive plugin depth before recursive hashing can overflow', () => {
+    const state = createSeedState()
+    addDeepRemotePlugin(state)
+
+    expect(() => syncableHash(state)).toThrow(expect.objectContaining({
+      name: 'SyncProviderError',
+      code: 'invalid-remote',
+    }))
+  })
+
+  it('rejects an invalid outgoing generated timestamp', () => {
+    expect(() => createRemoteEnvelope(createSeedState(), 'not-a-date')).toThrow(expect.objectContaining({
+      name: 'SyncProviderError',
+      code: 'invalid-remote',
+    }))
   })
 })

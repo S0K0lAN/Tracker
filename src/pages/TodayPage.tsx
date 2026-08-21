@@ -29,8 +29,8 @@ export function TodayPage({ onEditTask }: { onEditTask: (task: Task | null) => v
       {overdue.length > 0 && (
         <TaskSection icon={<AlertTriangle />} title="Просрочено" tone="danger" tasks={overdue} onEditTask={onEditTask} />
       )}
-      <TaskSection icon={<CalendarCheck2 />} title="Запланировано сегодня" tasks={scheduled} onEditTask={onEditTask} />
-      <TaskSection icon={<CalendarClock />} title="Дедлайны сегодня" tasks={deadlines} onEditTask={onEditTask} />
+      {scheduled.length > 0 && <TaskSection icon={<CalendarCheck2 />} title="Запланировано сегодня" tasks={scheduled} onEditTask={onEditTask} />}
+      {deadlines.length > 0 && <TaskSection icon={<CalendarClock />} title="Дедлайны сегодня" tasks={deadlines} onEditTask={onEditTask} />}
 
       {total === 0 && overdue.length === 0 && (
         <div className="empty-state workspace-empty">
@@ -61,7 +61,6 @@ function TaskSection({
     <section className={`workspace-section ${tone ? `workspace-section--${tone}` : ''}`}>
       <header><span>{icon}</span><h2>{title}</h2><em>{tasks.length}</em></header>
       {tasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}
-      {tasks.length === 0 && <p className="workspace-section__empty">Задач в этом разделе нет.</p>}
     </section>
   )
 }

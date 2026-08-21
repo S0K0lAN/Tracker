@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPortableBackup } from '../core/storage/PortableBackup'
+import { TASK_DRAFT_STORAGE_PREFIX } from '../core/storage/TaskDraftStorage'
 import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 import { SettingsPage } from './SettingsPage'
@@ -133,6 +134,9 @@ describe('Settings portable backup', () => {
     const local = createSeedState()
     local.tasks[0].title = 'Личные данные перед сбросом'
     localStorage.setItem(STORAGE_KEY, JSON.stringify(local))
+    localStorage.setItem(`${TASK_DRAFT_STORAGE_PREFIX}:create`, '{"draft":true}')
+    localStorage.setItem(`${TASK_DRAFT_STORAGE_PREFIX}:task:task-plan`, '{"draft":true}')
+    localStorage.setItem('unrelated.application.key', 'keep-me')
 
     render(<AppProvider><SettingsPage /></AppProvider>)
     const reset = await screen.findByRole('button', { name: 'Сбросить' })
@@ -154,6 +158,9 @@ describe('Settings portable backup', () => {
     await user.click(screen.getByRole('button', { name: 'Точно сбросить' }))
 
     await waitFor(() => expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Подготовить план недели'))
+    expect(localStorage.getItem(`${TASK_DRAFT_STORAGE_PREFIX}:create`)).toBeNull()
+    expect(localStorage.getItem(`${TASK_DRAFT_STORAGE_PREFIX}:task:task-plan`)).toBeNull()
+    expect(localStorage.getItem('unrelated.application.key')).toBe('keep-me')
     expect(JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!).tasks[0].title).toBe('Личные данные перед сбросом')
     expect(screen.getByRole('status')).toHaveTextContent('Предыдущие локальные данные сохранены')
 

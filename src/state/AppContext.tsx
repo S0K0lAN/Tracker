@@ -3,6 +3,9 @@ import type { AppSettings, AppState, Habit, Project, PomodoroState, SavedFilter,
 import { createSeedState } from '../domain/seed'
 import { UnsupportedSchemaVersionError } from '../domain/migrations'
 import { LocalStorageAdapter } from '../core/storage/LocalStorageAdapter'
+import { StateSaveQueue } from '../core/storage/StateSaveQueue'
+import type { StorageAdapter } from '../core/storage/StorageAdapter'
+import { clearAllTaskDraftStorage, clearTaskDraftStorage } from '../core/storage/TaskDraftStorage'
 import { AuthorizationError } from '../core/auth/AuthorizationProvider'
 import {
   createRemoteEnvelope,
@@ -104,7 +107,13 @@ function reducer(state: AppState, action: Action): AppState {
         ),
       }
     case 'task/permanent-remove':
-      return { ...state, tasks: state.tasks.filter((task) => task.id !== action.id) }
+      return {
+        ...state,
+        tasks: state.tasks.filter((task) => task.id !== action.id),
+        pomodoro: state.pomodoro.taskId === action.id
+          ? { ...state.pomodoro, taskId: undefined }
+          : state.pomodoro,
+      }
     case 'task/archive':
       return {
         ...state,
@@ -226,11 +235,13 @@ interface AppContextValue {
   ready: boolean
   addTask(task: Task): void
   updateTask(task: Task): void
+  saveTaskDurably(task: Task): Promise<void>
   toggleTask(id: string): void
   completionNotice?: { id: string; title: string }
   undoTaskCompletion(): void
   dismissCompletionNotice(): void
   removeTask(id: string): void
+  trashTaskDurably(id: string): Promise<void>
   restoreTask(id: string): void
   permanentlyRemoveTask(id: string): void
   archiveTask(id: string): void
@@ -266,7 +277,6 @@ interface AppContextValue {
 }
 
 const AppContext = createContext<AppContextValue | null>(null)
-const storage = new LocalStorageAdapter()
 
 interface ConflictCandidate {
   head: RemoteHead
@@ -277,6 +287,8 @@ interface ConflictCandidate {
 export interface AppProviderProps {
   children: ReactNode
   syncRegistry?: SyncProviderRegistry
+  /** Captured for the provider lifetime. Remount AppProvider to switch adapters. */
+  storageAdapter?: StorageAdapter
 }
 
 function syncErrorMessage(error: unknown) {
@@ -293,6 +305,16 @@ function providerConfigKey(config: SyncProviderConfig) {
   return JSON.stringify(Object.entries(config).sort(([left], [right]) => left.localeCompare(right)))
 }
 
+function localSyncSettingsKey(settings: AppSettings) {
+  return JSON.stringify([
+    settings.autoSync,
+    settings.syncProvider,
+    Object.entries(settings.syncProviderConfigs)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([providerId, config]) => [providerId, providerConfigKey(config)]),
+  ])
+}
+
 function effectiveProviderConfig(descriptor: SyncProviderDescriptor, saved: SyncProviderConfig) {
   return Object.fromEntries([
     ...(descriptor.configFields ?? []).flatMap((field) => (
@@ -302,8 +324,10 @@ function effectiveProviderConfig(descriptor: SyncProviderDescriptor, saved: Sync
   ])
 }
 
-export function AppProvider({ children, syncRegistry }: AppProviderProps) {
+export function AppProvider({ children, syncRegistry, storageAdapter }: AppProviderProps) {
   const [state, dispatch] = useReducer(reducer, undefined, createSeedState)
+  const [storage] = useState<StorageAdapter>(() => storageAdapter ?? new LocalStorageAdapter())
+  const [saveQueue] = useState(() => new StateSaveQueue(storage))
   const [ready, setReady] = useState(false)
   const [storageLoadError, setStorageLoadError] = useState<string>()
   const [storageWriteError, setStorageWriteError] = useState<string>()
@@ -319,7 +343,7 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
     runtime: SyncProviderRuntime
   }>()
   const conflictCandidateRef = useRef<ConflictCandidate>()
-  const skipNextSaveRef = useRef(false)
+  const skipSaveStateRef = useRef<AppState>()
   const observedHashRef = useRef<string>()
   const syncInFlightRef = useRef<Promise<void> | null>(null)
   const localDataOperationRef = useRef(false)
@@ -327,6 +351,48 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
   const syncEpochRef = useRef(0)
   stateRef.current = state
   if (!registryRef.current) registryRef.current = syncRegistry ?? createDefaultSyncProviderRegistry()
+
+  const trackStorageWrite = useCallback(async <T,>(operation: Promise<T>) => {
+    try {
+      const result = await operation
+      setStorageWriteError(undefined)
+      return result
+    } catch (error) {
+      setStorageWriteError('Не удалось сохранить локальные изменения. Освободите место в браузере и не закрывайте вкладку.')
+      throw error
+    }
+  }, [])
+
+  const ensureTaskCommitAvailable = useCallback(() => {
+    if (localDataOperationRef.current
+      || syncInFlightRef.current
+      || stateRef.current.sync.status === 'connecting'
+      || stateRef.current.sync.status === 'syncing') {
+      throw new Error('Дождитесь завершения синхронизации или операции с локальными данными')
+    }
+  }, [])
+
+  const saveTaskDurably = useCallback(async (task: Task) => {
+    ensureTaskCommitAvailable()
+    const current = stateRef.current
+    const action: Action = current.tasks.some((item) => item.id === task.id)
+      ? { type: 'task/update', task }
+      : { type: 'task/add', task }
+    const nextState = reducer(current, action)
+    stateRef.current = nextState
+    skipSaveStateRef.current = nextState
+    dispatch({ type: 'replace', state: nextState })
+    await trackStorageWrite(saveQueue.save(nextState))
+  }, [ensureTaskCommitAvailable, saveQueue, trackStorageWrite])
+
+  const trashTaskDurably = useCallback(async (id: string) => {
+    ensureTaskCommitAvailable()
+    const nextState = reducer(stateRef.current, { type: 'task/remove', id })
+    stateRef.current = nextState
+    skipSaveStateRef.current = nextState
+    dispatch({ type: 'replace', state: nextState })
+    await trackStorageWrite(saveQueue.save(nextState))
+  }, [ensureTaskCommitAvailable, saveQueue, trackStorageWrite])
 
   const commitSyncState = useCallback((sync: Partial<AppState['sync']>) => {
     const nextSync = { ...stateRef.current.sync, ...sync }
@@ -346,34 +412,36 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
     void (async () => {
       try {
         const saved = await storage.load()
+        const hasImportBackup = Boolean(await storage.loadImportBackup())
+        if (cancelled) return
         if (saved) {
           stateRef.current = saved
           dispatch({ type: 'replace', state: saved })
         }
-        setImportBackupAvailable(Boolean(await storage.loadImportBackup()))
+        setImportBackupAvailable(hasImportBackup)
         setReady(true)
       } catch (error) {
+        if (cancelled) return
         setStorageLoadError(error instanceof UnsupportedSchemaVersionError
           ? 'Локальные данные созданы более новой версией Focus Flow. Обновите приложение — snapshot оставлен без изменений.'
           : 'Не удалось безопасно прочитать локальные данные. Snapshot оставлен без изменений.')
       }
     })()
-  }, [])
+    return () => { cancelled = true }
+  }, [storage])
 
   useEffect(() => {
     if (!ready) return
-    if (skipNextSaveRef.current) {
-      skipNextSaveRef.current = false
+    if (skipSaveStateRef.current === state) {
+      skipSaveStateRef.current = undefined
       return
     }
-    void storage.save(state).then(
-      () => setStorageWriteError(undefined),
-      () => setStorageWriteError('Не удалось сохранить локальные изменения. Освободите место в браузере и не закрывайте вкладку.'),
-    )
-  }, [ready, state])
+    void trackStorageWrite(saveQueue.save(state)).catch(() => undefined)
+  }, [ready, saveQueue, state, trackStorageWrite])
 
   useEffect(() => {
     if (!completionNotice) return
@@ -462,17 +530,55 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
         message,
       },
     }
-    if (syncEpoch !== syncEpochRef.current || stateRef.current.settings.syncProvider !== providerId) return
-    await storage.replaceWithBackup(nextState)
-    if (syncEpoch !== syncEpochRef.current || stateRef.current.settings.syncProvider !== providerId) return
+    const confirmedLocalHash = syncableHash(local)
+    const confirmedLocalSyncSettings = localSyncSettingsKey(local.settings)
+    const isCurrent = () => syncEpoch === syncEpochRef.current
+      && stateRef.current.settings.syncProvider === providerId
+      && syncableHash(stateRef.current) === confirmedLocalHash
+      && localSyncSettingsKey(stateRef.current.settings) === confirmedLocalSyncSettings
+    const leaveStaleReplacement = () => {
+      if (syncEpoch !== syncEpochRef.current || stateRef.current.settings.syncProvider !== providerId) return
+      const candidate = conflictCandidateRef.current
+      if (candidate) {
+        setSyncConflict({
+          intent: candidate.intent,
+          modifiedAt: candidate.head.modifiedAt,
+          local: summarizeSnapshot(stateRef.current),
+          remote: summarizeSnapshot(candidate.remoteState),
+        })
+        commitSyncState({
+          status: 'conflict',
+          connectionStatus: 'connected',
+          message: 'Локальные данные изменились во время сохранения; проверьте выбор ещё раз',
+        })
+      } else {
+        commitSyncState({
+          status: 'idle',
+          connectionStatus: 'connected',
+          message: 'Локальные данные изменились во время получения; повторите синхронизацию',
+        })
+      }
+    }
+    if (!isCurrent()) {
+      leaveStaleReplacement()
+      return
+    }
+    await trackStorageWrite(saveQueue.runAuthoritative(
+      (adapter) => adapter.replaceWithBackup(nextState),
+      isCurrent,
+    ))
+    if (!isCurrent()) {
+      leaveStaleReplacement()
+      return
+    }
     setImportBackupAvailable(true)
-    skipNextSaveRef.current = true
+    skipSaveStateRef.current = nextState
     observedHashRef.current = mergedHash
     stateRef.current = nextState
     conflictCandidateRef.current = undefined
     setSyncConflict(undefined)
     dispatch({ type: 'replace', state: nextState })
-  }, [])
+  }, [commitSyncState, saveQueue, trackStorageWrite])
 
   const runSync = useCallback(async (intent: SyncIntent, interactive: boolean) => {
     if (localDataOperationRef.current || conflictCandidateRef.current) return
@@ -1025,6 +1131,7 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
       ready,
       addTask: (task) => dispatch({ type: 'task/add', task }),
       updateTask: (task) => dispatch({ type: 'task/update', task }),
+      saveTaskDurably,
       toggleTask: (id) => {
         const task = state.tasks.find((item) => item.id === id)
         dispatch({ type: 'task/toggle', id })
@@ -1039,8 +1146,12 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
       },
       dismissCompletionNotice: () => setCompletionNotice(undefined),
       removeTask: (id) => dispatch({ type: 'task/remove', id }),
+      trashTaskDurably,
       restoreTask: (id) => dispatch({ type: 'task/restore', id }),
-      permanentlyRemoveTask: (id) => dispatch({ type: 'task/permanent-remove', id }),
+      permanentlyRemoveTask: (id) => {
+        dispatch({ type: 'task/permanent-remove', id })
+        clearTaskDraftStorage(id)
+      },
       archiveTask: (id) => dispatch({ type: 'task/archive', id }),
       restoreArchivedTask: (id) => dispatch({ type: 'task/restore-archive', id }),
       archiveCompletedTasks: () => dispatch({ type: 'task/archive-completed' }),
@@ -1056,7 +1167,7 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
       updateHabit: (habit) => dispatch({ type: 'habit/update', habit }),
       updateSettings: (settings) => dispatch({ type: 'settings/update', settings }),
       updateSyncProviderConfig,
-      persistState: () => storage.save(stateRef.current),
+      persistState: () => trackStorageWrite(saveQueue.save(stateRef.current)),
       syncProviders: registryRef.current?.list().map((provider) => provider.descriptor) ?? [],
       syncConflict,
       activeSyncIntent,
@@ -1087,10 +1198,11 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
               message: undefined,
             },
           }
-          await storage.replaceWithBackup(nextState)
+          await trackStorageWrite(saveQueue.runAuthoritative((adapter) => adapter.replaceWithBackup(nextState)))
+          clearAllTaskDraftStorage()
           syncEpochRef.current += 1
           syncQueuedRef.current = false
-          skipNextSaveRef.current = true
+          skipSaveStateRef.current = nextState
           observedHashRef.current = current.settings.autoSync ? syncableHash(nextState) : undefined
           stateRef.current = nextState
           conflictCandidateRef.current = undefined
@@ -1112,7 +1224,7 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
         syncEpochRef.current += 1
         syncQueuedRef.current = false
         try {
-          const restored = await storage.loadImportBackup()
+          const restored = await saveQueue.runExclusive((adapter) => adapter.loadImportBackup())
           if (!restored) {
             setImportBackupAvailable(false)
             return false
@@ -1136,8 +1248,9 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
             },
           }
           await releaseRuntime()
-          await storage.replaceWithBackup(nextState)
-          skipNextSaveRef.current = true
+          await trackStorageWrite(saveQueue.runAuthoritative((adapter) => adapter.replaceWithBackup(nextState)))
+          clearAllTaskDraftStorage()
+          skipSaveStateRef.current = nextState
           observedHashRef.current = nextState.settings.autoSync ? syncableHash(nextState) : undefined
           stateRef.current = nextState
           conflictCandidateRef.current = undefined
@@ -1170,8 +1283,9 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
         syncQueuedRef.current = false
         try {
           await releaseRuntime()
-          await storage.replaceWithBackup(seed)
-          skipNextSaveRef.current = true
+          await trackStorageWrite(saveQueue.runAuthoritative((adapter) => adapter.replaceWithBackup(seed)))
+          clearAllTaskDraftStorage()
+          skipSaveStateRef.current = seed
           observedHashRef.current = seed.settings.autoSync ? syncableHash(seed) : undefined
           stateRef.current = seed
           conflictCandidateRef.current = undefined
@@ -1184,7 +1298,7 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
         }
       },
     }),
-    [activeSyncIntent, commitSyncState, completionNotice, connectSyncProvider, disconnectSyncProvider, importBackupAvailable, ready, releaseRuntime, resolveSyncConflict, runSync, selectSyncProvider, state, syncConflict, updateSyncProviderConfig],
+    [activeSyncIntent, commitSyncState, completionNotice, connectSyncProvider, disconnectSyncProvider, importBackupAvailable, ready, releaseRuntime, resolveSyncConflict, runSync, saveQueue, saveTaskDurably, selectSyncProvider, state, syncConflict, trackStorageWrite, trashTaskDurably, updateSyncProviderConfig],
   )
 
   if (storageLoadError) {

@@ -6,10 +6,40 @@ import { safeCustomBackgroundDataUrl } from './backgrounds'
 
 export const CURRENT_SCHEMA_VERSION = 4
 
+const MAX_PAYLOAD_STRING_BYTES = 10 * 1024 * 1024
+// Per-field and known-user-text budgets must not pre-empt a historical v4
+// snapshot that fits the existing 10 MiB transport envelope. The stricter
+// aggregate below also counts every JSON string value and object key.
+const MAX_KNOWN_USER_TEXT_BYTES = MAX_PAYLOAD_STRING_BYTES
+const MAX_SNAPSHOT_NODES = 300_000
+
+export const SNAPSHOT_LIMITS = {
+  tasks: MAX_SNAPSHOT_NODES,
+  projects: MAX_SNAPSHOT_NODES,
+  habits: MAX_SNAPSHOT_NODES,
+  savedFilters: MAX_SNAPSHOT_NODES,
+  subtasksPerTask: MAX_SNAPSHOT_NODES,
+  tagsPerEntity: MAX_SNAPSHOT_NODES,
+  habitCompletions: MAX_SNAPSHOT_NODES,
+  syncProviders: MAX_SNAPSHOT_NODES,
+  syncProviderFields: MAX_SNAPSHOT_NODES,
+  identifierBytes: 64 * 1024,
+  shortTextBytes: MAX_KNOWN_USER_TEXT_BYTES,
+  longTextBytes: MAX_KNOWN_USER_TEXT_BYTES,
+  queryBytes: MAX_KNOWN_USER_TEXT_BYTES,
+  tagBytes: MAX_KNOWN_USER_TEXT_BYTES,
+  configValueBytes: MAX_KNOWN_USER_TEXT_BYTES,
+  userTextBytes: MAX_KNOWN_USER_TEXT_BYTES,
+  totalStringBytes: MAX_PAYLOAD_STRING_BYTES,
+  totalNodes: MAX_SNAPSHOT_NODES,
+  maxDepth: 64,
+} as const
+
 const FONT_FAMILIES = ['system', 'humanist', 'readable'] as const
 const FONT_SCALES = [90, 100, 110, 120] as const
 const DEFAULT_ENTITY_COLOR = '#778c70'
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i
+const UTF8_ENCODER = new TextEncoder()
 
 export class UnsupportedSchemaVersionError extends Error {
   constructor(readonly schemaVersion: number) {
@@ -34,6 +64,16 @@ export function parseStoredAppState(input: unknown): AppState {
   return normalizeAppState(input)
 }
 
+export function assertCurrentAppState(state: AppState): void {
+  if (state.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    throw new Error(`Snapshot schema must be ${CURRENT_SCHEMA_VERSION} before export`)
+  }
+  assertSnapshotStateShape(state as unknown as Record<string, unknown>, CURRENT_SCHEMA_VERSION, {
+    requireSync: true,
+    requireLocalSettings: true,
+  })
+}
+
 interface SnapshotShapeOptions {
   requireSync?: boolean
   requireLocalSettings?: boolean
@@ -46,18 +86,30 @@ export function assertSnapshotStateShape(
 ): void {
   const strict = schemaVersion >= 2
   const strictSanitizableValues = schemaVersion >= 4
-  const tasks = recordArray(raw, 'tasks', true)
-  const projects = recordArray(raw, 'projects', true)
-  const habits = recordArray(raw, 'habits', true)
-  const savedFilters = recordArray(raw, 'savedFilters', strict)
+  const budget: SnapshotValidationBudget = { userTextBytes: 0 }
+  const tasks = recordArray(raw, 'tasks', true, 'Snapshot', SNAPSHOT_LIMITS.tasks)
+  const projects = recordArray(raw, 'projects', true, 'Snapshot', SNAPSHOT_LIMITS.projects)
+  const habits = recordArray(raw, 'habits', true, 'Snapshot', SNAPSHOT_LIMITS.habits)
+  const savedFilters = recordArray(raw, 'savedFilters', strict, 'Snapshot', SNAPSHOT_LIMITS.savedFilters)
+  if (!strictSanitizableValues
+    && projects.length === SNAPSHOT_LIMITS.projects
+    && !projects.some((project) => project.id === 'inbox')
+  ) {
+    throw invalidField('Snapshot.projects')
+  }
+  assertSnapshotComplexity(raw)
 
-  tasks.forEach((task, index) => assertTaskShape(task, strict, strictSanitizableValues, `tasks[${index}]`))
-  projects.forEach((project, index) => assertProjectShape(project, strict, strictSanitizableValues, `projects[${index}]`))
-  habits.forEach((habit, index) => assertHabitShape(habit, strict, strictSanitizableValues, `habits[${index}]`))
-  savedFilters.forEach((filter, index) => assertFilterShape(filter, strict, `savedFilters[${index}]`))
+  tasks.forEach((task, index) => assertTaskShape(task, strict, strictSanitizableValues, budget, `tasks[${index}]`))
+  projects.forEach((project, index) => assertProjectShape(project, strict, strictSanitizableValues, budget, `projects[${index}]`))
+  habits.forEach((habit, index) => assertHabitShape(habit, strict, strictSanitizableValues, budget, `habits[${index}]`))
+  savedFilters.forEach((filter, index) => assertFilterShape(filter, strict, strictSanitizableValues, budget, `savedFilters[${index}]`))
 
   const pomodoro = recordField(raw, 'pomodoro', strict)
   if (pomodoro) assertPomodoroShape(pomodoro, strict, strictSanitizableValues, 'pomodoro')
+  // v4 declared these relationships canonical, so corruption is rejected and
+  // can be quarantined. Older schemas are repaired below without dropping an
+  // otherwise valid entity.
+  if (strictSanitizableValues) assertEntityIntegrity(tasks, projects, habits, savedFilters, pomodoro)
   const settings = recordField(raw, 'settings', true)
   if (settings) {
     assertSettingsShape(
@@ -66,22 +118,29 @@ export function assertSnapshotStateShape(
       Boolean(options.requireLocalSettings),
       schemaVersion >= 3,
       strictSanitizableValues,
+      budget,
       'settings',
     )
   }
   const sync = recordField(raw, 'sync', Boolean(options.requireSync) && strict)
-  if (sync) assertSyncShape(sync, strict, 'sync')
+  if (sync) assertSyncShape(sync, strict, budget, 'sync')
+}
+
+interface SnapshotValidationBudget {
+  userTextBytes: number
 }
 
 function assertTaskShape(
   task: Record<string, unknown>,
   strict: boolean,
   strictSanitizableValues: boolean,
+  budget: SnapshotValidationBudget,
   path: string,
 ) {
-  for (const key of ['id', 'title', 'description', 'projectId'] as const) {
-    stringField(task, key, strict, path)
-  }
+  identifierField(task, 'id', strict, path, strictSanitizableValues)
+  userTextField(task, 'title', strict, path, budget, SNAPSHOT_LIMITS.shortTextBytes)
+  userTextField(task, 'description', strict, path, budget, SNAPSHOT_LIMITS.longTextBytes)
+  identifierField(task, 'projectId', strict, path, strictSanitizableValues)
   for (const key of ['createdAt', 'updatedAt'] as const) {
     dateStringField(task, key, strict, path, strictSanitizableValues)
   }
@@ -102,21 +161,21 @@ function assertTaskShape(
   enumField(task, 'status', ['active', 'completed', 'archived', 'deleted'], strict, path)
   enumField(task, 'previousStatus', ['active', 'completed', 'archived'], false, path)
 
-  stringArray(task, 'tags', strict, path)
-  const subtasks = recordArray(task, 'subtasks', strict, path)
+  userTextArray(task, 'tags', strict, path, budget, SNAPSHOT_LIMITS.tagsPerEntity, SNAPSHOT_LIMITS.tagBytes)
+  const subtasks = recordArray(task, 'subtasks', strict, path, SNAPSHOT_LIMITS.subtasksPerTask)
   subtasks.forEach((subtask, index) => {
     const itemPath = `${path}.subtasks[${index}]`
-    stringField(subtask, 'id', true, itemPath)
-    stringField(subtask, 'title', true, itemPath)
+    identifierField(subtask, 'id', true, itemPath, false)
+    userTextField(subtask, 'title', true, itemPath, budget, SNAPSHOT_LIMITS.shortTextBytes)
     booleanField(subtask, 'completed', true, itemPath)
   })
   const attachments = recordArray(task, 'attachments', strict, path)
   if (attachments.length > 5) throw invalidField(`${path}.attachments`)
   attachments.forEach((attachment, index) => {
     const itemPath = `${path}.attachments[${index}]`
-    stringField(attachment, 'id', true, itemPath)
-    stringField(attachment, 'name', true, itemPath)
-    stringField(attachment, 'type', true, itemPath)
+    identifierField(attachment, 'id', true, itemPath, false)
+    userTextField(attachment, 'name', true, itemPath, budget, SNAPSHOT_LIMITS.shortTextBytes)
+    boundedStringField(attachment, 'type', true, itemPath, SNAPSHOT_LIMITS.identifierBytes)
     numberField(attachment, 'size', true, itemPath, (value) => value >= 0 && value <= MAX_ATTACHMENT_BYTES)
     if ('dataUrl' in attachment && attachment.dataUrl !== undefined) {
       const encodedMimeType = attachmentDataUrlMimeType(attachment.dataUrl)
@@ -130,29 +189,67 @@ function assertTaskShape(
   if (reminders.length > 5) throw invalidField(`${path}.reminders`)
   reminders.forEach((reminder, index) => {
     const itemPath = `${path}.reminders[${index}]`
-    stringField(reminder, 'id', true, itemPath)
+    identifierField(reminder, 'id', true, itemPath, false)
     dateStringField(reminder, 'at', true, itemPath, strictSanitizableValues)
   })
 }
 
-function assertProjectShape(project: Record<string, unknown>, strict: boolean, strictSanitizableValues: boolean, path: string) {
-  for (const key of ['id', 'name', 'createdAt'] as const) stringField(project, key, strict, path)
+function assertProjectShape(
+  project: Record<string, unknown>,
+  strict: boolean,
+  strictSanitizableValues: boolean,
+  budget: SnapshotValidationBudget,
+  path: string,
+) {
+  identifierField(project, 'id', strict, path, strictSanitizableValues)
+  userTextField(project, 'name', strict, path, budget, SNAPSHOT_LIMITS.shortTextBytes)
+  boundedStringField(project, 'createdAt', strict, path, SNAPSHOT_LIMITS.identifierBytes)
   colorField(project, 'color', strict, path, strictSanitizableValues)
-  stringField(project, 'description', false, path)
+  userTextField(project, 'description', false, path, budget, SNAPSHOT_LIMITS.longTextBytes)
 }
 
-function assertHabitShape(habit: Record<string, unknown>, strict: boolean, strictSanitizableValues: boolean, path: string) {
-  for (const key of ['id', 'name', 'icon'] as const) stringField(habit, key, strict, path)
+function assertHabitShape(
+  habit: Record<string, unknown>,
+  strict: boolean,
+  strictSanitizableValues: boolean,
+  budget: SnapshotValidationBudget,
+  path: string,
+) {
+  identifierField(habit, 'id', strict, path, strictSanitizableValues)
+  userTextField(habit, 'name', strict, path, budget, SNAPSHOT_LIMITS.shortTextBytes)
+  boundedStringField(habit, 'icon', strict, path, SNAPSHOT_LIMITS.identifierBytes)
   colorField(habit, 'color', strict, path, strictSanitizableValues)
-  stringField(habit, 'description', false, path)
-  numberArray(habit, 'targetDays', strict, path, (value) => Number.isInteger(value) && value >= 0 && value <= 6)
-  stringArray(habit, 'completions', strict, path)
+  userTextField(habit, 'description', false, path, budget, SNAPSHOT_LIMITS.longTextBytes)
+  numberArray(
+    habit,
+    'targetDays',
+    strict,
+    path,
+    (value) => Number.isInteger(value) && value >= 0 && value <= 6,
+  )
+  boundedStringArray(
+    habit,
+    'completions',
+    strict,
+    path,
+    SNAPSHOT_LIMITS.habitCompletions,
+    SNAPSHOT_LIMITS.identifierBytes,
+  )
 }
 
-function assertFilterShape(filter: Record<string, unknown>, strict: boolean, path: string) {
-  for (const key of ['id', 'name', 'query', 'createdAt'] as const) stringField(filter, key, strict, path)
-  stringField(filter, 'projectId', false, path)
-  stringArray(filter, 'tags', strict, path)
+function assertFilterShape(
+  filter: Record<string, unknown>,
+  strict: boolean,
+  strictSanitizableValues: boolean,
+  budget: SnapshotValidationBudget,
+  path: string,
+) {
+  identifierField(filter, 'id', strict, path, strictSanitizableValues)
+  userTextField(filter, 'name', strict, path, budget, SNAPSHOT_LIMITS.shortTextBytes)
+  userTextField(filter, 'query', strict, path, budget, SNAPSHOT_LIMITS.queryBytes)
+  boundedStringField(filter, 'createdAt', strict, path, SNAPSHOT_LIMITS.identifierBytes)
+  identifierField(filter, 'projectId', false, path, false)
+  userTextArray(filter, 'tags', strict, path, budget, SNAPSHOT_LIMITS.tagsPerEntity, SNAPSHOT_LIMITS.tagBytes)
   enumField(filter, 'tagMode', ['any', 'all'], strict, path)
   enumField(filter, 'importance', ['low', 'high'], false, path)
   enumField(filter, 'urgency', ['low', 'high'], false, path)
@@ -165,7 +262,7 @@ function assertPomodoroShape(
   strictSanitizableValues: boolean,
   path: string,
 ) {
-  stringField(pomodoro, 'taskId', false, path)
+  identifierField(pomodoro, 'taskId', false, path, false)
   dateStringField(pomodoro, 'runningSince', false, path, strictSanitizableValues)
   enumField(pomodoro, 'mode', ['focus', 'short-break', 'long-break'], strict, path)
   for (const key of ['durationSeconds', 'remainingSeconds', 'completedFocusSessions'] as const) {
@@ -179,6 +276,7 @@ function assertSettingsShape(
   requireLocal: boolean,
   requireTypography: boolean,
   strictSanitizableValues: boolean,
+  budget: SnapshotValidationBudget,
   path: string,
 ) {
   enumField(settings, 'theme', ['light', 'dark', 'system'], strict, path)
@@ -197,7 +295,13 @@ function assertSettingsShape(
     (value) => !strictSanitizableValues || value > 0,
   )
   numberField(settings, 'backgroundDim', strict, path, (value) => value >= 0 && value <= 100)
-  stringField(settings, 'customBackgroundDataUrl', false, path)
+  boundedStringField(
+    settings,
+    'customBackgroundDataUrl',
+    false,
+    path,
+    SNAPSHOT_LIMITS.totalStringBytes,
+  )
   if ('customBackgroundDataUrl' in settings
     && settings.customBackgroundDataUrl !== undefined
     && !safeCustomBackgroundDataUrl(settings.customBackgroundDataUrl)) {
@@ -205,31 +309,67 @@ function assertSettingsShape(
   }
 
   booleanField(settings, 'autoSync', requireLocal && strict, path)
-  stringField(settings, 'syncProvider', requireLocal && strict, path)
+  boundedStringField(
+    settings,
+    'syncProvider',
+    requireLocal && strict,
+    path,
+    SNAPSHOT_LIMITS.identifierBytes,
+    false,
+  )
   if ('syncProviderConfigs' in settings) {
     const configs = settings.syncProviderConfigs
     if (!isRecord(configs)) throw invalidField(`${path}.syncProviderConfigs`)
+    if (Object.keys(configs).length > SNAPSHOT_LIMITS.syncProviders) throw invalidField(`${path}.syncProviderConfigs`)
     for (const [providerId, config] of Object.entries(configs)) {
-      if (!providerId || !isRecord(config) || Object.values(config).some((value) => typeof value !== 'string')) {
+      if (!providerId
+        || utf8ByteLength(providerId) > SNAPSHOT_LIMITS.identifierBytes
+        || !isRecord(config)
+        || Object.keys(config).length > SNAPSHOT_LIMITS.syncProviderFields
+      ) {
         throw invalidField(`${path}.syncProviderConfigs`)
+      }
+      for (const [configKey, value] of Object.entries(config)) {
+        if (!configKey
+          || utf8ByteLength(configKey) > SNAPSHOT_LIMITS.identifierBytes
+          || typeof value !== 'string'
+          || utf8ByteLength(value) > SNAPSHOT_LIMITS.configValueBytes
+        ) {
+          throw invalidField(`${path}.syncProviderConfigs`)
+        }
+        addUserText(budget, value, `${path}.syncProviderConfigs`)
       }
     }
   }
 }
 
-function assertSyncShape(sync: Record<string, unknown>, strict: boolean, path: string) {
+function assertSyncShape(
+  sync: Record<string, unknown>,
+  strict: boolean,
+  budget: SnapshotValidationBudget,
+  path: string,
+) {
   enumField(sync, 'status', ['idle', 'connecting', 'syncing', 'success', 'error', 'conflict'], strict, path)
   enumField(sync, 'connectionStatus', ['disconnected', 'connected', 'authorization-required'], false, path)
   enumField(sync, 'connectionMode', ['implicit', 'interactive'], false, path)
-  for (const key of ['providerId', 'lastSyncedAt', 'remoteId', 'remoteRevision', 'lastSyncedHash', 'message'] as const) {
-    stringField(sync, key, false, path)
+  for (const key of ['providerId', 'lastSyncedAt', 'remoteId', 'remoteRevision', 'lastSyncedHash'] as const) {
+    boundedStringField(sync, key, false, path, SNAPSHOT_LIMITS.identifierBytes)
   }
+  userTextField(sync, 'message', false, path, budget, SNAPSHOT_LIMITS.shortTextBytes)
 }
 
-function recordArray(record: Record<string, unknown>, key: string, required: boolean, parent = 'Snapshot'): Record<string, unknown>[] {
+function recordArray(
+  record: Record<string, unknown>,
+  key: string,
+  required: boolean,
+  parent = 'Snapshot',
+  maxItems?: number,
+): Record<string, unknown>[] {
   const value = record[key]
   if (value === undefined && !required) return []
-  if (!Array.isArray(value) || value.some((item) => !isRecord(item))) throw invalidField(`${parent}.${key}`)
+  if (!Array.isArray(value)) throw invalidField(`${parent}.${key}`)
+  if (maxItems !== undefined && value.length > maxItems) throw invalidField(`${parent}.${key}`)
+  if (value.some((item) => !isRecord(item))) throw invalidField(`${parent}.${key}`)
   return value as Record<string, unknown>[]
 }
 
@@ -244,6 +384,48 @@ function stringField(record: Record<string, unknown>, key: string, required: boo
   const value = record[key]
   if (value === undefined && !required) return
   if (typeof value !== 'string') throw invalidField(`${path}.${key}`)
+}
+
+function boundedStringField(
+  record: Record<string, unknown>,
+  key: string,
+  required: boolean,
+  path: string,
+  maxBytes: number,
+  requireNonBlank = false,
+) {
+  stringField(record, key, required, path)
+  const value = record[key]
+  if (value === undefined && !required) return
+  if (typeof value !== 'string'
+    || utf8ByteLength(value) > maxBytes
+    || (requireNonBlank && !value.trim())
+  ) {
+    throw invalidField(`${path}.${key}`)
+  }
+}
+
+function identifierField(
+  record: Record<string, unknown>,
+  key: string,
+  required: boolean,
+  path: string,
+  requireNonBlank: boolean,
+) {
+  boundedStringField(record, key, required, path, SNAPSHOT_LIMITS.identifierBytes, requireNonBlank)
+}
+
+function userTextField(
+  record: Record<string, unknown>,
+  key: string,
+  required: boolean,
+  path: string,
+  budget: SnapshotValidationBudget,
+  maxBytes: number,
+) {
+  boundedStringField(record, key, required, path, maxBytes)
+  const value = record[key]
+  if (typeof value === 'string') addUserText(budget, value, `${path}.${key}`)
 }
 
 function dateStringField(
@@ -294,10 +476,40 @@ function enumField(record: Record<string, unknown>, key: string, values: readonl
   if (typeof value !== 'string' || !values.includes(value)) throw invalidField(`${path}.${key}`)
 }
 
-function stringArray(record: Record<string, unknown>, key: string, required: boolean, path: string) {
+function boundedStringArray(
+  record: Record<string, unknown>,
+  key: string,
+  required: boolean,
+  path: string,
+  maxItems: number,
+  maxItemBytes: number,
+) {
   const value = record[key]
   if (value === undefined && !required) return
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) throw invalidField(`${path}.${key}`)
+  if (!Array.isArray(value)
+    || value.length > maxItems
+    || value.some((item) => typeof item !== 'string' || utf8ByteLength(item) > maxItemBytes)
+  ) {
+    throw invalidField(`${path}.${key}`)
+  }
+}
+
+function userTextArray(
+  record: Record<string, unknown>,
+  key: string,
+  required: boolean,
+  path: string,
+  budget: SnapshotValidationBudget,
+  maxItems: number,
+  maxItemBytes: number,
+) {
+  boundedStringArray(record, key, required, path, maxItems, maxItemBytes)
+  const value = record[key]
+  if (Array.isArray(value)) {
+    value.forEach((item) => {
+      if (typeof item === 'string') addUserText(budget, item, `${path}.${key}`)
+    })
+  }
 }
 
 function numberArray(
@@ -312,6 +524,117 @@ function numberArray(
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'number' || !predicate(item))) {
     throw invalidField(`${path}.${key}`)
   }
+}
+
+function addUserText(budget: SnapshotValidationBudget, value: string, path: string) {
+  budget.userTextBytes += utf8ByteLength(value)
+  if (budget.userTextBytes > SNAPSHOT_LIMITS.userTextBytes) throw invalidField(path)
+}
+
+function utf8ByteLength(value: string): number {
+  return UTF8_ENCODER.encode(value).byteLength
+}
+
+function assertSnapshotComplexity(raw: Record<string, unknown>) {
+  interface TraversalFrame {
+    value: object
+    children: readonly unknown[]
+    index: number
+    depth: number
+  }
+
+  const ancestors = new WeakSet<object>()
+  const stack: TraversalFrame[] = []
+  let nodeCount = 0
+  let stringBytes = 0
+
+  const addString = (value: string) => {
+    stringBytes += utf8ByteLength(value)
+    if (stringBytes > SNAPSHOT_LIMITS.totalStringBytes) throw invalidField('Snapshot.stringData')
+  }
+
+  const enter = (value: object, depth: number) => {
+    if (depth > SNAPSHOT_LIMITS.maxDepth) throw invalidField('Snapshot.depth')
+    if (ancestors.has(value)) throw invalidField('Snapshot.circularReference')
+    ancestors.add(value)
+    nodeCount += 1
+    if (nodeCount > SNAPSHOT_LIMITS.totalNodes) throw invalidField('Snapshot.complexity')
+
+    if (Array.isArray(value)) {
+      if (value.length > SNAPSHOT_LIMITS.totalNodes) throw invalidField('Snapshot.complexity')
+      stack.push({ value, children: value, index: 0, depth })
+      return
+    }
+
+    const entries = Object.entries(value)
+    entries.forEach(([key]) => addString(key))
+    stack.push({ value, children: entries.map(([, item]) => item), index: 0, depth })
+  }
+
+  enter(raw, 0)
+  while (stack.length) {
+    const frame = stack.at(-1)!
+    if (frame.index >= frame.children.length) {
+      ancestors.delete(frame.value)
+      stack.pop()
+      continue
+    }
+
+    const value = frame.children[frame.index]
+    frame.index += 1
+    if (typeof value === 'string') {
+      addString(value)
+      continue
+    }
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw invalidField('Snapshot.jsonValue')
+    }
+    if (typeof value === 'bigint' || typeof value === 'function' || typeof value === 'symbol') {
+      throw invalidField('Snapshot.jsonValue')
+    }
+    if (!value || typeof value !== 'object') {
+      continue
+    }
+    enter(value, frame.depth + 1)
+  }
+}
+
+function assertEntityIntegrity(
+  tasks: Record<string, unknown>[],
+  projects: Record<string, unknown>[],
+  habits: Record<string, unknown>[],
+  savedFilters: Record<string, unknown>[],
+  pomodoro?: Record<string, unknown>,
+) {
+  assertUniqueIds(tasks, 'tasks')
+  assertUniqueIds(projects, 'projects')
+  assertUniqueIds(habits, 'habits')
+  assertUniqueIds(savedFilters, 'savedFilters')
+
+  const projectIds = new Set(projects.map((project) => project.id as string))
+  if (!projectIds.has('inbox')) throw invalidField('projects.inbox')
+  tasks.forEach((task, index) => {
+    if (!projectIds.has(task.projectId as string)) throw invalidField(`tasks[${index}].projectId`)
+  })
+  savedFilters.forEach((filter, index) => {
+    if (filter.projectId !== undefined && !projectIds.has(filter.projectId as string)) {
+      throw invalidField(`savedFilters[${index}].projectId`)
+    }
+  })
+
+  const taskIds = new Set(tasks.map((task) => task.id as string))
+  if (pomodoro?.taskId !== undefined && !taskIds.has(pomodoro.taskId as string)) {
+    throw invalidField('pomodoro.taskId')
+  }
+}
+
+function assertUniqueIds(entities: Record<string, unknown>[], path: string) {
+  const ids = new Set<string>()
+  entities.forEach((entity, index) => {
+    const id = entity.id as string
+    if (ids.has(id)) throw invalidField(`${path}[${index}].id`)
+    ids.add(id)
+  })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -367,16 +690,48 @@ export function normalizeAppState(input: unknown): AppState {
       ? 'authorization-required'
       : persistedConnectionStatus
   const now = new Date().toISOString()
+  const normalizedProjects = ensureUniqueEntityIds(
+    Array.isArray(raw.projects) ? raw.projects.map((project) => normalizeProject(project, now)) : seed.projects,
+    'project',
+  )
+  if (!normalizedProjects.some((project) => project.id === 'inbox')) {
+    normalizedProjects.unshift({
+      id: 'inbox',
+      name: 'Без проекта',
+      color: '#9ca89c',
+      createdAt: '1970-01-01T00:00:00.000Z',
+    })
+  }
+  const projectIds = new Set(normalizedProjects.map((project) => project.id))
+  const normalizedTasks = ensureUniqueEntityIds(
+    Array.isArray(raw.tasks) ? raw.tasks.map((task) => normalizeTask(task, now)) : seed.tasks,
+    'task',
+  ).map((task) => projectIds.has(task.projectId) ? task : { ...task, projectId: 'inbox' })
+  const normalizedHabits = ensureUniqueEntityIds(
+    Array.isArray(raw.habits) ? raw.habits.map(normalizeHabit) : seed.habits,
+    'habit',
+  )
+  const normalizedFilters = ensureUniqueEntityIds(
+    Array.isArray(raw.savedFilters) ? raw.savedFilters.map((filter) => normalizeFilter(filter, now)) : [],
+    'filter',
+  ).map((filter) => filter.projectId === undefined || projectIds.has(filter.projectId)
+    ? filter
+    : { ...filter, projectId: undefined })
+  const taskIds = new Set(normalizedTasks.map((task) => task.id))
+  const candidatePomodoro = normalizePomodoro(raw.pomodoro, seed.pomodoro)
+  const normalizedPomodoro = candidatePomodoro.taskId === undefined || taskIds.has(candidatePomodoro.taskId)
+    ? candidatePomodoro
+    : { ...candidatePomodoro, taskId: undefined }
 
   return {
     ...seed,
     ...raw,
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    tasks: Array.isArray(raw.tasks) ? raw.tasks.map((task) => normalizeTask(task, now)) : seed.tasks,
-    projects: Array.isArray(raw.projects) ? raw.projects.map((project) => normalizeProject(project, now)) : seed.projects,
-    habits: Array.isArray(raw.habits) ? raw.habits.map(normalizeHabit) : seed.habits,
-    savedFilters: Array.isArray(raw.savedFilters) ? raw.savedFilters.map((filter) => normalizeFilter(filter, now)) : [],
-    pomodoro: normalizePomodoro(raw.pomodoro, seed.pomodoro),
+    tasks: normalizedTasks,
+    projects: normalizedProjects,
+    habits: normalizedHabits,
+    savedFilters: normalizedFilters,
+    pomodoro: normalizedPomodoro,
     settings: (() => {
       const settings: AppState['settings'] & { googleDriveClientId?: string } = {
         ...seed.settings,
@@ -454,7 +809,7 @@ function normalizeTask(value: Partial<Task>, now: string): Task {
     : undefined
   return {
     ...value,
-    id: value.id ?? crypto.randomUUID(),
+    id: typeof value.id === 'string' ? value.id : '',
     title: value.title?.trim() || 'Без названия',
     description: value.description ?? '',
     projectId: value.projectId ?? 'inbox',
@@ -497,7 +852,7 @@ function normalizeAttachment(value: Task['attachments'][number]): Task['attachme
 function normalizeProject(value: Partial<Project>, now: string): Project {
   return {
     ...value,
-    id: value.id ?? crypto.randomUUID(),
+    id: typeof value.id === 'string' ? value.id : '',
     name: value.name?.trim() || 'Новый проект',
     color: safeColor(value.color, DEFAULT_ENTITY_COLOR),
     createdAt: value.createdAt ?? now,
@@ -519,7 +874,7 @@ function normalizeHabit(value: Partial<Habit>): Habit {
   }
   return {
     ...value,
-    id: value.id ?? crypto.randomUUID(),
+    id: typeof value.id === 'string' ? value.id : '',
     name: value.name?.trim() || 'Новая привычка',
     icon: legacyIcons[value.icon ?? ''] ?? value.icon ?? 'sparkles',
     targetDays: Array.isArray(value.targetDays) ? value.targetDays : [1, 2, 3, 4, 5],
@@ -531,7 +886,7 @@ function normalizeHabit(value: Partial<Habit>): Habit {
 function normalizeFilter(value: Partial<SavedFilter>, now: string): SavedFilter {
   return {
     ...value,
-    id: value.id ?? crypto.randomUUID(),
+    id: typeof value.id === 'string' ? value.id : '',
     name: value.name?.trim() || 'Сохранённый фильтр',
     query: value.query ?? '',
     projectId: value.projectId,
@@ -542,6 +897,30 @@ function normalizeFilter(value: Partial<SavedFilter>, now: string): SavedFilter 
     status: value.status === 'completed' || value.status === 'all' ? value.status : 'active',
     createdAt: value.createdAt ?? now,
   }
+}
+
+function ensureUniqueEntityIds<T extends { id: string }>(entities: T[], prefix: string): T[] {
+  // Preserve the first occurrence of every historical ID. Generated IDs avoid
+  // both already-used and later original IDs, making repeated migrations stable.
+  const reserved = new Set(entities.flatMap((entity) => entity.id.trim() ? [entity.id] : []))
+  const used = new Set<string>()
+  return entities.map((entity, index) => {
+    const originalId = entity.id.trim() ? entity.id : undefined
+    if (originalId && !used.has(originalId)) {
+      used.add(originalId)
+      return entity
+    }
+
+    const base = `migrated-${prefix}-${index + 1}`
+    let candidate = base
+    let suffix = 2
+    while (used.has(candidate) || reserved.has(candidate)) {
+      candidate = `${base}-${suffix}`
+      suffix += 1
+    }
+    used.add(candidate)
+    return { ...entity, id: candidate }
+  })
 }
 
 function isParseableDate(value: unknown): value is string {

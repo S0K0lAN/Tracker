@@ -1,4 +1,10 @@
-import { assertSnapshotStateShape, CURRENT_SCHEMA_VERSION, normalizeAppState, parseStoredAppState } from '../../domain/migrations'
+import {
+  assertCurrentAppState,
+  assertSnapshotStateShape,
+  CURRENT_SCHEMA_VERSION,
+  normalizeAppState,
+  parseStoredAppState,
+} from '../../domain/migrations'
 import type { AppSettings, AppState } from '../../domain/models'
 import { SyncProviderError } from './SyncAdapter'
 
@@ -28,6 +34,12 @@ export interface SnapshotSummary {
 }
 
 export function createRemoteEnvelope(state: AppState, generatedAt = new Date().toISOString()): RemoteSnapshotEnvelope {
+  try {
+    assertCurrentAppState(state)
+    if (!Number.isFinite(Date.parse(generatedAt))) throw new Error('Generated date is invalid')
+  } catch (error) {
+    throw invalidRemote('Локальные данные повреждены и не могут быть отправлены', error)
+  }
   return {
     format: REMOTE_SNAPSHOT_FORMAT,
     formatVersion: REMOTE_SNAPSHOT_FORMAT_VERSION,
@@ -70,6 +82,11 @@ export function mergeRemoteState(local: AppState, remote: AppState): AppState {
 }
 
 export function syncableHash(state: AppState): string {
+  try {
+    assertCurrentAppState(state)
+  } catch (error) {
+    throw invalidRemote('Локальные данные повреждены и не могут быть хешированы', error)
+  }
   const canonical = canonicalJson({
     schemaVersion: CURRENT_SCHEMA_VERSION,
     data: getSyncableData(state),

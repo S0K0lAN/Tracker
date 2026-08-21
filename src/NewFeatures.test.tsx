@@ -29,15 +29,38 @@ function renderApp(path: string, configure?: (state: AppState) => void) {
 
 describe('new workspace pages', () => {
   it('shows today tasks in their observable sections without duplicating a scheduled deadline', async () => {
-    renderApp('/today')
+    renderApp('/today', (state) => {
+      const template = state.tasks.find((task) => task.status === 'active')!
+      const todayAt = (hour: number) => {
+        const value = new Date()
+        value.setHours(hour, 0, 0, 0)
+        return value.toISOString()
+      }
+      state.tasks = [
+        { ...template, id: 'today-scheduled', title: 'Запланированная задача', startAt: todayAt(9), deadline: todayAt(18) },
+        { ...template, id: 'today-deadline', title: 'Только сегодняшний дедлайн', startAt: undefined, deadline: todayAt(17) },
+      ]
+    })
 
     expect(await screen.findByRole('heading', { name: 'Сегодня', level: 1 })).toBeInTheDocument()
     const scheduled = screen.getByRole('heading', { name: 'Запланировано сегодня' }).closest('section')
     const deadlines = screen.getByRole('heading', { name: 'Дедлайны сегодня' }).closest('section')
     expect(scheduled).not.toBeNull()
     expect(deadlines).not.toBeNull()
-    expect(within(scheduled!).getByText('Подготовить план недели')).toBeInTheDocument()
-    expect(within(deadlines!).queryByText('Подготовить план недели')).not.toBeInTheDocument()
+    expect(within(scheduled!).getByText('Запланированная задача')).toBeInTheDocument()
+    expect(within(deadlines!).queryByText('Запланированная задача')).not.toBeInTheDocument()
+    expect(within(deadlines!).getByText('Только сегодняшний дедлайн')).toBeInTheDocument()
+  })
+
+  it('shows one useful Today empty state without empty task sections', async () => {
+    renderApp('/today', (state) => {
+      state.tasks = []
+    })
+
+    expect(await screen.findByRole('heading', { name: 'День свободен' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Запланировано сегодня' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Дедлайны сегодня' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Задач в этом разделе нет.')).not.toBeInTheDocument()
   })
 
   it('creates a project and opens its empty detail page', async () => {
@@ -77,6 +100,19 @@ describe('new workspace pages', () => {
     const savedFilters = screen.getByRole('heading', { name: 'Сохранённые фильтры' }).closest('section')
     expect(savedFilters).not.toBeNull()
     expect(within(savedFilters!).getByRole('button', { name: /^Работа Работа$/ })).toBeInTheDocument()
+  })
+
+  it('opens a project result as an addressable project route', async () => {
+    const user = userEvent.setup()
+    renderApp('/search')
+    await user.type(await screen.findByRole('textbox', { name: 'Глобальный поиск' }), 'Работа')
+
+    const projectLink = screen.getByRole('link', { name: 'Открыть проект Работа' })
+    expect(projectLink).toHaveAttribute('href', '/projects/p-work')
+    await user.click(projectLink)
+    const projectHeading = screen.getByRole('heading', { name: 'Работа', level: 1 })
+    expect(projectHeading).toBeInTheDocument()
+    await waitFor(() => expect(projectHeading).toHaveFocus())
   })
 })
 
@@ -231,6 +267,7 @@ describe('task lifecycle', () => {
     await user.click(within(deletedTask!).getByRole('button', { name: 'Восстановить' }))
 
     expect(screen.queryByText('Прочитать главу книги')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Корзина', level: 1 })).toHaveFocus())
     const navigation = screen.getByRole('navigation', { name: 'Основная навигация' })
     await user.click(within(navigation).getByRole('link', { name: /Входящие/ }))
     expect(screen.getByText('Прочитать главу книги')).toBeInTheDocument()
@@ -251,6 +288,7 @@ describe('task lifecycle', () => {
     expect(screen.getByText('Разобрать входящие заметки')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Вернуть' }))
     expect(screen.queryByText('Разобрать входящие заметки')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Архив', level: 1 })).toHaveFocus())
 
     await user.click(within(navigation).getByRole('link', { name: /Входящие/ }))
     await user.click(screen.getByRole('button', { name: /Показать завершённые/ }))
@@ -270,8 +308,15 @@ describe('task lifecycle', () => {
       }]
     })
     await screen.findByRole('heading', { name: 'Корзина', level: 1 })
+    expect(screen.getByText(/backup\/import-backup.*могут сохранять прежнюю копию/i)).toBeInTheDocument()
     const deletedTask = screen.getByText('Удалить безвозвратно').closest('article')
     expect(deletedTask).not.toBeNull()
+
+    const emptyTrash = screen.getByRole('button', { name: 'Очистить корзину' })
+    await user.click(emptyTrash)
+    expect(screen.getByRole('button', { name: 'Нет' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Нет' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Очистить корзину' })).toHaveFocus())
 
     await user.click(within(deletedTask!).getByRole('button', { name: 'Удалить навсегда' }))
     expect(screen.getByText('Удалить безвозвратно')).toBeInTheDocument()
@@ -279,6 +324,7 @@ describe('task lifecycle', () => {
 
     expect(screen.queryByText('Удалить безвозвратно')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Корзина пуста' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Корзина', level: 1 })).toHaveFocus())
   })
 })
 

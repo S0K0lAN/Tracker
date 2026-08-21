@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import type { Habit, Task } from '../domain/models'
+import { INPUT_LIMITS } from '../domain/inputLimits'
 import { useApp } from '../state/AppContext'
 import { useNow } from '../hooks/useNow'
 import './habits.css'
@@ -301,11 +302,11 @@ export function HabitsPage() {
           <div className="habit-form__fields">
             <label>
               <span>Название привычки</span>
-              <input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, утренняя зарядка" />
+              <input autoFocus maxLength={INPUT_LIMITS.habitName} value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, утренняя зарядка" />
             </label>
             <label>
               <span>Описание <small>необязательно</small></span>
-              <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Зачем эта привычка и что считается выполнением" rows={2} />
+              <textarea maxLength={INPUT_LIMITS.habitDescription} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Зачем эта привычка и что считается выполнением" rows={2} />
             </label>
           </div>
           <fieldset className="habit-icon-picker">
