@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Archive, CheckCircle2, Columns3, Filter, LayoutList, ListFilter, Plus, Search, SlidersHorizontal, X } from 'lucide-react'
 import type { InboxSort, InboxView, Task } from '../domain/models'
 import { getTaskUrgency, isSameLocalDay } from '../domain/models'
-import { sortTasks } from '../domain/taskFilters'
+import { isInboxTask, sortTasks } from '../domain/taskFilters'
 import { useApp } from '../state/AppContext'
 import { PageHeader } from '../components/PageHeader'
 import { SelectMenu } from '../components/SelectMenu'
@@ -10,7 +10,7 @@ import { TaskCard } from '../components/TaskCard'
 import { useNow } from '../hooks/useNow'
 import './inbox-layouts.css'
 
-type FilterMode = 'all' | 'today' | 'important' | 'urgent'
+type FilterMode = 'inbox' | 'all' | 'today' | 'important' | 'urgent'
 const VIRTUAL_LIST_THRESHOLD = 150
 
 export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => void }) {
@@ -18,20 +18,22 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
   const now = useNow()
   const [query, setQuery] = useState('')
   const [showCompleted, setShowCompleted] = useState(false)
-  const [filter, setFilter] = useState<FilterMode>('all')
+  const [filter, setFilter] = useState<FilterMode>('inbox')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [tagMode, setTagMode] = useState<'any' | 'all'>('any')
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [projectId, setProjectId] = useState('')
 
   const tags = useMemo(() => [...new Set(state.tasks.flatMap((task) => task.tags))].sort(), [state.tasks])
   const projectUrgencyThresholds = useMemo(
     () => new Map(state.projects.map((project) => [project.id, project.urgencyThresholdHours])),
     [state.projects],
   )
+  const inboxTasks = useMemo(() => state.tasks.filter(isInboxTask), [state.tasks])
+  const scopeTasks = filter === 'inbox' ? inboxTasks : state.tasks
+  const tags = useMemo(() => [...new Set(scopeTasks.flatMap((task) => task.tags))].sort(), [scopeTasks])
   const visibleTasks = useMemo(
     () =>
-      sortTasks(state.tasks.filter((task) => {
+      sortTasks(scopeTasks.filter((task) => {
         if (task.status === 'archived' || task.status === 'deleted') return false
         if (!showCompleted && task.status === 'completed') return false
         if (query && !`${task.title} ${task.description} ${task.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())) return false
@@ -39,6 +41,7 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         if (filter === 'important' && task.importance !== 'high') return false
         if (filter === 'urgent' && getTaskUrgency(task, now, projectUrgencyThresholds.get(task.projectId)) !== 'high') return false
         if (projectId && task.projectId !== projectId) return false
+        if (filter === 'urgent' && getTaskUrgency(task, now) !== 'high') return false
         if (selectedTags.length > 0) {
           const tagMatch = tagMode === 'all'
             ? selectedTags.every((tag) => task.tags.includes(tag))
@@ -67,23 +70,22 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
   }, [now, projectUrgencyThresholds, state.tasks])
   const activeCount = summary.active
   const completedCount = summary.completed
+    [filter, now, query, scopeTasks, selectedTags, showCompleted, state.settings.inboxSort, tagMode],
+  )
+
+  const activeCount = scopeTasks.filter((task) => task.status === 'active').length
+  const completedTasks = scopeTasks.filter((task) => task.status === 'completed')
+  const completedCount = completedTasks.length
   const view = state.settings.inboxView
 
   return (
     <main className="page">
       <PageHeader
-        eyebrow={`${capitalize(now.toLocaleDateString('ru-RU', { weekday: 'long' }))} · обзор дня`}
+        eyebrow={filter === 'inbox' ? 'Очередь разбора' : 'Общий обзор'}
         title="Входящие"
-        description={`${activeCount} активных задач во всех проектах`}
+        description={filter === 'inbox' ? `Неразобранных задач: ${activeCount}` : `Активных задач: ${activeCount}`}
         actions={<button className="button button--primary header-add" onClick={() => onEditTask(null)}><Plus size={18} /> Добавить задачу</button>}
       />
-
-      <section className="overview-strip" aria-label="Сводка">
-        <div><span>На сегодня</span><strong>{summary.today}</strong></div>
-        <div><span>Срочные</span><strong>{summary.urgent}</strong></div>
-        <div><span>Важные</span><strong>{summary.important}</strong></div>
-        <div><span>Завершено</span><strong>{summary.completed}</strong></div>
-      </section>
 
       <section className="toolbar">
         <label className="search-field">
@@ -93,12 +95,12 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         </label>
         <button className={`button button--ghost ${filtersOpen ? 'is-active' : ''}`} onClick={() => setFiltersOpen(!filtersOpen)}>
           <SlidersHorizontal size={17} /> Фильтры
-          {(selectedTags.length > 0 || filter !== 'all' || projectId) && <span className="filter-count">{selectedTags.length + (filter === 'all' ? 0 : 1) + (projectId ? 1 : 0)}</span>}
+          {(selectedTags.length > 0 || filter !== 'inbox') && <span className="filter-count">{selectedTags.length + (filter === 'inbox' ? 0 : 1)}</span>}
         </button>
         <button className={`button button--ghost ${showCompleted ? 'is-active' : ''}`} onClick={() => setShowCompleted(!showCompleted)}>
           <CheckCircle2 size={17} /> {showCompleted ? 'Скрыть завершённые' : 'Показать завершённые'}
         </button>
-        {showCompleted && completedCount > 0 && <button className="button button--ghost" onClick={archiveCompletedTasks}><Archive size={17} /> Архивировать</button>}
+        {showCompleted && completedCount > 0 && <button className="button button--ghost" onClick={() => archiveCompletedTasks(completedTasks.map((task) => task.id))}><Archive size={17} /> Архивировать</button>}
         <SelectMenu<InboxSort>
           className="inbox-sort"
           label="Сортировка входящих"
@@ -119,6 +121,7 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
             <span className="filter-panel__label"><Filter size={15} /> Быстрый фильтр</span>
             <div className="segmented">
               {([
+                ['inbox', 'Неразобранные'],
                 ['all', 'Все'],
                 ['today', 'Сегодня'],
                 ['important', 'Важные'],
@@ -140,19 +143,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
               ))}
             </div>
           </div>
-          <div>
-            <span className="filter-panel__label"><Filter size={15} /> Проект</span>
-            <SelectMenu<string>
-              label="Фильтр по проекту во входящих"
-              value={projectId}
-              onChange={setProjectId}
-              searchable
-              options={[
-                { value: '', label: 'Все проекты' },
-                ...state.projects.map((project) => ({ value: project.id, label: project.name, color: project.color })),
-              ]}
-            />
-          </div>
           {selectedTags.length > 1 && (
             <div className="tag-mode">
               <span>Совпадение:</span>
@@ -160,8 +150,8 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
               <button className={tagMode === 'all' ? 'is-selected' : ''} onClick={() => setTagMode('all')}>все теги</button>
             </div>
           )}
-          {(selectedTags.length > 0 || filter !== 'all' || projectId) && (
-            <button className="text-button filter-reset" onClick={() => { setSelectedTags([]); setFilter('all'); setProjectId('') }}>
+          {(selectedTags.length > 0 || filter !== 'inbox') && (
+            <button className="text-button filter-reset" onClick={() => { setSelectedTags([]); setFilter('inbox') }}>
               <X size={15} /> Сбросить всё
             </button>
           )}
@@ -182,7 +172,10 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
       </section>
 
       <section className={`task-list task-list--${view}`}>
-        <div className="section-heading"><h2>{view === 'list' ? 'Все задачи' : 'Доска по проектам'}</h2><span>{visibleTasks.length}</span></div>
+        <div className="section-heading">
+          <h2>{view === 'list' ? (filter === 'inbox' ? 'Неразобранные задачи' : 'Все задачи') : (filter === 'inbox' ? 'Доска входящих' : 'Доска по проектам')}</h2>
+          <span>{visibleTasks.length}</span>
+        </div>
         {view === 'list' && visibleTasks.length < VIRTUAL_LIST_THRESHOLD && visibleTasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}
         {view === 'list' && visibleTasks.length >= VIRTUAL_LIST_THRESHOLD && <VirtualTaskList tasks={visibleTasks} onOpen={onEditTask} />}
         {view === 'board' && <InboxBoard tasks={visibleTasks} onEditTask={onEditTask} />}
@@ -197,10 +190,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
       </section>
     </main>
   )
-}
-
-function capitalize(value: string) {
-  return value ? `${value[0].toLocaleUpperCase('ru-RU')}${value.slice(1)}` : value
 }
 
 function VirtualTaskList({ tasks, onOpen }: { tasks: Task[]; onOpen(task: Task): void }) {

@@ -1,6 +1,9 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 import type { Task } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
@@ -8,12 +11,9 @@ import { InboxPage } from './InboxPage'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
 
-afterEach(() => vi.useRealTimers())
-
-describe('Inbox live day summary', () => {
-  it('uses the current weekday, counts start or deadline once, and refreshes urgency with the shared clock', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 7, 21, 12, 0, 0))
+describe('Inbox header', () => {
+  it('defaults to unassigned undated tasks and restores the complete view through All', async () => {
+    const user = userEvent.setup()
     const state = createSeedState()
     const base = state.tasks[0]
     const makeTask = (task: Partial<Task> & Pick<Task, 'id' | 'title'>): Task => ({
@@ -33,23 +33,36 @@ describe('Inbox live day summary', () => {
       makeTask({ id: 'start-only', title: 'Только начало', startAt: '2026-08-21T09:00:00.000+03:00' }),
       makeTask({ id: 'deadline-only', title: 'Только дедлайн', projectId: 'work', deadline: '2026-08-21T12:31:00.000+03:00' }),
       makeTask({ id: 'both', title: 'Начало и дедлайн', projectId: 'personal', startAt: '2026-08-21T10:00:00.000+03:00', deadline: '2026-08-21T18:00:00.000+03:00' }),
+      makeTask({ id: 'inbox', title: 'Неразобранная', projectId: 'inbox' }),
+      makeTask({ id: 'project', title: 'В проекте', projectId: 'work' }),
+      makeTask({ id: 'start-only', title: 'С началом', projectId: 'inbox', startAt: '2026-08-21T09:00:00.000+03:00' }),
+      makeTask({ id: 'deadline-only', title: 'С дедлайном', projectId: 'inbox', deadline: '2026-08-21T12:31:00.000+03:00' }),
     ]
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
 
     render(<AppProvider><InboxPage onEditTask={vi.fn()} /></AppProvider>)
     await act(async () => { await Promise.resolve() })
 
-    expect(screen.getByText('Пятница · обзор дня')).toBeInTheDocument()
-    const summary = screen.getByRole('region', { name: 'Сводка' })
-    expect(within(summary).getByText('На сегодня').nextElementSibling).toHaveTextContent('3')
-    expect(within(summary).getByText('Срочные').nextElementSibling).toHaveTextContent('0')
+    expect(screen.getByText('Очередь разбора')).toBeInTheDocument()
+    expect(screen.getByText('Неразобранных задач: 1')).toBeInTheDocument()
+    expect(screen.getByText('Неразобранная')).toBeInTheDocument()
+    expect(screen.queryByText('В проекте')).not.toBeInTheDocument()
+    expect(screen.queryByText('С началом')).not.toBeInTheDocument()
+    expect(screen.queryByText('С дедлайном')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Сводка' })).not.toBeInTheDocument()
 
-    act(() => {
-      vi.setSystemTime(new Date(2026, 7, 21, 12, 2, 0))
-      document.dispatchEvent(new Event('visibilitychange'))
-    })
+    await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    await user.click(screen.getByRole('button', { name: 'Все' }))
 
-    expect(within(summary).getByText('Срочные').nextElementSibling).toHaveTextContent('1')
+    expect(screen.getByText('Общий обзор')).toBeInTheDocument()
+    expect(screen.getByText('Активных задач: 4')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Все задачи' })).toBeInTheDocument()
+    expect(screen.getByText('Неразобранная')).toBeInTheDocument()
+    expect(screen.getByText('В проекте')).toBeInTheDocument()
+    expect(screen.getByText('С началом')).toBeInTheDocument()
+    expect(screen.getByText('С дедлайном')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Сегодня' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Фильтр по проекту во входящих' })).not.toBeInTheDocument()
   })
 
   it('uses each task project threshold in the summary and urgent filter', async () => {

@@ -8,11 +8,13 @@ import { AppProvider } from '../state/AppContext'
 import { formatTaskDate } from './TaskCard'
 
 function renderInbox(onlyTask = false) {
-  if (onlyTask) {
-    const state = createSeedState()
-    state.tasks = [state.tasks.find((task) => task.id === 'task-plan')!]
-    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
-  }
+  const state = createSeedState()
+  const task = state.tasks.find((item) => item.id === 'task-plan')!
+  task.projectId = 'inbox'
+  task.startAt = undefined
+  task.deadline = undefined
+  if (onlyTask) state.tasks = [task]
+  localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
   return render(
     <RouterProvider initialPath="/inbox">
       <AppProvider>
@@ -88,7 +90,7 @@ describe('TaskCard safety and focus', () => {
   it('moves focus to the list heading when removing the only task', async () => {
     const user = userEvent.setup()
     renderInbox(true)
-    const heading = await screen.findByRole('heading', { name: 'Все задачи', level: 2 })
+    const heading = await screen.findByRole('heading', { name: 'Неразобранные задачи', level: 2 })
 
     await user.click(screen.getByRole('button', { name: 'Действия задачи Подготовить план недели' }))
     await user.click(screen.getByRole('menuitem', { name: 'В корзину' }))
