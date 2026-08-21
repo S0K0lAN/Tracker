@@ -12,7 +12,7 @@
 - основной цикл «быстро записать → увидеть во времени и матрице → выполнить»;
 - desktop 1440×900, промежуточная ширина 1024×900 и mobile 390×844;
 - клавиатура, focus management, доступные имена, light/dark и reduced motion;
-- модели, миграции schema v2/v3/v4, localStorage recovery, portable import/export;
+- модели, миграции schema v1–v4, localStorage recovery, portable import/export;
 - OAuth runtime, Google Drive adapter, remote snapshots и plugin registry;
 - 19 открытых GitHub issues через публичный GitHub API;
 - зависимости (`npm audit` и production-only audit);
@@ -21,6 +21,9 @@
 Discovery независимо выполняли три агента: security/privacy, UI/UX/accessibility
 и product/domain/architecture. Ведущий агент отдельно воспроизвёл критичные
 сценарии и свёл выводы с `docs/business-requirements.md` и `AGENTS.md`.
+Оставшиеся исправления независимо перепроверяли отдельные агенты по UI/router,
+storage races, durable drafts и data integrity; найденные ими P1/P2 получили
+точные regression-тесты до финального общего gate.
 
 Baseline до исправлений:
 
@@ -44,14 +47,11 @@ parser, подзадачи, даты, проект, теги, напоминан
 
 - создание из страницы проекта наследует проект, включая отдельное mobile-действие;
 - дедлайн раньше начала блокируется с доступной ошибкой и фокусом поля;
-
-Оставшиеся улучшения:
-
-- draft редактора остаётся только в памяти и теряется при reload/закрытии;
-- для действительно быстрого keyboard capture стоит добавить явный
-  `Ctrl/Cmd+Enter` и подсказку, учитывающую Linux/Windows;
-- после удаления/завершения карточки нужен системный контракт перемещения
-  фокуса на следующую карточку или заголовок списка.
+- черновик редактора восстанавливается после reload/закрытия, ограничен по
+  размеру и удаляется только после подтверждённого сохранения или явного отказа;
+- добавлены `Ctrl/Cmd+Enter` и подсказка быстрого сохранения;
+- после удаления, завершения и архивации фокус переходит на соседнюю карточку
+  либо устойчивый заголовок страницы.
 
 ### Сегодня
 
@@ -59,8 +59,8 @@ parser, подзадачи, даты, проект, теги, напоминан
 не дублируя одну задачу в двух сегодняшних секциях. Общий минутный clock теперь
 обновляет дату и срочность при переходе порога/полуночи без перезагрузки.
 
-Рекомендация: когда задач нет, не показывать одновременно две пустые секции и
-общий блок «День свободен» — оставить один содержательный empty state.
+Пустой день теперь показывает один содержательный empty state без двух
+дублирующих пустых секций.
 
 ### Входящие
 
@@ -84,9 +84,11 @@ parser, подзадачи, даты, проект, теги, напоминан
 ### Проекты
 
 Плоские личные проекты соответствуют single-user scope. Создание, редактирование,
-удаление и перенос задач в системный inbox работают. Нужны URL-addressable
-project detail и переход из результатов поиска; сейчас выбранный проект живёт
-только в локальном React state страницы.
+удаление и перенос задач в системный inbox работают. Деталь проекта получила
+прямой URL `/projects/:id`, корректные reload/Back/Forward и переход из поиска;
+несуществующий или удалённый проект безопасно возвращает к списку. Общий codec
+добавляет сегменту непустой префикс, поэтому импортированные ID `.`/`..` не
+нормализуются браузером в другой маршрут.
 
 ### Календарь и дедлайны
 
@@ -122,8 +124,8 @@ override на задаче.
 
 Поиск задач, проектов, тегов и saved filters реализован. Нижний дубликат quick
 add уже удалён commit `12f95c8`; остаются обычная page action и глобальная
-кнопка согласно общему правилу. Результат проекта пока статичен и должен вести
-в URL-addressable project detail.
+кнопка согласно общему правилу. Результат проекта ведёт в URL-addressable
+project detail, а запрос и вкладка сохраняются в query string и истории.
 
 ### Привычки
 
@@ -139,9 +141,10 @@ current/best streak и heatmap.
 ### Корзина, архив и данные
 
 Soft delete, restore, permanent delete и отдельный archive работают. Reset demo
-теперь требует подтверждение, транзакционно сохраняет предыдущую копию и даёт
-undo. Нужно явно объяснить retention: backup может продолжать содержать сущность
-после «Удалить навсегда».
+требует подтверждение, транзакционно сохраняет предыдущую копию и даёт undo.
+Интерфейс явно объясняет retention: backup/import-backup и ранее выгруженный
+JSON могут продолжать содержать сущность после «Удалить навсегда». Аварийный
+journal самой задачи при окончательном удалении очищается.
 
 ### Настройки, синхронизация и расширения
 
@@ -180,6 +183,11 @@ Production-ready Google Drive нельзя заявлять без live OAuth sm
 | [#16 Календари проектов](https://github.com/S0K0lAN/Tracker/issues/16) | Future/plan | Предпочтительно project filter в едином Calendar + URL/query/deep-link из Project, не отдельные копии календаря. |
 | [#12 Дедлайны на календаре](https://github.com/S0K0lAN/Tracker/issues/12) | Needs thought/duplicate | Консолидировать с #33/#35/#45 после выбора all-day/date-only модели. |
 
+Повторная проверка после исправлений показала ровно 14 открытых issues:
+#12, #16, #17, #18, #21, #22, #31, #34 и #44–#49. Все относятся к
+future/needs-thought/conflict scope; новых однозначно исполнимых issues нет,
+поэтому они оставлены открытыми без изменения.
+
 ## 4. Security и privacy
 
 ### Подтверждённые риски до исправлений
@@ -215,6 +223,19 @@ Production-ready Google Drive нельзя заявлять без live OAuth sm
 - обычные `npm run dev`/`npm run preview` слушают loopback; LAN вынесен в явные
   `dev:lan`/`preview:lan` с предупреждением в README;
 - экспорт явно помечен как незашифрованный конфиденциальный JSON.
+- snapshot ограничен по глубине и сложности; v4 проверяет уникальность ID,
+  canonical inbox и ссылки задач, фильтров и Pomodoro, а legacy v1–v3
+  детерминированно восстанавливаются;
+- outgoing portable/remote snapshot валидируется до публикации, поэтому
+  приложение не создаёт экспорт, который само не сможет безопасно прочитать;
+- сохранения сериализованы и coalesce-ятся; import/reset/remote replace не
+  позволяют поздней записи затереть более новое локальное состояние.
+- задача закрывается только после реального успешного `StorageAdapter.save`;
+  delayed/rejected save, debounce и CAS новой вкладки покрыты регрессиями;
+- permanent delete и успешные import/restore/reset очищают соответствующие
+  аварийные journals, а неуспешная замена сохраняет их для восстановления;
+- изменение device-local `autoSync` во время remote replace не затирается, и
+  stale операция больше не оставляет UI в бесконечном `syncing`.
 
 ### Dependency audit
 
@@ -255,28 +276,27 @@ policy.
 
 ## 5. Неисправленные архитектурные риски и предлагаемый порядок
 
+В этом цикле закрыты три прежних риска: `StorageAdapter` инъецируется на время
+жизни provider и пишет через последовательную очередь; TaskEditor использует
+durable recovery journal; import/sync/export проверяют IDs, ссылки, глубину и
+complexity budgets.
+
 1. Вынести reducer из `AppContext` в application commands/repositories.
-2. Инъецировать `StorageAdapter` в provider/bootstrap; сериализовать/coalesce
-   async writes, чтобы старая Tauri-запись не завершилась после новой.
-3. Добавить recovery journal для TaskEditor: debounce, create/task key, restore
-   prompt, очистка только после успешного save или явного discard.
-4. Проверять unique IDs, ровно один canonical inbox, orphan `projectId`, limits
-   сущностей/строк и referential integrity во всех import/sync paths.
-5. Ввести device UUID, entity revision, `deletedAt` tombstones, base snapshot,
+2. Ввести device UUID, entity revision, `deletedAt` tombstones, base snapshot,
    `If-Match`/ETag и трёхсторонний merge.
-6. Вынести attachments в BlobStore/IndexedDB, затем platform storage.
-7. Создать Tauri adapter с atomic temp→backup→replace и реальным Ubuntu smoke.
-8. Plugin API проектировать только после permissions, sandbox/capability RPC,
+3. Вынести attachments в BlobStore/IndexedDB, затем platform storage.
+4. Создать Tauri adapter с atomic temp→backup→replace и реальным Ubuntu smoke.
+5. Plugin API проектировать только после permissions, sandbox/capability RPC,
    namespaced storage и запрета прямого DOM/localStorage/token access.
 
 ## 6. Итоговый verification
 
 - чистая установка `npm ci`: успешно;
-- `npm test`: 31 файл, 237/237 тестов;
+- `npm test`: 35 файлов, 376/376 тестов;
 - `npm run build`: TypeScript и production build успешно;
-- `npm run test:e2e`: 38/38 сценариев;
+- `npm run test:e2e`: 40/40 сценариев;
 - `npm audit` и `npm audit --omit=dev`: 0 advisories;
-- 500 задач: render 409 ms, p95 frame 20,4 ms, long frames 0%;
+- 500 задач: render 552 ms, p95 frame 23,0 ms, long frames 0%;
 - light/dark WCAG AA automation и horizontal-overflow gate прошли;
 - визуально проверены 1440×900, 1024×900 и 390×844: deadline bands,
   desktop/sidebar breakpoint и mobile project context action;

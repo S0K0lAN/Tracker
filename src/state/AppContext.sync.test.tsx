@@ -9,6 +9,7 @@ import { AppProvider, useApp } from './AppContext'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
 const IMPORT_BACKUP_KEY = 'focus-flow.state.v1.import-backup'
+const CREATE_DRAFT_KEY = 'focus-flow.task-draft.v1:create'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -814,6 +815,7 @@ describe('AppProvider synchronization races', () => {
     previousBackup.tasks[0].title = 'Существующая копия отмены'
     localStorage.setItem(STORAGE_KEY, JSON.stringify(current))
     localStorage.setItem(IMPORT_BACKUP_KEY, JSON.stringify(previousBackup))
+    localStorage.setItem(CREATE_DRAFT_KEY, '{"draft":true}')
 
     render(<AppProvider><SyncHarness /></AppProvider>)
     await screen.findByText('Данные, которые нельзя потерять')
@@ -829,6 +831,7 @@ describe('AppProvider synchronization races', () => {
     expect(screen.getByText('Данные, которые нельзя потерять')).toBeInTheDocument()
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Данные, которые нельзя потерять')
     expect(JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!).tasks[0].title).toBe('Существующая копия отмены')
+    expect(localStorage.getItem(CREATE_DRAFT_KEY)).toBe('{"draft":true}')
     setItem.mockRestore()
   })
 

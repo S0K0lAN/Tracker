@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import { NavLink, useRouter } from './core/router/Router'
+import { matchProjectRoute, projectPath } from './core/router/projectRoute'
 import type { Task } from './domain/models'
 import { TaskDetails } from './components/TaskDetails'
 import { TaskEditor } from './components/TaskEditor'
@@ -151,6 +152,7 @@ export function App() {
   useNow()
   const [viewTaskId, setViewTaskId] = useState<string>()
   const taskOpenerRef = useRef<HTMLElement | null>(null)
+  const previousPathRef = useRef<string>()
   const [editorTask, setEditorTask] = useState<Task | null | undefined>(undefined)
   const [editorDefaults, setEditorDefaults] = useState<Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>> | undefined>()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -180,17 +182,28 @@ export function App() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         openEditor(null)
+        return
       }
-      if (event.key === 'Escape' && editorTask !== undefined) closeEditor()
-      else if (event.key === 'Escape' && viewTaskId) setViewTaskId(undefined)
+      if (event.defaultPrevented) return
+      if (event.key === 'Escape' && editorTask === undefined && viewTaskId) setViewTaskId(undefined)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [editorTask, viewTaskId])
 
   useEffect(() => {
+    const previousPath = previousPathRef.current
+    previousPathRef.current = path
+    if (previousPath === path) return
     if (path === '/') navigate('/inbox', { replace: true })
     window.scrollTo({ top: 0, behavior: 'auto' })
+    if (previousPath === undefined) return
+    requestAnimationFrame(() => {
+      const heading = document.querySelector<HTMLElement>('.workspace main h1')
+      if (!heading) return
+      heading.tabIndex = -1
+      heading.focus()
+    })
   }, [navigate, path])
 
   useEffect(() => {
@@ -204,10 +217,25 @@ export function App() {
     return () => setInert(elements, false)
   }, [editorTask, menuOpen, viewedTask])
 
+  const projectRouteMatch = matchProjectRoute(path)
+  const selectedProjectId = projectRouteMatch?.projectId ?? null
+
+  useEffect(() => {
+    if (projectRouteMatch && (!selectedProjectId || !state.projects.some((project) => project.id === selectedProjectId))) {
+      navigate('/projects', { replace: true })
+    }
+  }, [navigate, path, selectedProjectId, state.projects])
+
   const page =
     path === '/' || path === '/inbox' ? <InboxPage onEditTask={openTask} />
     : path === '/today' ? <TodayPage onEditTask={openTask} />
-    : path === '/projects' ? <ProjectsPage onEditTask={openTask} />
+    : path === '/projects' || projectRouteMatch ? (
+      <ProjectsPage
+        onEditTask={openTask}
+        selectedProjectId={selectedProjectId}
+        onSelectProject={(projectId) => navigate(projectId ? projectPath(projectId) : '/projects')}
+      />
+    )
     : path === '/calendar' ? <CalendarPage onEditTask={openTask} />
     : path === '/matrix' ? <MatrixPage onEditTask={openTask} />
     : path === '/search' ? <SearchPage onEditTask={openTask} />

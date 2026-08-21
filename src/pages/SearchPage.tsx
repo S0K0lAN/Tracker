@@ -1,19 +1,23 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bookmark, Filter, Folder, Hash, Plus, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import type { Importance, SavedFilter, Task, Urgency } from '../domain/models'
+import { INPUT_LIMITS } from '../domain/inputLimits'
 import { matchesSavedFilter } from '../domain/taskFilters'
 import { PageHeader } from '../components/PageHeader'
 import { SelectMenu } from '../components/SelectMenu'
 import { TaskCard } from '../components/TaskCard'
 import { useApp } from '../state/AppContext'
+import { NavLink, useRouter } from '../core/router/Router'
+import { projectPath } from '../core/router/projectRoute'
 import './search-page.css'
 
 type SearchTab = 'all' | 'tasks' | 'projects' | 'tags' | 'filters'
 
 export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => void }) {
   const { state, addSavedFilter, removeSavedFilter } = useApp()
-  const [query, setQuery] = useState(() => new URLSearchParams(location.search).get('q') ?? '')
-  const [tab, setTab] = useState<SearchTab>('all')
+  const { search, navigate } = useRouter()
+  const [query, setQuery] = useState(() => new URLSearchParams(search).get('q') ?? '')
+  const [tab, setTab] = useState<SearchTab>(() => searchTabFrom(new URLSearchParams(search).get('tab')))
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [projectId, setProjectId] = useState('')
   const [importance, setImportance] = useState<Importance | ''>('')
@@ -49,6 +53,15 @@ export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => 
     ? state.savedFilters.filter((filter) => filter.name.toLowerCase().includes(query.toLowerCase()))
     : state.savedFilters
   const activeFilterCount = [projectId, importance, urgency, status !== 'active' ? status : '', ...selectedTags].filter(Boolean).length
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (query) params.set('q', query)
+    if (tab !== 'all') params.set('tab', tab)
+    const encoded = params.toString()
+    const nextLocation = `/search${encoded ? `?${encoded}` : ''}`
+    if (`/search${search}` !== nextLocation) navigate(nextLocation, { replace: true })
+  }, [navigate, query, search, tab])
 
   const reset = () => {
     setProjectId('')
@@ -93,7 +106,7 @@ export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => 
 
       <section className="global-search">
         <Search size={21} />
-        <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Что вы ищете?" aria-label="Глобальный поиск" />
+        <input autoFocus maxLength={INPUT_LIMITS.searchQuery} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Что вы ищете?" aria-label="Глобальный поиск" />
         {query && <button className="icon-button" onClick={() => setQuery('')} aria-label="Очистить глобальный поиск"><X size={17} /></button>}
         <button className={`button button--ghost ${filtersOpen ? 'is-active' : ''}`} onClick={() => setFiltersOpen((current) => !current)}>
           <SlidersHorizontal size={17} /> Фильтры {activeFilterCount > 0 && <em>{activeFilterCount}</em>}
@@ -116,7 +129,7 @@ export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => 
           <footer>
             <button className="text-button" onClick={reset}><X size={15} /> Сбросить</button>
             {saving ? (
-              <span className="save-filter"><input autoFocus value={saveName} onChange={(event) => setSaveName(event.target.value)} placeholder="Название фильтра" aria-label="Название фильтра" /><button className="button button--primary" onClick={saveFilter}>Сохранить</button></span>
+              <span className="save-filter"><input autoFocus maxLength={INPUT_LIMITS.savedFilterName} value={saveName} onChange={(event) => setSaveName(event.target.value)} placeholder="Название фильтра" aria-label="Название фильтра" /><button className="button button--primary" onClick={saveFilter}>Сохранить</button></span>
             ) : <button className="button button--ghost" disabled={!hasCriteria} onClick={() => setSaving(true)}><Bookmark size={15} /> Сохранить фильтр</button>}
           </footer>
         </section>
@@ -134,7 +147,7 @@ export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => 
 
       <div className="search-results">
         {(tab === 'all' || tab === 'tasks') && tasks.length > 0 && <ResultSection title="Задачи" icon={<Search />}>{tasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}</ResultSection>}
-        {(tab === 'all' || tab === 'projects') && projects.length > 0 && <ResultSection title="Проекты" icon={<Folder />}>{projects.map((project) => <article className="search-entity" key={project.id}><span style={{ color: project.color }}><Folder /></span><div><strong>{project.name}</strong><small>{project.description ?? 'Без описания'}</small></div><em>{state.tasks.filter((task) => task.projectId === project.id && task.status === 'active').length} задач</em></article>)}</ResultSection>}
+        {(tab === 'all' || tab === 'projects') && projects.length > 0 && <ResultSection title="Проекты" icon={<Folder />}>{projects.map((project) => <NavLink className="search-entity search-entity--link" to={projectPath(project.id)} key={project.id} aria-label={`Открыть проект ${project.name}`}><span style={{ color: project.color }}><Folder /></span><div><strong>{project.name}</strong><small>{project.description ?? 'Без описания'}</small></div><em>{state.tasks.filter((task) => task.projectId === project.id && task.status === 'active').length} задач</em></NavLink>)}</ResultSection>}
         {(tab === 'all' || tab === 'tags') && tags.length > 0 && <ResultSection title="Теги" icon={<Hash />}><div className="search-tag-cloud">{tags.map((tag) => <button className="tag tag--button" key={tag} onClick={() => { setSelectedTags([tag]); setTab('tasks') }}>#{tag}<em>{state.tasks.filter((task) => task.tags.includes(tag)).length}</em></button>)}</div></ResultSection>}
         {(tab === 'all' || tab === 'filters') && savedFilters.length > 0 && <ResultSection title="Сохранённые фильтры" icon={<Filter />}>{savedFilters.map((filter) => <article className="search-entity" key={filter.id}><button className="search-entity__main" onClick={() => applyFilter(filter)}><Bookmark /><span><strong>{filter.name}</strong><small>{[filter.query, filter.tags.map((tag) => `#${tag}`).join(' ')].filter(Boolean).join(' · ') || 'Набор условий'}</small></span></button><button className="icon-button" onClick={() => removeSavedFilter(filter.id)} aria-label={`Удалить фильтр ${filter.name}`}><Trash2 size={15} /></button></article>)}</ResultSection>}
 
@@ -148,4 +161,10 @@ export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => 
 
 function ResultSection({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
   return <section className="search-result-section"><header><span>{icon}</span><h2>{title}</h2></header><div>{children}</div></section>
+}
+
+function searchTabFrom(value: string | null): SearchTab {
+  return value === 'tasks' || value === 'projects' || value === 'tags' || value === 'filters'
+    ? value
+    : 'all'
 }

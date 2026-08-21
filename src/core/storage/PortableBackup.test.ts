@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { CURRENT_SCHEMA_VERSION } from '../../domain/migrations'
+import { CURRENT_SCHEMA_VERSION, SNAPSHOT_LIMITS } from '../../domain/migrations'
+import type { AppState, SavedFilter, Task } from '../../domain/models'
 import { createSeedState } from '../../domain/seed'
+import { MAX_ATTACHMENT_BYTES } from '../../domain/attachments'
+import { MAX_CUSTOM_BACKGROUND_BYTES } from '../../domain/backgrounds'
+import { createRemoteEnvelope } from '../sync/RemoteSnapshot'
 import {
   assertPortableBackupFile,
   createPortableBackup,
@@ -8,6 +12,84 @@ import {
   parsePortableBackup,
   PortableBackupError,
 } from './PortableBackup'
+
+const portableFilter = (id: string): SavedFilter => ({
+  id,
+  name: id,
+  query: '',
+  tags: [],
+  tagMode: 'any',
+  status: 'active',
+  createdAt: '2026-08-21T00:00:00.000Z',
+})
+
+const portableMinimalTask = (index: number): Task => ({
+  id: `minimal-task-${index}`,
+  title: 't',
+  description: '',
+  projectId: 'inbox',
+  urgencyThresholdHours: 72,
+  importance: 'low',
+  tags: [],
+  subtasks: [],
+  attachments: [],
+  reminders: [],
+  status: 'active',
+  createdAt: '2026-08-21T00:00:00.000Z',
+  updatedAt: '2026-08-21T00:00:00.000Z',
+  focusMinutes: 0,
+})
+
+function addDeepPortablePlugin(state: AppState) {
+  let value: Record<string, unknown> = { leaf: true }
+  for (let index = 0; index <= SNAPSHOT_LIMITS.maxDepth; index += 1) value = { child: value }
+  ;(state as AppState & Record<string, unknown>)['plugin.example/deep'] = value
+}
+
+function invalidPortableStates(): [string, (state: AppState) => void][] {
+  return [
+    ['duplicate task IDs', (state) => state.tasks.push(structuredClone(state.tasks[0]))],
+    ['duplicate project IDs', (state) => state.projects.push(structuredClone(state.projects[0]))],
+    ['duplicate habit IDs', (state) => state.habits.push(structuredClone(state.habits[0]))],
+    ['duplicate filter IDs', (state) => state.savedFilters.push(portableFilter('same'), portableFilter('same'))],
+    ['a missing inbox', (state) => {
+      state.projects = state.projects.filter(({ id }) => id !== 'inbox')
+      state.tasks.forEach((task) => { if (task.projectId === 'inbox') task.projectId = 'personal' })
+    }],
+    ['an orphan project reference', (state) => { state.tasks[0].projectId = 'missing-project' }],
+    ['an orphan saved-filter project', (state) => {
+      state.savedFilters.push({ ...portableFilter('orphan-filter'), projectId: 'missing-project' })
+    }],
+    ['an orphan Pomodoro task', (state) => { state.pomodoro.taskId = 'missing-task' }],
+    ['too many entities', (state) => {
+      state.projects = Array(SNAPSHOT_LIMITS.projects + 1).fill(state.projects[0])
+    }],
+    ['an oversized user string', (state) => {
+      state.tasks[0].title = 'x'.repeat(SNAPSHOT_LIMITS.shortTextBytes + 1)
+    }],
+    ['too much cumulative user text', (state) => {
+      const description = 'x'.repeat(Math.floor(SNAPSHOT_LIMITS.userTextBytes / 20) + 1)
+      state.tasks = []
+      state.habits = []
+      state.savedFilters = []
+      state.projects = [{
+        id: 'inbox', name: 'Без проекта', color: '#778c70', createdAt: '2026-08-21T00:00:00.000Z',
+      }, ...Array.from({ length: 20 }, (_, index) => ({
+        id: `large-project-${index}`,
+        name: `Проект ${index}`,
+        description,
+        color: '#778c70',
+        createdAt: '2026-08-21T00:00:00.000Z',
+      }))]
+    }],
+    ['excessive structural complexity', (state) => {
+      ;(state as AppState & Record<string, unknown>)['plugin.example/nodes'] = Array(
+        SNAPSHOT_LIMITS.totalNodes + 1,
+      ).fill(0)
+    }],
+    ['excessive nesting depth', (state) => addDeepPortablePlugin(state)],
+  ]
+}
 
 describe('portable Focus Flow backup', () => {
   it('creates a deterministic versioned JSON file without device-local sync settings', () => {
@@ -56,12 +138,16 @@ describe('portable Focus Flow backup', () => {
     const legacySettings = legacy.settings as unknown as Record<string, unknown>
     delete legacySettings.fontFamily
     delete legacySettings.fontScale
+    legacy.savedFilters.push({ ...portableFilter('legacy-orphan'), projectId: 'missing-project' })
+    legacy.pomodoro.taskId = 'missing-task'
 
     const parsed = parsePortableBackup(JSON.stringify(legacy))
 
     expect(parsed.state.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(parsed.state.settings.fontFamily).toBe('system')
     expect(parsed.state.settings.fontScale).toBe(100)
+    expect(parsed.state.savedFilters[0].projectId).toBeUndefined()
+    expect(parsed.state.pomodoro.taskId).toBeUndefined()
   })
 
   it.each([
@@ -98,10 +184,47 @@ describe('portable Focus Flow backup', () => {
   })
 
   it('does not download a file that would exceed its own import limit', () => {
-    const state = createSeedState()
-    state.tasks[0].description = 'x'.repeat(MAX_PORTABLE_BACKUP_BYTES)
+    const state = createSeedState() as AppState & Record<string, unknown>
+    state.tasks[0].description = 'x'.repeat(9_700_000)
+    state['plugin.example/padding'] = Array(SNAPSHOT_LIMITS.totalNodes).fill('')
 
     expect(() => createPortableBackup(state)).toThrow(expect.objectContaining({ code: 'too-large' }))
+  })
+
+  it('round-trips 20,001 minimal tasks while the compact envelope remains below 10 MiB', () => {
+    const state = createSeedState()
+    state.tasks = Array.from({ length: 20_001 }, (_, index) => portableMinimalTask(index))
+
+    const backup = createPortableBackup(state)
+    const parsed = parsePortableBackup(backup.contents)
+
+    expect(new TextEncoder().encode(backup.contents).byteLength).toBeLessThan(MAX_PORTABLE_BACKUP_BYTES)
+    expect(parsed.state.tasks).toHaveLength(20_001)
+    expect(parsed.state.tasks.at(-1)?.id).toBe('minimal-task-20000')
+  })
+
+  it('round-trips a valid attachment-heavy state near the 10 MiB envelope limit', () => {
+    const state = createSeedState()
+    const attachmentDataUrl = `data:text/plain;base64,${'A'.repeat(Math.floor(MAX_ATTACHMENT_BYTES / 3) * 4)}`
+    const backgroundDataUrl = `data:image/png;base64,${'A'.repeat(Math.floor(MAX_CUSTOM_BACKGROUND_BYTES / 3) * 4)}`
+    state.tasks[0].attachments = Array.from({ length: 5 }, (_, index) => ({
+      id: `large-attachment-${index}`,
+      name: `large-${index}.txt`,
+      type: 'text/plain',
+      size: MAX_ATTACHMENT_BYTES,
+      dataUrl: attachmentDataUrl,
+    }))
+    state.settings.backgroundPreset = 'custom'
+    state.settings.customBackgroundDataUrl = backgroundDataUrl
+
+    const backup = createPortableBackup(state)
+    const byteLength = new TextEncoder().encode(backup.contents).byteLength
+    const parsed = parsePortableBackup(backup.contents)
+
+    expect(byteLength).toBeGreaterThan(8 * 1024 * 1024)
+    expect(byteLength).toBeLessThanOrEqual(MAX_PORTABLE_BACKUP_BYTES)
+    expect(parsed.state.tasks[0].attachments).toHaveLength(5)
+    expect(parsed.state.settings.customBackgroundDataUrl).toBe(backgroundDataUrl)
   })
 
   it('exposes typed, user-safe validation errors', () => {
@@ -112,5 +235,72 @@ describe('portable Focus Flow backup', () => {
       expect(error).toBeInstanceOf(PortableBackupError)
       expect((error as PortableBackupError).message).not.toContain('SyntaxError')
     }
+  })
+
+  it.each(invalidPortableStates())('rejects exporting schema v4 data with %s', (_label, mutate) => {
+    const state = createSeedState()
+    mutate(state)
+
+    expect(() => createPortableBackup(state)).toThrow(expect.objectContaining({
+      name: 'PortableBackupError',
+      code: 'invalid-state',
+      message: 'Локальные данные повреждены, поэтому резервную копию нельзя создать',
+    }))
+  })
+
+  it.each(invalidPortableStates().filter(([label]) => ![
+    'too many entities',
+    'an oversized user string',
+    'too much cumulative user text',
+  ].includes(label)))(
+    'rejects imported schema v4 data with %s',
+    (_label, mutate) => {
+      const envelope = createRemoteEnvelope(createSeedState())
+      mutate(envelope.data as unknown as AppState)
+      const contents = JSON.stringify(envelope)
+
+      expect(new TextEncoder().encode(contents).byteLength).toBeLessThanOrEqual(MAX_PORTABLE_BACKUP_BYTES)
+      expect(() => parsePortableBackup(contents)).toThrow(expect.objectContaining({
+        name: 'PortableBackupError',
+        code: 'invalid-backup',
+      }))
+    },
+  )
+
+  it.each(invalidPortableStates().filter(([label]) => [
+    'an oversized user string',
+    'too much cumulative user text',
+  ].includes(label)))(
+    'rejects imported schema v4 data with %s at the transport boundary',
+    (_label, mutate) => {
+      const envelope = createRemoteEnvelope(createSeedState())
+      mutate(envelope.data as unknown as AppState)
+      const contents = JSON.stringify(envelope)
+
+      expect(new TextEncoder().encode(contents).byteLength).toBeGreaterThan(MAX_PORTABLE_BACKUP_BYTES)
+      expect(() => parsePortableBackup(contents)).toThrow(expect.objectContaining({
+        name: 'PortableBackupError',
+        code: 'too-large',
+      }))
+    },
+  )
+
+  it('rejects an oversized imported collection before traversing its elements', () => {
+    const valid = createRemoteEnvelope(createSeedState())
+    const projects = `{}` + ',{}'.repeat(SNAPSHOT_LIMITS.projects)
+    const contents = JSON.stringify({
+      format: valid.format,
+      formatVersion: valid.formatVersion,
+      schemaVersion: valid.schemaVersion,
+      generatedAt: valid.generatedAt,
+    }).replace(/}$/, '')
+      + `,"data":{"tasks":[],"projects":[${projects}],"habits":[],"savedFilters":[],`
+      + `"pomodoro":${JSON.stringify(valid.data.pomodoro)},"settings":${JSON.stringify(valid.data.settings)}}}`
+
+    expect(new TextEncoder().encode(contents).byteLength).toBeLessThan(MAX_PORTABLE_BACKUP_BYTES)
+    expect(() => parsePortableBackup(contents)).toThrow(expect.objectContaining({
+      name: 'PortableBackupError',
+      code: 'invalid-backup',
+    }))
   })
 })

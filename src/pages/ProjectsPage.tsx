@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { ArrowLeft, CalendarClock, Folder, FolderPlus, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { Project, Task } from '../domain/models'
+import { INPUT_LIMITS } from '../domain/inputLimits'
 import { PageHeader } from '../components/PageHeader'
 import { TaskCard } from '../components/TaskCard'
 import { useApp } from '../state/AppContext'
@@ -10,19 +11,31 @@ const projectColors = ['#778c70', '#9b7fbd', '#d78b69', '#5d88a3', '#c18b46', '#
 
 export function ProjectsPage({
   onEditTask,
+  selectedProjectId,
+  onSelectProject,
 }: {
   onEditTask: (task: Task | null, defaults?: Partial<Pick<Task, 'projectId'>>) => void
+  selectedProjectId?: string | null
+  onSelectProject?: (projectId: string | null) => void
 }) {
   const { state, addProject, updateProject, removeProject } = useApp()
   const [creating, setCreating] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [localSelectedId, setLocalSelectedId] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [color, setColor] = useState(projectColors[0])
   const menuCloseTimer = useRef<ReturnType<typeof setTimeout>>()
+  const newProjectTriggerRef = useRef<HTMLButtonElement>(null)
+  const projectFormReturnFocusRef = useRef<HTMLElement | null>(null)
+  const controlledSelection = selectedProjectId !== undefined
+  const selectedId = controlledSelection ? selectedProjectId : localSelectedId
+  const selectProject = (projectId: string | null) => {
+    onSelectProject?.(projectId)
+    if (!controlledSelection) setLocalSelectedId(projectId)
+  }
   const selected = state.projects.find((project) => project.id === selectedId)
   const projectTasks = useMemo(
     () => state.tasks.filter((task) => task.projectId === selectedId && (task.status === 'active' || task.status === 'completed')),
@@ -33,7 +46,7 @@ export function ProjectsPage({
     if (menuCloseTimer.current) clearTimeout(menuCloseTimer.current)
   }, [])
 
-  const closeProjectForm = () => {
+  const resetProjectForm = () => {
     setCreating(false)
     setEditingId(null)
     setName('')
@@ -41,13 +54,30 @@ export function ProjectsPage({
     setColor(projectColors[0])
   }
 
+  const closeProjectForm = () => {
+    resetProjectForm()
+    requestAnimationFrame(() => {
+      const target = projectFormReturnFocusRef.current?.isConnected
+        ? projectFormReturnFocusRef.current
+        : document.querySelector<HTMLElement>('.workspace main h1')
+      projectFormReturnFocusRef.current = null
+      if (!target) return
+      if (!target.matches('button, a, [tabindex]')) target.tabIndex = -1
+      target.focus()
+    })
+  }
+
   const openProjectCreator = () => {
-    closeProjectForm()
+    resetProjectForm()
+    projectFormReturnFocusRef.current = newProjectTriggerRef.current
     setCreating(true)
   }
 
   const openProjectEditor = (project: Project) => {
     if (menuCloseTimer.current) clearTimeout(menuCloseTimer.current)
+    const activeElement = document.activeElement as HTMLElement | null
+    projectFormReturnFocusRef.current = activeElement?.closest('.project-card__actions')
+      ?.querySelector<HTMLElement>('.project-card__more') ?? activeElement
     setEditingId(project.id)
     setName(project.name)
     setDescription(project.description ?? '')
@@ -70,16 +100,30 @@ export function ProjectsPage({
     if (existing) updateProject(project)
     else addProject(project)
     closeProjectForm()
-    if (!existing) setSelectedId(project.id)
+    if (!existing) selectProject(project.id)
   }
 
-  const deleteProject = (projectId: string) => {
+  const deleteProject = (projectId: string, trigger?: HTMLElement) => {
     if (menuCloseTimer.current) clearTimeout(menuCloseTimer.current)
+    const card = trigger?.closest<HTMLElement>('.project-card')
+    const cards = card?.parentElement ? [...card.parentElement.querySelectorAll<HTMLElement>('.project-card')] : []
+    const index = card ? cards.indexOf(card) : -1
+    const adjacent = index >= 0
+      ? cards[index + 1]?.querySelector<HTMLElement>('.project-card__open')
+        ?? cards[index - 1]?.querySelector<HTMLElement>('.project-card__open')
+      : null
+    const pageHeading = card?.closest('main')?.querySelector<HTMLElement>('h1')
     removeProject(projectId)
     setOpenMenuId(null)
     setDeleteConfirmId(null)
-    if (selectedId === projectId) setSelectedId(null)
+    if (selectedId === projectId) selectProject(null)
     if (editingId === projectId) closeProjectForm()
+    requestAnimationFrame(() => {
+      const target = adjacent?.isConnected ? adjacent : pageHeading?.isConnected ? pageHeading : null
+      if (!target) return
+      if (!target.matches('button, a, [tabindex]')) target.tabIndex = -1
+      target.focus()
+    })
   }
 
   const openProjectMenu = (projectId: string) => {
@@ -120,7 +164,7 @@ export function ProjectsPage({
     const active = projectTasks.filter((task) => task.status === 'active')
     return (
       <main className="page">
-        <button className="workspace-back" onClick={() => setSelectedId(null)}><ArrowLeft size={17} /> Все проекты</button>
+        <button className="workspace-back" onClick={() => selectProject(null)}><ArrowLeft size={17} /> Все проекты</button>
         <PageHeader
           eyebrow="Проект"
           title={selected.name}
@@ -152,7 +196,7 @@ export function ProjectsPage({
         eyebrow="Контекст и направления"
         title="Проекты"
         description="Собирайте связанные задачи в спокойные рабочие пространства"
-        actions={<button className="button button--primary" onClick={openProjectCreator}><FolderPlus size={18} /> Новый проект</button>}
+        actions={<button ref={newProjectTriggerRef} className="button button--primary" onClick={openProjectCreator}><FolderPlus size={18} /> Новый проект</button>}
       />
 
       {creating && (
@@ -165,8 +209,8 @@ export function ProjectsPage({
             <button className="icon-button" onClick={closeProjectForm} aria-label={editingId ? 'Закрыть редактирование проекта' : 'Закрыть создание проекта'}><X /></button>
           </header>
           <div className="project-creator__fields">
-            <label className="field"><span>Название</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, Запуск продукта" /></label>
-            <label className="field"><span>Описание</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Коротко о результате проекта" /></label>
+            <label className="field"><span>Название</span><input autoFocus maxLength={INPUT_LIMITS.projectName} value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, Запуск продукта" /></label>
+            <label className="field"><span>Описание</span><input maxLength={INPUT_LIMITS.projectDescription} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Коротко о результате проекта" /></label>
           </div>
           <fieldset className="project-color-picker">
             <legend>Цвет проекта</legend>
@@ -186,7 +230,7 @@ export function ProjectsPage({
           const nearest = tasks.filter((task) => task.deadline).sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0]
           return (
             <article className={`project-card ${openMenuId === project.id ? 'project-card--menu-open' : ''}`} key={project.id}>
-              <button className="project-card__open" onClick={() => setSelectedId(project.id)} aria-label={`Открыть проект ${project.name}`}>
+              <button className="project-card__open" onClick={() => selectProject(project.id)} aria-label={`Открыть проект ${project.name}`}>
                 <span className="project-card__icon" style={{ color: project.color, background: `color-mix(in srgb, ${project.color} 16%, var(--surface))` }}><Folder size={21} /></span>
                 <span className="project-card__content">
                   <strong>{project.name}</strong>
@@ -228,9 +272,9 @@ export function ProjectsPage({
                         type="button"
                         role="menuitem"
                         className="project-card__menu-danger"
-                        onClick={() => {
+                        onClick={(event) => {
                           if (menuCloseTimer.current) clearTimeout(menuCloseTimer.current)
-                          if (deleteConfirmId === project.id) deleteProject(project.id)
+                          if (deleteConfirmId === project.id) deleteProject(project.id, event.currentTarget)
                           else setDeleteConfirmId(project.id)
                         }}
                       >

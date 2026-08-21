@@ -23,6 +23,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
+  const cardRef = useRef<HTMLElement>(null)
   const project = state.projects.find((item) => item.id === task.projectId)
   const timing = getTaskTiming(task)
   const urgency = timing.urgency
@@ -64,11 +65,43 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
     items[next]?.focus()
   }
 
+  const runRemovingAction = (action: () => void) => {
+    const card = cardRef.current
+    const activeElement = document.activeElement as HTMLElement | null
+    const cardContainer = card?.closest<HTMLElement>('.virtual-task-list, .board-column, .workspace-section, .search-result-section, .task-list')
+      ?? card?.parentElement
+    const cards = cardContainer ? [...cardContainer.querySelectorAll<HTMLElement>('.task-card')] : []
+    const index = card ? cards.indexOf(card) : -1
+    const adjacent = index >= 0
+      ? cards[index + 1]?.querySelector<HTMLElement>('.task-card__body, .task-check')
+        ?? cards[index - 1]?.querySelector<HTMLElement>('.task-card__body, .task-check')
+      : null
+    const sectionHeading = card?.closest('section')?.querySelector<HTMLElement>('h2, h3')
+    const pageHeading = card?.closest('main')?.querySelector<HTMLElement>('h1')
+    action()
+    requestAnimationFrame(() => {
+      if (activeElement?.isConnected) return
+      const trigger = menuTriggerRef.current
+      const target = trigger?.isConnected
+        ? trigger
+          : adjacent?.isConnected
+          ? adjacent
+          : sectionHeading?.isConnected
+            ? sectionHeading
+            : pageHeading?.isConnected
+              ? pageHeading
+            : null
+      if (!target) return
+      if (!target.matches('button, a, input, select, textarea, [tabindex]')) target.tabIndex = -1
+      target.focus()
+    })
+  }
+
   return (
-    <article className={`task-card ${task.status === 'completed' ? 'task-card--done' : ''} ${menuOpen ? 'task-card--menu-open' : ''}`}>
+    <article ref={cardRef} className={`task-card ${task.status === 'completed' ? 'task-card--done' : ''} ${menuOpen ? 'task-card--menu-open' : ''}`}>
       <button
         className={`task-check ${task.status === 'completed' ? 'task-check--done' : ''}`}
-        onClick={() => toggleTask(task.id)}
+        onClick={() => runRemovingAction(() => toggleTask(task.id))}
         aria-label={task.status === 'completed' ? `Вернуть задачу ${task.title}` : `Завершить задачу ${task.title}`}
       >
         {task.status === 'completed' && <Check size={15} strokeWidth={3} />}
@@ -162,16 +195,16 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
               </button>
             )}
             {task.status === 'active' && (
-              <button type="button" role="menuitem" onClick={() => { toggleTask(task.id); setMenuOpen(false) }}>
+              <button type="button" role="menuitem" onClick={() => runRemovingAction(() => { toggleTask(task.id); setMenuOpen(false) })}>
                 <Check size={16} /> Завершить
               </button>
             )}
             {task.status === 'completed' && (
-              <button type="button" role="menuitem" onClick={() => { archiveTask(task.id); setMenuOpen(false) }}>
+              <button type="button" role="menuitem" onClick={() => runRemovingAction(() => { archiveTask(task.id); setMenuOpen(false) })}>
                 <Archive size={16} /> Архивировать
               </button>
             )}
-            <button type="button" role="menuitem" className="task-card__menu-danger" onClick={() => { removeTask(task.id); setMenuOpen(false) }}>
+            <button type="button" role="menuitem" className="task-card__menu-danger" onClick={() => runRemovingAction(() => { removeTask(task.id); setMenuOpen(false) })}>
               <Trash2 size={16} /> В корзину
             </button>
           </div>

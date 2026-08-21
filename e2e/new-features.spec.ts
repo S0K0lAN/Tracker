@@ -670,6 +670,7 @@ test('a created project can own a task and both survive reload', async ({ page }
   await creator.getByLabel('Описание').fill('Подготовка сквозного релиза')
   await creator.getByRole('button', { name: 'Создать проект' }).click()
 
+  await expect(page).toHaveURL(/\/projects\/p-[^/?#]+$/)
   await expect(page.getByRole('heading', { name: 'E2E Контур', level: 1 })).toBeVisible()
   await expect.poll(() =>
     page.evaluate((storageKey) => {
@@ -686,7 +687,7 @@ test('a created project can own a task and both survive reload', async ({ page }
   await expect(page.getByText('E2E проектная задача', { exact: true })).toBeVisible()
 
   await page.reload()
-  await page.locator('.project-card').filter({ hasText: 'E2E Контур' }).click()
+  await expect(page).toHaveURL(/\/projects\/p-[^/?#]+$/)
   await expect(page.getByRole('heading', { name: 'E2E Контур', level: 1 })).toBeVisible()
   await expect(page.getByText('E2E проектная задача', { exact: true })).toBeVisible()
 })

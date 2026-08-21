@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -11,17 +12,29 @@ import {
 
 interface RouterValue {
   path: string
+  search: string
   navigate(path: string, options?: { replace?: boolean }): void
 }
 
 const RouterContext = createContext<RouterValue | null>(null)
 
 export function RouterProvider({ children, initialPath }: { children: ReactNode; initialPath?: string }) {
-  const [path, setPath] = useState(initialPath ?? window.location.pathname)
+  const [location, setLocation] = useState(initialPath ?? `${window.location.pathname}${window.location.search}`)
+  const queryIndex = location.indexOf('?')
+  const path = queryIndex >= 0 ? location.slice(0, queryIndex) : location
+  const search = queryIndex >= 0 ? location.slice(queryIndex) : ''
+
+  const navigate = useCallback((nextPath: string, options?: { replace?: boolean }) => {
+    if (!initialPath) {
+      if (options?.replace) window.history.replaceState(null, '', nextPath)
+      else window.history.pushState(null, '', nextPath)
+    }
+    setLocation(nextPath)
+  }, [initialPath])
 
   useEffect(() => {
     if (initialPath) return
-    const onPopState = () => setPath(window.location.pathname)
+    const onPopState = () => setLocation(`${window.location.pathname}${window.location.search}`)
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [initialPath])
@@ -29,15 +42,10 @@ export function RouterProvider({ children, initialPath }: { children: ReactNode;
   const value = useMemo<RouterValue>(
     () => ({
       path,
-      navigate: (nextPath, options) => {
-        if (!initialPath) {
-          if (options?.replace) window.history.replaceState(null, '', nextPath)
-          else window.history.pushState(null, '', nextPath)
-        }
-        setPath(nextPath)
-      },
+      search,
+      navigate,
     }),
-    [initialPath, path],
+    [navigate, path, search],
   )
 
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>
@@ -61,7 +69,7 @@ export function NavLink({
   children: ReactNode
 }) {
   const { path, navigate } = useRouter()
-  const isActive = path === to
+  const isActive = path === to || (to !== '/' && path.startsWith(`${to}/`))
   const resolvedClassName = typeof className === 'function' ? className({ isActive }) : className
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {

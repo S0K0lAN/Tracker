@@ -70,7 +70,15 @@ export function TaskDetails({
     return () => {
       if (!restoreFocusRef.current) return
       requestAnimationFrame(() => {
-        if (returnFocusRef.current?.isConnected) returnFocusRef.current.focus()
+        if (returnFocusRef.current?.isConnected) {
+          returnFocusRef.current.focus()
+          return
+        }
+        const fallback = document.querySelector<HTMLElement>('.workspace main h1, .workspace main h2')
+        if (fallback) {
+          fallback.tabIndex = -1
+          fallback.focus()
+        }
       })
     }
   }, [])

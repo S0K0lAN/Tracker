@@ -107,4 +107,19 @@ describe('task details', () => {
 
     await waitFor(() => expect(trigger).toHaveFocus())
   })
+
+  it('returns focus to the durable page heading after editing and moving the task to trash', async () => {
+    const user = userEvent.setup()
+    renderInbox()
+    const heading = await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+    await user.click(taskCard('Подготовить план недели').querySelector<HTMLButtonElement>('.task-card__body')!)
+    await user.click(screen.getByRole('button', { name: 'Редактировать' }))
+    const editor = screen.getByRole('dialog', { name: 'Подготовить план недели' })
+
+    await user.click(within(editor).getByRole('button', { name: 'В корзину' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Подготовить план недели' })).not.toBeInTheDocument())
+    await waitFor(() => expect(heading).toHaveFocus())
+    expect(document.activeElement).not.toBe(document.body)
+  })
 })

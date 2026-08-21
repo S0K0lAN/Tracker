@@ -12,6 +12,7 @@ export type PortableBackupErrorCode =
   | 'empty'
   | 'invalid-json'
   | 'invalid-backup'
+  | 'invalid-state'
   | 'newer-version'
   | 'too-large'
   | 'wrong-file-type'
@@ -35,9 +36,21 @@ export interface ParsedPortableBackup {
 }
 
 export function createPortableBackup(state: AppState, now = new Date()): PortableBackupFile {
-  const envelope = createRemoteEnvelope(state, now.toISOString())
-  const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-')
-  const contents = JSON.stringify(envelope, null, 2)
+  let envelope: RemoteSnapshotEnvelope
+  let generatedAt: string
+  let contents: string
+  try {
+    generatedAt = now.toISOString()
+    envelope = createRemoteEnvelope(state, generatedAt)
+    contents = JSON.stringify(envelope)
+  } catch (error) {
+    throw new PortableBackupError(
+      'invalid-state',
+      'Локальные данные повреждены, поэтому резервную копию нельзя создать',
+      error,
+    )
+  }
+  const timestamp = generatedAt.slice(0, 19).replace(/:/g, '-')
   if (new TextEncoder().encode(contents).byteLength > MAX_PORTABLE_BACKUP_BYTES) {
     throw new PortableBackupError(
       'too-large',
