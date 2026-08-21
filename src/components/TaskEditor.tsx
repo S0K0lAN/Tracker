@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Bell, Clock3, FileImage, Flag, Folder, Paperclip, Plus, Trash2, X } from 'lucide-react'
 import type { Attachment, Importance, Task, Urgency } from '../domain/models'
+import { DEFAULT_URGENCY_THRESHOLD_HOURS } from '../domain/models'
 import { INPUT_LIMITS } from '../domain/inputLimits'
 import { parseVoiceTask, type ParsedVoiceTask } from '../domain/voiceParser'
 import { useApp } from '../state/AppContext'
@@ -31,11 +32,21 @@ const localInput = (value?: string) => {
 }
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined)
 const DATE_ORDER_ERROR = 'Дедлайн не может быть раньше начала'
+const urgencyThresholdPresets = [
+  { value: 1, label: '1 час', description: 'Только перед самым сроком' },
+  { value: 24, label: '1 день' },
+  { value: 72, label: '3 дня', description: 'Рекомендуемое значение' },
+  { value: 168, label: '7 дней' },
+  { value: 336, label: '14 дней' },
+]
+
+const formatUrgencyThreshold = (hours: number) => (
+  urgencyThresholdPresets.find((preset) => preset.value === hours)?.label ?? `${hours} ч`
+)
 
 function createInitialDraft(
   task: Task | undefined,
   defaults: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>> | undefined,
-  defaultUrgencyThresholdHours: number,
 ): TaskDraftData {
   return {
     title: task?.title ?? '',
@@ -44,7 +55,7 @@ function createInitialDraft(
     startAt: localInput(task?.startAt ?? defaults?.startAt),
     deadline: localInput(task?.deadline ?? defaults?.deadline),
     importance: task?.importance ?? 'low',
-    urgencyThresholdHours: task?.urgencyThresholdHours ?? defaultUrgencyThresholdHours,
+    urgencyThresholdOverrideHours: task?.urgencyThresholdOverrideHours ?? '',
     urgencyOverride: task?.urgencyOverride ?? '',
     tags: task?.tags.join(', ') ?? '',
     subtasks: task?.subtasks ?? [],
@@ -63,7 +74,7 @@ export function TaskEditor({
   onClose: () => void
 }) {
   const { state, saveTaskDurably, trashTaskDurably } = useApp()
-  const [initialDraft] = useState(() => createInitialDraft(task, defaults, state.settings.defaultUrgencyThresholdHours))
+  const [initialDraft] = useState(() => createInitialDraft(task, defaults))
   const [title, setTitle] = useState(initialDraft.title)
   const [description, setDescription] = useState(initialDraft.description)
   const [projectId, setProjectId] = useState(initialDraft.projectId)
@@ -74,7 +85,7 @@ export function TaskEditor({
   const [dateInputResetToken, setDateInputResetToken] = useState(0)
   const [importance, setImportance] = useState<Importance>(initialDraft.importance)
   const [urgencyOverride, setUrgencyOverride] = useState<Urgency | ''>(initialDraft.urgencyOverride)
-  const [threshold, setThreshold] = useState(initialDraft.urgencyThresholdHours)
+  const [thresholdOverride, setThresholdOverride] = useState(initialDraft.urgencyThresholdOverrideHours)
   const [tags, setTags] = useState(initialDraft.tags)
   const [subtasks, setSubtasks] = useState(initialDraft.subtasks)
   const [subtaskTitle, setSubtaskTitle] = useState(initialDraft.pendingSubtaskTitle)
@@ -145,6 +156,56 @@ export function TaskEditor({
     return () => setInert(fields, false)
   }, [recoveryDraft])
 
+  const selectedProject = state.projects.find((project) => project.id === projectId)
+  const inheritedThreshold = selectedProject?.urgencyThresholdHours ?? DEFAULT_URGENCY_THRESHOLD_HOURS
+  const effectiveThreshold = thresholdOverride === '' ? inheritedThreshold : thresholdOverride
+  const lastKnownProjectThresholdRef = useRef<{ id: string; hours: number } | null>(
+    selectedProject ? { id: selectedProject.id, hours: selectedProject.urgencyThresholdHours } : null,
+  )
+
+  useEffect(() => {
+    if (selectedProject) {
+      lastKnownProjectThresholdRef.current = {
+        id: selectedProject.id,
+        hours: selectedProject.urgencyThresholdHours,
+      }
+      return
+    }
+    if (projectId === 'inbox') return
+
+    const previousThreshold = lastKnownProjectThresholdRef.current?.id === projectId
+      ? lastKnownProjectThresholdRef.current.hours
+      : DEFAULT_URGENCY_THRESHOLD_HOURS
+    setProjectId('inbox')
+    setThresholdOverride((current) => current === '' ? previousThreshold : current)
+    setDraftStorageMessage({
+      text: 'Выбранный проект удалён. Задача перенесена во «Входящие», прежний порог срочности сохранён.',
+      error: false,
+    })
+  }, [projectId, selectedProject])
+
+  const thresholdOptions = [
+    {
+      value: 'inherit' as const,
+      label: `Из проекта · ${formatUrgencyThreshold(inheritedThreshold)}`,
+      description: selectedProject
+        ? `Порог проекта «${selectedProject.name}»`
+        : 'Резервный системный порог',
+      icon: <Folder size={17} />,
+    },
+    ...(
+      thresholdOverride !== ''
+      && !urgencyThresholdPresets.some((preset) => preset.value === thresholdOverride)
+        ? [{ value: thresholdOverride, label: formatUrgencyThreshold(thresholdOverride), description: 'Индивидуальный порог', icon: <Clock3 size={17} /> }]
+        : []
+    ),
+    ...urgencyThresholdPresets.map((preset) => ({
+      ...preset,
+      description: preset.description ?? 'Индивидуальный порог',
+      icon: <Clock3 size={17} />,
+    })),
+  ]
+
   const draftData = useMemo<TaskDraftData>(() => ({
     title,
     description,
@@ -152,13 +213,13 @@ export function TaskEditor({
     startAt,
     deadline,
     importance,
-    urgencyThresholdHours: threshold,
+    urgencyThresholdOverrideHours: thresholdOverride,
     urgencyOverride,
     tags,
     subtasks,
     pendingSubtaskTitle: subtaskTitle,
     reminders,
-  }), [deadline, description, importance, projectId, reminders, startAt, subtasks, subtaskTitle, tags, threshold, title, urgencyOverride])
+  }), [deadline, description, importance, projectId, reminders, startAt, subtasks, subtaskTitle, tags, thresholdOverride, title, urgencyOverride])
   const draftDataRef = useRef(draftData)
   const recoveryDraftRef = useRef(recoveryDraft)
   const hasUnsavedChanges = !taskDraftsEqual(draftData, initialDraft)
@@ -276,7 +337,7 @@ export function TaskEditor({
     setDeadline(recovered.deadline)
     setImportance(recovered.importance)
     setUrgencyOverride(recovered.urgencyOverride)
-    setThreshold(recovered.urgencyThresholdHours)
+    setThresholdOverride(recovered.urgencyThresholdOverrideHours)
     setTags(recovered.tags)
     setSubtasks(recovered.subtasks.map((subtask) => ({ ...subtask })))
     setSubtaskTitle(recovered.pendingSubtaskTitle)
@@ -341,7 +402,7 @@ export function TaskEditor({
       startAt: toIso(startAt),
       deadline: toIso(deadline),
       importance,
-      urgencyThresholdHours: Number(threshold) || 72,
+      ...(thresholdOverride === '' ? {} : { urgencyThresholdOverrideHours: thresholdOverride }),
       urgencyOverride: urgencyOverride || undefined,
       tags: uniqueTags,
       subtasks,
@@ -610,18 +671,13 @@ export function TaskEditor({
           <DateTimePicker label="Дедлайн" value={deadline} onChange={updateDeadline} onValidityChange={setDeadlineValid} defaultTime="18:00" resetToken={dateInputResetToken} />
           <div className="field">
             <span>Становится срочной за</span>
-            <SelectMenu<number>
+            <SelectMenu<number | 'inherit'>
               label="Порог срочности"
-              value={threshold}
-              onChange={setThreshold}
-              options={[
-                { value: 1, label: '1 час', description: 'Только перед самым сроком', icon: <Clock3 size={17} /> },
-                { value: 24, label: '1 день', icon: <Clock3 size={17} /> },
-                { value: 72, label: '3 дня', description: 'Рекомендуемое значение', icon: <Clock3 size={17} /> },
-                { value: 168, label: '7 дней', icon: <Clock3 size={17} /> },
-                { value: 336, label: '14 дней', icon: <Clock3 size={17} /> },
-              ]}
+              value={thresholdOverride === '' ? 'inherit' : thresholdOverride}
+              onChange={(value) => setThresholdOverride(value === 'inherit' ? '' : value)}
+              options={thresholdOptions}
             />
+            <small>Эффективный порог: {formatUrgencyThreshold(effectiveThreshold)} до дедлайна</small>
           </div>
           <div className="field">
             <span>Срочность вручную</span>

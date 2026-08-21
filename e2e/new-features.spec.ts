@@ -683,6 +683,75 @@ test('a created project can own a task and both survive reload', async ({ page }
   await expect(page.getByText('E2E проектная задача', { exact: true })).toBeVisible()
 })
 
+test('a project urgency threshold is inherited by its tasks and updates without a task override', async ({ page }) => {
+  const projectName = 'E2E срочность проекта'
+  const taskTitle = 'E2E наследуемый порог'
+
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Новый проект' }).click()
+  const creator = page.getByRole('region', { name: 'Создание проекта' })
+  await creator.getByLabel('Название').fill(projectName)
+  await creator.getByLabel('Задачи становятся срочными за').selectOption('24')
+  await creator.getByRole('button', { name: 'Создать проект' }).click()
+
+  await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
+  await expect(page.getByText('Срочность за 1 день до дедлайна')).toBeVisible()
+  await page.getByRole('button', { name: 'Задача', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toContainText('Из проекта · 1 день')
+  await page.getByLabel('Название').fill(taskTitle)
+  const deadline = await page.evaluate(() => {
+    const value = new Date(Date.now() + 96 * 60 * 60 * 1000)
+    const pad = (part: number) => String(part).padStart(2, '0')
+    return `${pad(value.getDate())}.${pad(value.getMonth() + 1)}.${value.getFullYear()}, ${pad(value.getHours())}:${pad(value.getMinutes())}`
+  })
+  await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill(deadline)
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
+
+  const taskCard = page.locator('.task-card').filter({ hasText: taskTitle })
+  await expect(taskCard).toBeVisible()
+  await expect(taskCard.getByText('Не срочно', { exact: true })).toBeVisible()
+  await taskCard.locator('.task-card__body').click()
+  let details = page.getByRole('dialog', { name: taskTitle })
+  await expect(details.getByText('24 ч до дедлайна')).toBeVisible()
+  await expect(details.getByText(`Наследуется из проекта «${projectName}»`)).toBeVisible()
+  await details.getByRole('button', { name: 'Закрыть задачу' }).click()
+
+  await page.getByRole('button', { name: 'Все проекты' }).click()
+  const menuTrigger = page.getByRole('button', { name: `Действия проекта ${projectName}` })
+  await menuTrigger.hover()
+  await page.getByRole('menuitem', { name: 'Редактировать проект' }).click()
+  const editor = page.getByRole('region', { name: 'Редактирование проекта' })
+  await editor.getByLabel('Задачи становятся срочными за').selectOption('168')
+  await editor.getByRole('button', { name: 'Сохранить изменения' }).click()
+  await expect(menuTrigger).toBeFocused()
+  await menuTrigger.press('Escape')
+  await expect(page.getByRole('menuitem', { name: 'Редактировать проект' })).toBeHidden()
+  await page.getByRole('button', { name: `Открыть проект ${projectName}` }).click()
+
+  await expect(page.getByText('Срочность за 7 дней до дедлайна')).toBeVisible()
+  const updatedTaskCard = page.locator('.task-card').filter({ hasText: taskTitle })
+  await expect(updatedTaskCard.getByText('Срочно', { exact: true })).toBeVisible()
+  await updatedTaskCard.locator('.task-card__body').click()
+  details = page.getByRole('dialog', { name: taskTitle })
+  await expect(details.getByText('168 ч до дедлайна')).toBeVisible()
+  await expect(details.getByText(`Наследуется из проекта «${projectName}»`)).toBeVisible()
+
+  await expect.poll(() => page.evaluate(({ storageKey, expectedProject, expectedTask }) => {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return undefined
+    const state = JSON.parse(raw)
+    const project = state.projects.find((item: { name: string }) => item.name === expectedProject)
+    const task = state.tasks.find((item: { title: string }) => item.title === expectedTask)
+    return {
+      projectThreshold: project?.urgencyThresholdHours,
+      taskHasOverride: task ? Object.hasOwn(task, 'urgencyThresholdOverrideHours') : undefined,
+    }
+  }, { storageKey: STORAGE_KEY, expectedProject: projectName, expectedTask: taskTitle })).toEqual({
+    projectThreshold: 168,
+    taskHasOverride: false,
+  })
+})
+
 test('soft delete, restore, archive and archive restore keep task data', async ({ page }) => {
   const taskTitle = 'Прочитать главу книги'
   const navigation = page.getByRole('navigation', { name: 'Основная навигация' })

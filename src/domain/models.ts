@@ -35,7 +35,7 @@ export interface Task {
   projectId: string
   startAt?: string
   deadline?: string
-  urgencyThresholdHours: number
+  urgencyThresholdOverrideHours?: number
   urgencyOverride?: Urgency
   importance: Importance
   tags: string[]
@@ -56,6 +56,7 @@ export interface Project {
   id: string
   name: string
   color: string
+  urgencyThresholdHours: number
   description?: string
   createdAt: string
 }
@@ -133,13 +134,26 @@ export interface AppState {
   sync: SyncState
 }
 
-export function getTaskTiming(task: Task, now = new Date()): { urgency: Urgency; overdue: boolean } {
+export function getEffectiveUrgencyThreshold(task: Task, projectThreshold?: number): number {
+  const taskOverride = task.urgencyThresholdOverrideHours
+  if (typeof taskOverride === 'number' && Number.isFinite(taskOverride) && taskOverride > 0) {
+    return taskOverride
+  }
+  if (typeof projectThreshold === 'number' && Number.isFinite(projectThreshold) && projectThreshold > 0) {
+    return projectThreshold
+  }
+  return DEFAULT_URGENCY_THRESHOLD_HOURS
+}
+
+export function getTaskTiming(
+  task: Task,
+  now = new Date(),
+  projectThreshold?: number,
+): { urgency: Urgency; overdue: boolean } {
   const parsedDeadline = task.deadline ? Date.parse(task.deadline) : Number.NaN
   const deadlineAt = Number.isFinite(parsedDeadline) ? parsedDeadline : undefined
   const nowAt = now.getTime()
-  const urgencyThresholdHours = Number.isFinite(task.urgencyThresholdHours) && task.urgencyThresholdHours > 0
-    ? task.urgencyThresholdHours
-    : DEFAULT_URGENCY_THRESHOLD_HOURS
+  const urgencyThresholdHours = getEffectiveUrgencyThreshold(task, projectThreshold)
   const urgency = task.urgencyOverride
     ?? (deadlineAt !== undefined && (deadlineAt - nowAt) / 3_600_000 <= urgencyThresholdHours ? 'high' : 'low')
   return {
@@ -148,8 +162,8 @@ export function getTaskTiming(task: Task, now = new Date()): { urgency: Urgency;
   }
 }
 
-export function getTaskUrgency(task: Task, now = new Date()): Urgency {
-  return getTaskTiming(task, now).urgency
+export function getTaskUrgency(task: Task, now = new Date(), projectThreshold?: number): Urgency {
+  return getTaskTiming(task, now, projectThreshold).urgency
 }
 
 export function isOverdue(task: Task, now = new Date()): boolean {

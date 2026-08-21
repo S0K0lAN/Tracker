@@ -1,4 +1,5 @@
 import { act, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Task } from '../domain/models'
 import { createSeedState } from '../domain/seed'
@@ -20,14 +21,18 @@ describe('Inbox live day summary', () => {
       status: 'active',
       startAt: undefined,
       deadline: undefined,
-      urgencyThresholdHours: 72,
+      urgencyThresholdOverrideHours: undefined,
       urgencyOverride: undefined,
       ...task,
     })
+    state.projects = state.projects.map((project) => ({
+      ...project,
+      urgencyThresholdHours: project.id === 'work' ? 0.5 : project.id === 'personal' ? 1 : project.urgencyThresholdHours,
+    }))
     state.tasks = [
       makeTask({ id: 'start-only', title: 'Только начало', startAt: '2026-08-21T09:00:00.000+03:00' }),
-      makeTask({ id: 'deadline-only', title: 'Только дедлайн', deadline: '2026-08-21T12:31:00.000+03:00', urgencyThresholdHours: 0.5 }),
-      makeTask({ id: 'both', title: 'Начало и дедлайн', startAt: '2026-08-21T10:00:00.000+03:00', deadline: '2026-08-21T18:00:00.000+03:00', urgencyThresholdHours: 1 }),
+      makeTask({ id: 'deadline-only', title: 'Только дедлайн', projectId: 'work', deadline: '2026-08-21T12:31:00.000+03:00' }),
+      makeTask({ id: 'both', title: 'Начало и дедлайн', projectId: 'personal', startAt: '2026-08-21T10:00:00.000+03:00', deadline: '2026-08-21T18:00:00.000+03:00' }),
     ]
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
 
@@ -45,5 +50,33 @@ describe('Inbox live day summary', () => {
     })
 
     expect(within(summary).getByText('Срочные').nextElementSibling).toHaveTextContent('1')
+  })
+
+  it('uses each task project threshold in the summary and urgent filter', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    const base = state.tasks[0]
+    const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    state.projects = state.projects.map((project) => ({
+      ...project,
+      urgencyThresholdHours: project.id === 'work' ? 48 : project.id === 'personal' ? 12 : project.urgencyThresholdHours,
+    }))
+    state.tasks = [
+      { ...base, id: 'project-urgent', title: 'Срочная по проекту', projectId: 'work', deadline, startAt: undefined, urgencyThresholdOverrideHours: undefined, urgencyOverride: undefined },
+      { ...base, id: 'project-calm', title: 'Несрочная по проекту', projectId: 'personal', deadline, startAt: undefined, urgencyThresholdOverrideHours: undefined, urgencyOverride: undefined },
+    ]
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+
+    render(<AppProvider><InboxPage onEditTask={vi.fn()} /></AppProvider>)
+    await act(async () => { await Promise.resolve() })
+
+    const summary = screen.getByRole('region', { name: 'Сводка' })
+    expect(within(summary).getByText('Срочные').nextElementSibling).toHaveTextContent('1')
+
+    await user.click(screen.getByRole('button', { name: /Фильтры/ }))
+    await user.click(screen.getByRole('button', { name: 'Срочные' }))
+
+    expect(screen.getByText('Срочная по проекту')).toBeInTheDocument()
+    expect(screen.queryByText('Несрочная по проекту')).not.toBeInTheDocument()
   })
 })

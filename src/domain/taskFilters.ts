@@ -1,12 +1,21 @@
-import type { InboxSort, SavedFilter, Task } from './models'
+import type { InboxSort, Project, SavedFilter, Task } from './models'
 import { getTaskUrgency } from './models'
 
-export function matchesSavedFilter(task: Task, filter: SavedFilter, projectName = ''): boolean {
+type SavedFilterProject = Pick<Project, 'name' | 'urgencyThresholdHours'>
+
+export function matchesSavedFilter(
+  task: Task,
+  filter: SavedFilter,
+  project: SavedFilterProject | string | undefined = undefined,
+  now = new Date(),
+): boolean {
+  const projectName = typeof project === 'string' ? project : project?.name ?? ''
+  const projectThreshold = typeof project === 'string' ? undefined : project?.urgencyThresholdHours
   if (task.status === 'archived' || task.status === 'deleted') return false
   if (filter.status !== 'all' && task.status !== filter.status) return false
   if (filter.projectId && task.projectId !== filter.projectId) return false
   if (filter.importance && task.importance !== filter.importance) return false
-  if (filter.urgency && getTaskUrgency(task) !== filter.urgency) return false
+  if (filter.urgency && getTaskUrgency(task, now, projectThreshold) !== filter.urgency) return false
   if (filter.tags.length > 0) {
     const matchesTags = filter.tagMode === 'all'
       ? filter.tags.every((tag) => task.tags.includes(tag))

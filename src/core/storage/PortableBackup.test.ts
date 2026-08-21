@@ -28,7 +28,6 @@ const portableMinimalTask = (index: number): Task => ({
   title: 't',
   description: '',
   projectId: 'inbox',
-  urgencyThresholdHours: 72,
   importance: 'low',
   tags: [],
   subtasks: [],
@@ -73,12 +72,13 @@ function invalidPortableStates(): [string, (state: AppState) => void][] {
       state.habits = []
       state.savedFilters = []
       state.projects = [{
-        id: 'inbox', name: 'Без проекта', color: '#778c70', createdAt: '2026-08-21T00:00:00.000Z',
+        id: 'inbox', name: 'Без проекта', color: '#778c70', urgencyThresholdHours: 72, createdAt: '2026-08-21T00:00:00.000Z',
       }, ...Array.from({ length: 20 }, (_, index) => ({
         id: `large-project-${index}`,
         name: `Проект ${index}`,
         description,
         color: '#778c70',
+        urgencyThresholdHours: 72,
         createdAt: '2026-08-21T00:00:00.000Z',
       }))]
     }],
@@ -133,8 +133,16 @@ describe('portable Focus Flow backup', () => {
   })
 
   it('accepts and migrates a legacy full-state JSON backup', () => {
-    const legacy = createSeedState()
-    legacy.schemaVersion = 2
+    const current = createSeedState()
+    const legacy = {
+      ...current,
+      schemaVersion: 2,
+      tasks: current.tasks.map(({ urgencyThresholdOverrideHours, ...task }) => ({
+        ...task,
+        urgencyThresholdHours: urgencyThresholdOverrideHours ?? current.settings.defaultUrgencyThresholdHours,
+      })),
+      projects: current.projects.map(({ urgencyThresholdHours: _threshold, ...project }) => project),
+    }
     const legacySettings = legacy.settings as unknown as Record<string, unknown>
     delete legacySettings.fontFamily
     delete legacySettings.fontScale
@@ -237,7 +245,7 @@ describe('portable Focus Flow backup', () => {
     }
   })
 
-  it.each(invalidPortableStates())('rejects exporting schema v4 data with %s', (_label, mutate) => {
+  it.each(invalidPortableStates())('rejects exporting schema v5 data with %s', (_label, mutate) => {
     const state = createSeedState()
     mutate(state)
 
@@ -253,7 +261,7 @@ describe('portable Focus Flow backup', () => {
     'an oversized user string',
     'too much cumulative user text',
   ].includes(label)))(
-    'rejects imported schema v4 data with %s',
+    'rejects imported schema v5 data with %s',
     (_label, mutate) => {
       const envelope = createRemoteEnvelope(createSeedState())
       mutate(envelope.data as unknown as AppState)
@@ -271,7 +279,7 @@ describe('portable Focus Flow backup', () => {
     'an oversized user string',
     'too much cumulative user text',
   ].includes(label)))(
-    'rejects imported schema v4 data with %s at the transport boundary',
+    'rejects imported schema v5 data with %s at the transport boundary',
     (_label, mutate) => {
       const envelope = createRemoteEnvelope(createSeedState())
       mutate(envelope.data as unknown as AppState)

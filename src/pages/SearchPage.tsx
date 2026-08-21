@@ -29,6 +29,10 @@ export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => 
   const [saving, setSaving] = useState(false)
 
   const allTags = useMemo(() => [...new Set(state.tasks.flatMap((task) => task.tags))].sort(), [state.tasks])
+  const projectsById = useMemo(
+    () => new Map(state.projects.map((project) => [project.id, project])),
+    [state.projects],
+  )
   const draftFilter: SavedFilter = {
     id: 'draft',
     name: '',
@@ -43,7 +47,7 @@ export function SearchPage({ onEditTask }: { onEditTask: (task: Task | null) => 
   }
   const hasCriteria = Boolean(query.trim() || projectId || importance || urgency || selectedTags.length || status !== 'active')
   const tasks = hasCriteria
-    ? state.tasks.filter((task) => matchesSavedFilter(task, draftFilter, state.projects.find((project) => project.id === task.projectId)?.name))
+    ? state.tasks.filter((task) => matchesSavedFilter(task, draftFilter, projectsById.get(task.projectId)))
     : []
   const projects = query.trim()
     ? state.projects.filter((project) => `${project.name} ${project.description ?? ''}`.toLowerCase().includes(query.toLowerCase()))

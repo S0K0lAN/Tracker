@@ -53,6 +53,7 @@ describe('project card actions', () => {
       id: '..',
       name: 'Проект с точками',
       color: '#778c70',
+      urgencyThresholdHours: 72,
       createdAt: new Date().toISOString(),
     })
     localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
@@ -95,8 +96,80 @@ describe('project card actions', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Действия проекта Рабочие планы' })).toHaveFocus())
   })
 
+  it('edits the system inbox threshold without offering deletion', async () => {
+    const user = userEvent.setup()
+    renderProjects()
+    await screen.findByRole('heading', { name: 'Проекты', level: 1 })
+
+    const trigger = screen.getByRole('button', { name: 'Действия проекта Без проекта' })
+    await user.hover(trigger)
+    const menu = screen.getByRole('menu', { name: 'Действия проекта Без проекта' })
+    expect(within(menu).queryByRole('menuitem', { name: 'Удалить проект' })).not.toBeInTheDocument()
+    await user.click(within(menu).getByRole('menuitem', { name: 'Редактировать проект' }))
+
+    const editor = screen.getByRole('region', { name: 'Редактирование проекта' })
+    await user.selectOptions(within(editor).getByLabelText('Задачи становятся срочными за'), '336')
+    await user.click(within(editor).getByRole('button', { name: 'Сохранить изменения' }))
+
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('focus-flow.state.v1')!)
+      expect(saved.projects.find((project: { id: string }) => project.id === 'inbox')?.urgencyThresholdHours).toBe(336)
+    })
+    await user.click(screen.getByRole('button', { name: 'Открыть проект Без проекта' }))
+    expect(screen.getByText('Срочность за 14 дней до дедлайна')).toBeInTheDocument()
+  })
+
+  it('starts from the settings default and preserves the project urgency threshold on create and edit', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    state.settings.defaultUrgencyThresholdHours = 24
+    state.projects.push({
+      id: 'hydrated-project',
+      name: 'Маркер загрузки',
+      color: '#778c70',
+      urgencyThresholdHours: 72,
+      createdAt: new Date().toISOString(),
+    })
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+    renderProjects()
+    await screen.findByRole('button', { name: 'Открыть проект Маркер загрузки' })
+    await user.click(screen.getByRole('button', { name: 'Новый проект' }))
+
+    const creator = screen.getByRole('region', { name: 'Создание проекта' })
+    const threshold = within(creator).getByLabelText('Задачи становятся срочными за')
+    expect(threshold).toHaveValue('24')
+    await user.type(within(creator).getByLabelText('Название'), 'Запуск')
+    await user.selectOptions(threshold, '168')
+    await user.click(within(creator).getByRole('button', { name: 'Создать проект' }))
+
+    expect(screen.getByRole('heading', { name: 'Запуск', level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('Срочность за 7 дней до дедлайна')).toBeInTheDocument()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('focus-flow.state.v1')!)
+      expect(saved.projects.find((project: { name: string }) => project.name === 'Запуск')?.urgencyThresholdHours).toBe(168)
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Все проекты' }))
+    const menuTrigger = screen.getByRole('button', { name: 'Действия проекта Запуск' })
+    await user.hover(menuTrigger)
+    await user.click(screen.getByRole('menuitem', { name: 'Редактировать проект' }))
+    const editor = screen.getByRole('region', { name: 'Редактирование проекта' })
+    const editedThreshold = within(editor).getByLabelText('Задачи становятся срочными за')
+    expect(editedThreshold).toHaveValue('168')
+    await user.selectOptions(editedThreshold, '24')
+    await user.click(within(editor).getByRole('button', { name: 'Сохранить изменения' }))
+
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('focus-flow.state.v1')!)
+      expect(saved.projects.find((project: { name: string }) => project.name === 'Запуск')?.urgencyThresholdHours).toBe(24)
+    })
+  })
+
   it('confirms project deletion and moves its tasks to the system inbox', async () => {
     const user = userEvent.setup()
+    const state = createSeedState()
+    state.projects.find((project) => project.id === 'work')!.urgencyThresholdHours = 24
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
     renderProjects()
     await screen.findByRole('heading', { name: 'Проекты', level: 1 })
 
@@ -110,5 +183,15 @@ describe('project card actions', () => {
     expect(document.activeElement?.isConnected).toBe(true)
     await user.click(screen.getByRole('button', { name: 'Открыть проект Без проекта' }))
     expect(screen.getByText('Подготовить план недели')).toBeInTheDocument()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('focus-flow.state.v1')!)
+      expect(saved.tasks.find((task: { id: string }) => task.id === 'task-plan')?.urgencyThresholdOverrideHours).toBe(24)
+    })
+
+    const movedTask = screen.getByText('Подготовить план недели', { selector: '.task-card__title' }).closest<HTMLElement>('.task-card')
+    await user.click(movedTask!.querySelector<HTMLButtonElement>('.task-card__body')!)
+    const details = screen.getByRole('dialog', { name: 'Подготовить план недели' })
+    expect(within(details).getByText('24 ч до дедлайна')).toBeInTheDocument()
+    expect(within(details).getByText('Индивидуальный для задачи')).toBeInTheDocument()
   })
 })

@@ -16,7 +16,7 @@ const draft: TaskDraftData = {
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
   importance: 'high',
-  urgencyThresholdHours: 24,
+  urgencyThresholdOverrideHours: 24,
   urgencyOverride: 'high',
   tags: 'работа, отчёт',
   subtasks: [{ id: 'subtask-1', title: 'Проверить таблицу', completed: false }],
@@ -38,6 +38,32 @@ describe('task draft recovery journal', () => {
     expect(loaded?.data).toEqual(draft)
     expect(loaded?.data).not.toHaveProperty('attachments')
     expect(loaded?.savedTaskChanged).toBe(false)
+  })
+
+  it('round-trips project inheritance and writes the new journal version', () => {
+    const inherited: TaskDraftData = { ...draft, urgencyThresholdOverrideHours: '' }
+
+    expect(writeTaskDraft(inherited).status).toBe('saved')
+
+    expect(readTaskDraft()?.data).toEqual(inherited)
+    expect(JSON.parse(localStorage.getItem(getTaskDraftStorageKey())!).version).toBe(2)
+  })
+
+  it('recovers a version 1 threshold as an individual override', () => {
+    const { urgencyThresholdOverrideHours: _override, ...legacyData } = draft
+    const key = getTaskDraftStorageKey()
+    localStorage.setItem(key, JSON.stringify({
+      version: 1,
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      writeId: 'legacy-write',
+      revision: 1,
+      data: { ...legacyData, urgencyThresholdHours: 24 },
+    }))
+
+    const loaded = readTaskDraft()
+
+    expect(loaded?.data.urgencyThresholdOverrideHours).toBe(24)
+    expect(loaded?.data).not.toHaveProperty('urgencyThresholdHours')
   })
 
   it('rejects and removes corrupt, oversized and stale journals', () => {

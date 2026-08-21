@@ -18,7 +18,7 @@ export interface TaskDraftData {
   startAt: string
   deadline: string
   importance: Importance
-  urgencyThresholdHours: number
+  urgencyThresholdOverrideHours: number | ''
   urgencyOverride: Urgency | ''
   tags: string
   subtasks: Subtask[]
@@ -27,7 +27,7 @@ export interface TaskDraftData {
 }
 
 interface StoredTaskDraft {
-  version: 1
+  version: 1 | 2
   taskId?: string
   baseTaskUpdatedAt?: string
   updatedAt: string
@@ -109,19 +109,17 @@ function normalizeReminder(value: unknown): Reminder | null {
   return { id: value.id, at: value.at }
 }
 
-/** Returns an exact, fixed-depth copy and intentionally drops unknown fields. */
-export function normalizeTaskDraftData(value: unknown): TaskDraftData | null {
+function normalizeTaskDraftFields(
+  value: Record<string, unknown>,
+  urgencyThresholdOverrideHours: number | '',
+): TaskDraftData | null {
   try {
-    if (!isRecord(value)
-      || !isBoundedString(value.title, MAX_TITLE_LENGTH)
+    if (!isBoundedString(value.title, MAX_TITLE_LENGTH)
       || !isBoundedString(value.description, MAX_DESCRIPTION_LENGTH)
       || !isBoundedString(value.projectId, MAX_ID_LENGTH)
       || !isLocalDateTime(value.startAt)
       || !isLocalDateTime(value.deadline)
       || (value.importance !== 'low' && value.importance !== 'high')
-      || typeof value.urgencyThresholdHours !== 'number'
-      || !Number.isFinite(value.urgencyThresholdHours)
-      || value.urgencyThresholdHours <= 0
       || (value.urgencyOverride !== '' && value.urgencyOverride !== 'low' && value.urgencyOverride !== 'high')
       || !isBoundedString(value.tags, MAX_TAGS_LENGTH)
       || !Array.isArray(value.subtasks)
@@ -140,7 +138,7 @@ export function normalizeTaskDraftData(value: unknown): TaskDraftData | null {
       startAt: value.startAt,
       deadline: value.deadline,
       importance: value.importance,
-      urgencyThresholdHours: value.urgencyThresholdHours,
+      urgencyThresholdOverrideHours,
       urgencyOverride: value.urgencyOverride,
       tags: value.tags,
       subtasks: subtasks as Subtask[],
@@ -152,19 +150,44 @@ export function normalizeTaskDraftData(value: unknown): TaskDraftData | null {
   }
 }
 
+/** Returns an exact, fixed-depth copy and intentionally drops unknown fields. */
+export function normalizeTaskDraftData(value: unknown): TaskDraftData | null {
+  if (!isRecord(value)) return null
+  const threshold = value.urgencyThresholdOverrideHours
+  if (threshold !== '' && (
+    typeof threshold !== 'number'
+    || !Number.isFinite(threshold)
+    || threshold <= 0
+  )) return null
+  return normalizeTaskDraftFields(value, threshold)
+}
+
+function normalizeLegacyTaskDraftData(value: unknown): TaskDraftData | null {
+  if (!isRecord(value)
+    || typeof value.urgencyThresholdHours !== 'number'
+    || !Number.isFinite(value.urgencyThresholdHours)
+    || value.urgencyThresholdHours <= 0) return null
+  // Version 1 stored the effective threshold on every task, so preserving it
+  // as an individual override is the only lossless mapping.
+  return normalizeTaskDraftFields(value, value.urgencyThresholdHours)
+}
+
 function normalizeStoredTaskDraft(value: unknown, taskId: string | undefined): StoredTaskDraft | null {
   if (!isRecord(value)
-    || value.version !== 1
+    || (value.version !== 1 && value.version !== 2)
     || value.taskId !== taskId
     || (taskId ? !isIsoDate(value.baseTaskUpdatedAt) : value.baseTaskUpdatedAt !== undefined)
     || !isIsoDate(value.updatedAt)
     || !isBoundedString(value.writeId, 200)
     || !Number.isSafeInteger(value.revision)
     || (value.revision as number) < 1) return null
-  const data = normalizeTaskDraftData(value.data)
+  const version = value.version
+  const data = version === 1
+    ? normalizeLegacyTaskDraftData(value.data)
+    : normalizeTaskDraftData(value.data)
   if (!data) return null
   return {
-    version: 1,
+    version,
     taskId,
     baseTaskUpdatedAt: value.baseTaskUpdatedAt as string | undefined,
     updatedAt: value.updatedAt,
@@ -278,7 +301,7 @@ export function writeTaskDraft(
     revision: nextRevision(storage, key),
   }
   const draft: StoredTaskDraft = {
-    version: 1,
+    version: 2,
     taskId,
     baseTaskUpdatedAt,
     updatedAt: new Date(Math.max(safeNow, Number.isFinite(baseTimestamp) ? baseTimestamp + 1 : safeNow)).toISOString(),

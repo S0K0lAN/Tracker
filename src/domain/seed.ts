@@ -9,7 +9,9 @@ const task = (data: Partial<Task> & Pick<Task, 'id' | 'title'>): Task => ({
   projectId: data.projectId ?? 'personal',
   startAt: data.startAt,
   deadline: data.deadline,
-  urgencyThresholdHours: data.urgencyThresholdHours ?? 72,
+  ...(data.urgencyThresholdOverrideHours === undefined
+    ? {}
+    : { urgencyThresholdOverrideHours: data.urgencyThresholdOverrideHours }),
   urgencyOverride: data.urgencyOverride,
   importance: data.importance ?? 'low',
   tags: data.tags ?? [],
@@ -56,14 +58,14 @@ export const createSeedState = (): AppState => {
   const everyDay = [1, 2, 3, 4, 5, 6, 0]
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     projects: [
-      { id: 'inbox', name: 'Без проекта', color: '#9ca89c', createdAt: dateAt(-100, 9) },
-      { id: 'work', name: 'Работа', color: '#778c70', description: 'Рабочие задачи и инициативы', createdAt: dateAt(-90, 9) },
-      { id: 'personal', name: 'Личное', color: '#9b7fbd', description: 'Личные планы и развитие', createdAt: dateAt(-80, 9) },
-      { id: 'shopping', name: 'Покупки', color: '#d78b69', description: 'Списки покупок и быт', createdAt: dateAt(-70, 9) },
-      { id: 'learning', name: 'Обучение', color: '#6f8fa8', description: 'Курсы, книги и практика', createdAt: dateAt(-60, 9) },
-      { id: 'health', name: 'Здоровье', color: '#75a88a', description: 'Спорт, врачи и восстановление', createdAt: dateAt(-50, 9) },
+      { id: 'inbox', name: 'Без проекта', color: '#9ca89c', urgencyThresholdHours: 72, createdAt: dateAt(-100, 9) },
+      { id: 'work', name: 'Работа', color: '#778c70', urgencyThresholdHours: 72, description: 'Рабочие задачи и инициативы', createdAt: dateAt(-90, 9) },
+      { id: 'personal', name: 'Личное', color: '#9b7fbd', urgencyThresholdHours: 72, description: 'Личные планы и развитие', createdAt: dateAt(-80, 9) },
+      { id: 'shopping', name: 'Покупки', color: '#d78b69', urgencyThresholdHours: 72, description: 'Списки покупок и быт', createdAt: dateAt(-70, 9) },
+      { id: 'learning', name: 'Обучение', color: '#6f8fa8', urgencyThresholdHours: 72, description: 'Курсы, книги и практика', createdAt: dateAt(-60, 9) },
+      { id: 'health', name: 'Здоровье', color: '#75a88a', urgencyThresholdHours: 72, description: 'Спорт, врачи и восстановление', createdAt: dateAt(-50, 9) },
     ],
     tasks: [
       task({
