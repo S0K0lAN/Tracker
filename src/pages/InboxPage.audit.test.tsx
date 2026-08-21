@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Task } from '../domain/models'
 import { createSeedState } from '../domain/seed'
@@ -9,8 +9,8 @@ const STORAGE_KEY = 'focus-flow.state.v1'
 
 afterEach(() => vi.useRealTimers())
 
-describe('Inbox live day summary', () => {
-  it('uses the current weekday, counts start or deadline once, and refreshes urgency with the shared clock', async () => {
+describe('Inbox header', () => {
+  it('uses the current weekday without rendering the removed summary strip', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 7, 21, 12, 0, 0))
     const state = createSeedState()
@@ -35,15 +35,6 @@ describe('Inbox live day summary', () => {
     await act(async () => { await Promise.resolve() })
 
     expect(screen.getByText('Пятница · обзор дня')).toBeInTheDocument()
-    const summary = screen.getByRole('region', { name: 'Сводка' })
-    expect(within(summary).getByText('На сегодня').nextElementSibling).toHaveTextContent('3')
-    expect(within(summary).getByText('Срочные').nextElementSibling).toHaveTextContent('0')
-
-    act(() => {
-      vi.setSystemTime(new Date(2026, 7, 21, 12, 2, 0))
-      document.dispatchEvent(new Event('visibilitychange'))
-    })
-
-    expect(within(summary).getByText('Срочные').nextElementSibling).toHaveTextContent('1')
+    expect(screen.queryByRole('region', { name: 'Сводка' })).not.toBeInTheDocument()
   })
 })

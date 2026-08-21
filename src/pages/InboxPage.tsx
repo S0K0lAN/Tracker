@@ -46,23 +46,8 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
     [filter, now, projectId, query, selectedTags, showCompleted, state.settings.inboxSort, state.tasks, tagMode],
   )
 
-  const summary = useMemo(() => {
-    const result = { active: 0, completed: 0, today: 0, urgent: 0, important: 0 }
-    for (const task of state.tasks) {
-      if (task.status === 'completed') {
-        result.completed += 1
-        continue
-      }
-      if (task.status !== 'active') continue
-      result.active += 1
-      if (isSameLocalDay(task.startAt, now) || isSameLocalDay(task.deadline, now)) result.today += 1
-      if (getTaskUrgency(task, now) === 'high') result.urgent += 1
-      if (task.importance === 'high') result.important += 1
-    }
-    return result
-  }, [now, state.tasks])
-  const activeCount = summary.active
-  const completedCount = summary.completed
+  const activeCount = state.tasks.filter((task) => task.status === 'active').length
+  const completedCount = state.tasks.filter((task) => task.status === 'completed').length
   const view = state.settings.inboxView
 
   return (
@@ -73,13 +58,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         description={`${activeCount} активных задач во всех проектах`}
         actions={<button className="button button--primary header-add" onClick={() => onEditTask(null)}><Plus size={18} /> Добавить задачу</button>}
       />
-
-      <section className="overview-strip" aria-label="Сводка">
-        <div><span>На сегодня</span><strong>{summary.today}</strong></div>
-        <div><span>Срочные</span><strong>{summary.urgent}</strong></div>
-        <div><span>Важные</span><strong>{summary.important}</strong></div>
-        <div><span>Завершено</span><strong>{summary.completed}</strong></div>
-      </section>
 
       <section className="toolbar">
         <label className="search-field">
