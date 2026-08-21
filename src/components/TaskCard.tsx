@@ -25,7 +25,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const cardRef = useRef<HTMLElement>(null)
   const project = state.projects.find((item) => item.id === task.projectId)
-  const timing = getTaskTiming(task)
+  const timing = getTaskTiming(task, undefined, project?.urgencyThresholdHours)
   const urgency = timing.urgency
   const doneCount = task.subtasks.filter((item) => item.completed).length
 

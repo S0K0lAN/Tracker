@@ -115,6 +115,32 @@ describe('task details', () => {
     await waitFor(() => expect(trigger).toHaveFocus())
   })
 
+  it('shows the effective threshold and distinguishes project inheritance from a task override', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    const project = state.projects.find((item) => item.id === 'work')!
+    project.urgencyThresholdHours = 24
+    const inheritedTask = state.tasks.find((item) => item.id === 'task-plan')!
+    inheritedTask.title = 'Наследуемый порог'
+    const individualTask = state.tasks.find((item) => item.id === 'task-team-sync')!
+    individualTask.title = 'Индивидуальный порог'
+    individualTask.urgencyThresholdOverrideHours = 168
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+    renderInbox()
+    await screen.findByText('Наследуемый порог', { selector: '.task-card__title' })
+
+    await user.click(taskCard('Наследуемый порог').querySelector<HTMLButtonElement>('.task-card__body')!)
+    let details = screen.getByRole('dialog', { name: 'Наследуемый порог' })
+    expect(within(details).getByText('24 ч до дедлайна')).toBeInTheDocument()
+    expect(within(details).getByText('Наследуется из проекта «Работа»')).toBeInTheDocument()
+    await user.click(within(details).getByRole('button', { name: 'Закрыть задачу' }))
+
+    await user.click(taskCard('Индивидуальный порог').querySelector<HTMLButtonElement>('.task-card__body')!)
+    details = screen.getByRole('dialog', { name: 'Индивидуальный порог' })
+    expect(within(details).getByText('168 ч до дедлайна')).toBeInTheDocument()
+    expect(within(details).getByText('Индивидуальный для задачи')).toBeInTheDocument()
+  })
+
   it('returns focus to the durable page heading after editing and moving the task to trash', async () => {
     const user = userEvent.setup()
     renderInbox()

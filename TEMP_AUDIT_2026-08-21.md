@@ -93,9 +93,9 @@ parser, подзадачи, даты, проект, теги, напоминан
 
 ### Календарь и дедлайны
 
-Режимы год/месяц/неделя/3 дня/день/дедлайны реализованы. Timed events используют
-`startAt`; deadline остаётся отдельной семантикой. Пересечения раскладываются по
-колонкам.
+Режимы год/месяц/неделя/3 дня/день реализованы. Timed events используют
+`startAt`; deadline остаётся отдельной семантикой и показывается маркерами либо
+месячной диапазонной полосой. Пересечения раскладываются по колонкам.
 
 Исправленные дефекты текущего цикла:
 
@@ -117,9 +117,8 @@ parser, подзадачи, даты, проект, теги, напоминан
 ### Матрица Эйзенхауэра
 
 Модель с независимыми importance и urgency понятна и соответствует требованиям.
-Перенос порога срочности целиком в проект (#31) сломал бы индивидуальный порог
-задачи. Совместимое будущее расширение: project default + явное наследование/
-override на задаче.
+Issue #31 реализован совместимо: проект хранит порог по умолчанию, новые задачи
+его наследуют, а задача может сохранить явное индивидуальное переопределение.
 
 ### Поиск
 
@@ -174,16 +173,19 @@ Production-ready Google Drive нельзя заявлять без live OAuth sm
 | [#35 Кликабельность сроков](https://github.com/S0K0lAN/Tracker/issues/35) | Исправлено и закрыто | `Ещё N`/deadline panel открывает полный доступный список дня, item открывает task details, focus возвращается. |
 | [#34 Новые фоны](https://github.com/S0K0lAN/Tracker/issues/34) | Needs thought | Нужны brief, лицензии, light/dark screenshots, contrast и size/performance budget. Исправить только доказанный contrast defect. |
 | [#33 Дедлайны на месяце](https://github.com/S0K0lAN/Tracker/issues/33) | Исправлено и закрыто по конкретному UPD | Непрерывные bands в week row, stable lanes, continuation на границах, deadline-only = 1 день, keyboard/mobile; число видимых lane ограничено тремя. |
-| [#31 Порог срочности проекта](https://github.com/S0K0lAN/Tracker/issues/31) | Конфликт требований | Сохранить per-task threshold; возможен project default с явным inherit/override. |
+| [#31 Порог срочности проекта](https://github.com/S0K0lAN/Tracker/issues/31) | Исправлено локально, ожидает merge | Schema v5 хранит project default, явный task override и мигрирует прежние task thresholds без изменения поведения. |
 | [#30 Google auth](https://github.com/S0K0lAN/Tracker/issues/30) | UI/code закрыто с оговоркой | GIS одна кнопка, build-time client ID и `drive.appdata`; credentialed live smoke остаётся отдельным release gate. |
 | [#27 Выбор времени](https://github.com/S0K0lAN/Tracker/issues/27) | Закрыто как выполненное | Общий DateTimePicker, manual mask, date/time popover, keyboard/component/E2E. |
 | [#22 Смысл Входящих](https://github.com/S0K0lAN/Tracker/issues/22) | Решение пересмотрено после аудита | Использовать `projectId=inbox AND no startAt AND no deadline` по умолчанию, сохранив общий список за фильтром «Все»; обновить счётчики, bulk archive и тесты. |
 | [#21 Статистика дня/AI](https://github.com/S0K0lAN/Tracker/issues/21) | Future/question | Сначала локальная deterministic card: completed today, planned done/total, overdue carry, focus minutes. AI — отдельный opt-in/privacy/cost design. |
 | [#18 Команды](https://github.com/S0K0lAN/Tracker/issues/18) | Новое направление, вне scope | Потребуются tenant/auth/ACL/server sync/audit/concurrency; текущий продукт single-user. |
-| [#17 Гант](https://github.com/S0K0lAN/Tracker/issues/17) | Future/plan | Текущий deadline view — light Gantt. Полный Gantt требует duration, dependencies, progress и keyboard drag parity. |
+| [#17 Гант](https://github.com/S0K0lAN/Tracker/issues/17) | Future/plan | Отдельного deadline view больше нет. Полный Gantt потребует duration, dependencies, progress и keyboard drag parity. |
 | [#16 Календари проектов](https://github.com/S0K0lAN/Tracker/issues/16) | Future/plan | Предпочтительно project filter в едином Calendar + URL/query/deep-link из Project, не отдельные копии календаря. |
 | [#12 Дедлайны на календаре](https://github.com/S0K0lAN/Tracker/issues/12) | Needs thought/duplicate | Консолидировать с #33/#35/#45 после выбора all-day/date-only модели. |
 
+Повторная проверка показала ровно 14 открытых issues: #12, #16, #17, #18,
+#21, #22, #31, #34 и #44–#49. Для #31 подготовлено локальное исправление и
+issue остаётся открытым до merge; остальные относятся к
 Повторная проверка в момент аудита показала ровно 14 открытых issues:
 #12, #16, #17, #18, #21, #22, #31, #34 и #44–#49. Позднее 21 августа
 продуктовое решение по #22 было пересмотрено и реализовано локально; статус
@@ -211,8 +213,9 @@ future/needs-thought/conflict scope.
 
 ### Исправлено по результатам security review
 
-- schema повышена до v4: v1–v3 безопасно нормализуются, v4 строго проверяет
-  даты, порядок начала/дедлайна, цвета, пороги и `pomodoro.runningSince`;
+- schema v4 усилила проверку дат, порядка начала/дедлайна, цветов, порогов и
+  `pomodoro.runningSince`; schema v5 добавила проектный порог с наследованием и
+  миграцией прежнего порога задачи в явный override;
 - CSS-цвета проектов/привычек ограничены `#RRGGBB`, поэтому import/sync больше
   не может инициировать внешний request через `url(...)`;
 - recovery не удаляет источник при неуспешной quarantine и не принимает ошибку
@@ -225,8 +228,8 @@ future/needs-thought/conflict scope.
 - обычные `npm run dev`/`npm run preview` слушают loopback; LAN вынесен в явные
   `dev:lan`/`preview:lan` с предупреждением в README;
 - экспорт явно помечен как незашифрованный конфиденциальный JSON.
-- snapshot ограничен по глубине и сложности; v4 проверяет уникальность ID,
-  canonical inbox и ссылки задач, фильтров и Pomodoro, а legacy v1–v3
+- snapshot ограничен по глубине и сложности; текущая schema проверяет
+  уникальность ID, canonical inbox и ссылки задач, фильтров и Pomodoro, а legacy v1–v4
   детерминированно восстанавливаются;
 - outgoing portable/remote snapshot валидируется до публикации, поэтому
   приложение не создаёт экспорт, который само не сможет безопасно прочитать;

@@ -413,7 +413,7 @@ export function SettingsPage() {
               <input className="switch" type="checkbox" checked={state.settings.reduceMotion} onChange={(event) => updateSettings({ reduceMotion: event.target.checked })} />
             </label>
             <label className="setting-row">
-              <div><strong>Срочность по умолчанию</strong><span>Порог до дедлайна</span></div>
+              <div><strong>Срочность для новых проектов</strong><span>Порог по умолчанию при создании проекта</span></div>
               <select value={state.settings.defaultUrgencyThresholdHours} onChange={(event) => updateSettings({ defaultUrgencyThresholdHours: Number(event.target.value) })}>
                 <option value={24}>1 день</option><option value={72}>3 дня</option><option value={168}>7 дней</option>
               </select>

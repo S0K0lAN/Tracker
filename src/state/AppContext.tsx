@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import type { AppSettings, AppState, Habit, Project, PomodoroState, SavedFilter, Task } from '../domain/models'
+import { getEffectiveUrgencyThreshold } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import { UnsupportedSchemaVersionError } from '../domain/migrations'
 import { LocalStorageAdapter } from '../core/storage/LocalStorageAdapter'
@@ -180,10 +181,18 @@ function reducer(state: AppState, action: Action): AppState {
     case 'project/remove': {
       if (action.id === 'inbox') return state
       const updatedAt = new Date().toISOString()
+      const removedProject = state.projects.find((project) => project.id === action.id)
       return {
         ...state,
         projects: state.projects.filter((project) => project.id !== action.id),
-        tasks: state.tasks.map((task) => task.projectId === action.id ? { ...task, projectId: 'inbox', updatedAt } : task),
+        tasks: state.tasks.map((task) => task.projectId === action.id
+          ? {
+              ...task,
+              projectId: 'inbox',
+              urgencyThresholdOverrideHours: getEffectiveUrgencyThreshold(task, removedProject?.urgencyThresholdHours),
+              updatedAt,
+            }
+          : task),
         savedFilters: state.savedFilters.map((filter) => filter.projectId === action.id ? { ...filter, projectId: undefined } : filter),
       }
     }
@@ -377,6 +386,9 @@ export function AppProvider({ children, syncRegistry, storageAdapter }: AppProvi
   const saveTaskDurably = useCallback(async (task: Task) => {
     ensureTaskCommitAvailable()
     const current = stateRef.current
+    if (!current.projects.some((project) => project.id === task.projectId)) {
+      throw new Error('Task project no longer exists')
+    }
     const action: Action = current.tasks.some((item) => item.id === task.id)
       ? { type: 'task/update', task }
       : { type: 'task/add', task }

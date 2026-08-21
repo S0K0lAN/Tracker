@@ -194,7 +194,7 @@ test('calendar changes period by horizontal mouse drag', async ({ page }) => {
   await expect(period).not.toHaveText(previousPeriod)
 })
 
-test('calendar scales, full month cell list and deadline ranges stay connected', async ({ page }) => {
+test('calendar views, full month cell list and deadline ranges stay connected', async ({ page }) => {
   await page.goto('/calendar')
   const localDate = await page.evaluate((storageKey) => {
     const state = JSON.parse(localStorage.getItem(storageKey))
@@ -202,6 +202,7 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
     const now = new Date()
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0)
     const pad = (value: number) => String(value).padStart(2, '0')
+    state.tasks = state.tasks.filter((task: { id: string }) => task.id === 'task-plan')
     state.tasks.push({
       ...template,
       id: 'long-day-slot',
@@ -220,8 +221,8 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
       ...template,
       id: 'project-range',
       title: 'Диапазон проекта',
-      startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0).toISOString(),
-      deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 16, 0).toISOString(),
+      startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 14, 0).toISOString(),
+      deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 3, 16, 0).toISOString(),
     })
     for (let index = 0; index < 5; index++) {
       state.tasks.push({
@@ -237,9 +238,10 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
   }, STORAGE_KEY)
   await page.reload()
 
-  for (const view of ['Год', 'Месяц', 'Неделя', '3 дня', 'День', 'Дедлайны']) {
+  for (const view of ['Год', 'Месяц', 'Неделя', '3 дня', 'День']) {
     await expect(page.getByRole('button', { name: view, exact: true })).toBeVisible()
   }
+  await expect(page.getByRole('button', { name: 'Дедлайны', exact: true })).toHaveCount(0)
 
   const wrappingWeekSlot = page.locator('.calendar-task').filter({ hasText: 'Подготовить подробный план презентации для общей встречи' })
   const wrappingTitleBox = await wrappingWeekSlot.locator('strong').boundingBox()
@@ -283,29 +285,18 @@ test('calendar scales, full month cell list and deadline ranges stay connected',
   for (let index = 1; index <= 5; index++) await expect(dialog.getByText(`Полный список ${index}`, { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Закрыть список задач' }).click()
 
-  await page.getByRole('button', { name: 'Дедлайны', exact: true }).click()
-  const monthRange = page.locator('.deadline-month-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })
+  const monthRange = page.locator('.month-calendar__range').filter({ hasText: 'Диапазон проекта' })
   await expect(monthRange.first()).toBeVisible()
   const monthSpans = await monthRange.evaluateAll((nodes) =>
     nodes.map((node) => Number(node.getAttribute('data-range-span'))),
   )
   expect(monthSpans.reduce((total, span) => total + span, 0)).toBe(3)
-
-  await page.getByRole('button', { name: 'Дедлайны: неделя' }).click()
-  const weekRange = page.locator('.deadline-week-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })
-  await expect(weekRange).toHaveCount(1)
-  const weekSpan = Number(await weekRange.getAttribute('data-range-span'))
-  expect(weekSpan).toBeGreaterThan(0)
-  expect(weekSpan).toBeLessThanOrEqual(3)
-  if (weekSpan < 3) await expect(weekRange).toHaveClass(/continues-after/)
-  await page.getByRole('button', { name: 'Дедлайны: год' }).click()
-  await expect(page.locator('.deadline-year-calendar .deadline-range').filter({ hasText: 'Диапазон проекта' })).toHaveAttribute('data-range-span', '3')
 })
 
-test('deadline calendar updates the task color when importance changes', async ({ page }) => {
+test('month deadline range updates its color when importance changes', async ({ page }) => {
   await page.goto('/calendar')
-  await page.getByRole('button', { name: 'Дедлайны', exact: true }).click()
-  const range = page.locator('.deadline-range').filter({ hasText: 'Купить продукты на неделю' })
+  await page.getByRole('button', { name: 'Месяц', exact: true }).click()
+  const range = page.locator('.month-calendar__range').filter({ hasText: 'Купить продукты на неделю' })
   await expect(range).toHaveAttribute('data-importance', 'low')
   const lowColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
 
@@ -699,6 +690,75 @@ test('a created project can own a task and both survive reload', async ({ page }
   await expect(page).toHaveURL(/\/projects\/p-[^/?#]+$/)
   await expect(page.getByRole('heading', { name: 'E2E Контур', level: 1 })).toBeVisible()
   await expect(page.getByText('E2E проектная задача', { exact: true })).toBeVisible()
+})
+
+test('a project urgency threshold is inherited by its tasks and updates without a task override', async ({ page }) => {
+  const projectName = 'E2E срочность проекта'
+  const taskTitle = 'E2E наследуемый порог'
+
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Новый проект' }).click()
+  const creator = page.getByRole('region', { name: 'Создание проекта' })
+  await creator.getByLabel('Название').fill(projectName)
+  await creator.getByLabel('Задачи становятся срочными за').selectOption('24')
+  await creator.getByRole('button', { name: 'Создать проект' }).click()
+
+  await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
+  await expect(page.getByText('Срочность за 1 день до дедлайна')).toBeVisible()
+  await page.getByRole('button', { name: 'Задача', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toContainText('Из проекта · 1 день')
+  await page.getByLabel('Название').fill(taskTitle)
+  const deadline = await page.evaluate(() => {
+    const value = new Date(Date.now() + 96 * 60 * 60 * 1000)
+    const pad = (part: number) => String(part).padStart(2, '0')
+    return `${pad(value.getDate())}.${pad(value.getMonth() + 1)}.${value.getFullYear()}, ${pad(value.getHours())}:${pad(value.getMinutes())}`
+  })
+  await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill(deadline)
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
+
+  const taskCard = page.locator('.task-card').filter({ hasText: taskTitle })
+  await expect(taskCard).toBeVisible()
+  await expect(taskCard.getByText('Не срочно', { exact: true })).toBeVisible()
+  await taskCard.locator('.task-card__body').click()
+  let details = page.getByRole('dialog', { name: taskTitle })
+  await expect(details.getByText('24 ч до дедлайна')).toBeVisible()
+  await expect(details.getByText(`Наследуется из проекта «${projectName}»`)).toBeVisible()
+  await details.getByRole('button', { name: 'Закрыть задачу' }).click()
+
+  await page.getByRole('button', { name: 'Все проекты' }).click()
+  const menuTrigger = page.getByRole('button', { name: `Действия проекта ${projectName}` })
+  await menuTrigger.hover()
+  await page.getByRole('menuitem', { name: 'Редактировать проект' }).click()
+  const editor = page.getByRole('region', { name: 'Редактирование проекта' })
+  await editor.getByLabel('Задачи становятся срочными за').selectOption('168')
+  await editor.getByRole('button', { name: 'Сохранить изменения' }).click()
+  await expect(menuTrigger).toBeFocused()
+  await menuTrigger.press('Escape')
+  await expect(page.getByRole('menuitem', { name: 'Редактировать проект' })).toBeHidden()
+  await page.getByRole('button', { name: `Открыть проект ${projectName}` }).click()
+
+  await expect(page.getByText('Срочность за 7 дней до дедлайна')).toBeVisible()
+  const updatedTaskCard = page.locator('.task-card').filter({ hasText: taskTitle })
+  await expect(updatedTaskCard.getByText('Срочно', { exact: true })).toBeVisible()
+  await updatedTaskCard.locator('.task-card__body').click()
+  details = page.getByRole('dialog', { name: taskTitle })
+  await expect(details.getByText('168 ч до дедлайна')).toBeVisible()
+  await expect(details.getByText(`Наследуется из проекта «${projectName}»`)).toBeVisible()
+
+  await expect.poll(() => page.evaluate(({ storageKey, expectedProject, expectedTask }) => {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return undefined
+    const state = JSON.parse(raw)
+    const project = state.projects.find((item: { name: string }) => item.name === expectedProject)
+    const task = state.tasks.find((item: { title: string }) => item.title === expectedTask)
+    return {
+      projectThreshold: project?.urgencyThresholdHours,
+      taskHasOverride: task ? Object.hasOwn(task, 'urgencyThresholdOverrideHours') : undefined,
+    }
+  }, { storageKey: STORAGE_KEY, expectedProject: projectName, expectedTask: taskTitle })).toEqual({
+    projectThreshold: 168,
+    taskHasOverride: false,
+  })
 })
 
 test('soft delete, restore, archive and archive restore keep task data', async ({ page }) => {

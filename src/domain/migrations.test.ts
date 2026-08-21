@@ -24,7 +24,6 @@ const minimalTask = (index: number): Task => ({
   title: 't',
   description: '',
   projectId: 'inbox',
-  urgencyThresholdHours: 72,
   importance: 'low',
   tags: [],
   subtasks: [],
@@ -35,6 +34,30 @@ const minimalTask = (index: number): Task => ({
   updatedAt: '2026-08-21T00:00:00.000Z',
   focusMinutes: 0,
 })
+
+type LegacyTask = Omit<Task, 'urgencyThresholdOverrideHours'> & {
+  urgencyThresholdHours: number
+}
+
+type LegacyProject = Omit<AppState['projects'][number], 'urgencyThresholdHours'>
+
+type LegacyAppState = Omit<AppState, 'tasks' | 'projects'> & {
+  tasks: LegacyTask[]
+  projects: LegacyProject[]
+}
+
+function createLegacyState(schemaVersion: 1 | 2 | 3 | 4 = 4): LegacyAppState {
+  const current = createSeedState()
+  return {
+    ...current,
+    schemaVersion,
+    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, ...task }) => ({
+      ...task,
+      urgencyThresholdHours: urgencyThresholdOverrideHours ?? current.settings.defaultUrgencyThresholdHours,
+    })),
+    projects: current.projects.map(({ urgencyThresholdHours: _urgencyThresholdHours, ...project }) => project),
+  }
+}
 
 function currentIntegrityCases(): [string, (state: AppState) => void, RegExp][] {
   return [
@@ -78,12 +101,14 @@ function currentIntegrityCases(): [string, (state: AppState) => void, RegExp][] 
         id: 'inbox',
         name: 'Без проекта',
         color: '#778c70',
+        urgencyThresholdHours: 72,
         createdAt: '2026-08-21T00:00:00.000Z',
       }, ...Array.from({ length: 20 }, (_, index) => ({
         id: `large-project-${index}`,
         name: `Проект ${index}`,
         description,
         color: '#778c70',
+        urgencyThresholdHours: 72,
         createdAt: '2026-08-21T00:00:00.000Z',
       }))]
     }, /Snapshot\.stringData/],
@@ -109,13 +134,12 @@ describe('state migrations for simplified navigation and habit icons', () => {
   })
 
   it('accepts historical schema v2 snapshots that predate provider config and connection metadata', () => {
-    const historical = structuredClone(createSeedState()) as unknown as {
-      schemaVersion: number
+    const historical = structuredClone(createLegacyState(2)) as unknown as {
+      schemaVersion: 2
       settings: Record<string, unknown>
       sync: Record<string, unknown>
-      tasks: ReturnType<typeof createSeedState>['tasks']
+      tasks: LegacyTask[]
     }
-    historical.schemaVersion = 2
     historical.settings.inboxView = 'calendar'
     delete historical.settings.syncProviderConfigs
     delete historical.settings.fontFamily
@@ -130,7 +154,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(migrated.settings.syncProviderConfigs).toEqual({})
     expect(migrated.settings.fontFamily).toBe('system')
     expect(migrated.settings.fontScale).toBe(100)
-    expect(migrated.schemaVersion).toBe(4)
+    expect(migrated.schemaVersion).toBe(5)
     expect(migrated.tasks.flatMap((task) => task.attachments)[0].type).toBe('image/svg+xml')
     expect(migrated.sync).toMatchObject({
       status: 'idle',
@@ -185,19 +209,74 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(() => parseStoredAppState(reversedRange)).toThrow(/tasks\[0\]\.deadline/)
   })
 
-  it('requires positive task and default urgency thresholds', () => {
-    const invalidTaskThreshold = createSeedState()
-    invalidTaskThreshold.tasks[0].urgencyThresholdHours = 0
+  it('requires positive project, task override, and default urgency thresholds in schema v5', () => {
+    const invalidProjectThreshold = createSeedState()
+    invalidProjectThreshold.projects[0].urgencyThresholdHours = 0
+    const missingProjectThreshold = createSeedState()
+    delete (missingProjectThreshold.projects[0] as Partial<AppState['projects'][number]>).urgencyThresholdHours
+    const invalidTaskThresholdOverride = createSeedState()
+    invalidTaskThresholdOverride.tasks[0].urgencyThresholdOverrideHours = 0
     const invalidDefaultThreshold = createSeedState()
     invalidDefaultThreshold.settings.defaultUrgencyThresholdHours = -1
+    const invalidLegacyTaskThreshold = createLegacyState(4)
+    invalidLegacyTaskThreshold.tasks[0].urgencyThresholdHours = 0
 
-    expect(() => parseStoredAppState(invalidTaskThreshold)).toThrow(/tasks\[0\]\.urgencyThresholdHours/)
+    expect(() => parseStoredAppState(invalidProjectThreshold)).toThrow(/projects\[0\]\.urgencyThresholdHours/)
+    expect(() => parseStoredAppState(missingProjectThreshold)).toThrow(/projects\[0\]\.urgencyThresholdHours/)
+    expect(() => parseStoredAppState(invalidTaskThresholdOverride)).toThrow(
+      /tasks\[0\]\.urgencyThresholdOverrideHours/,
+    )
     expect(() => parseStoredAppState(invalidDefaultThreshold)).toThrow(/settings\.defaultUrgencyThresholdHours/)
+    expect(() => parseStoredAppState(invalidLegacyTaskThreshold)).toThrow(/tasks\[0\]\.urgencyThresholdHours/)
+  })
+
+  it('validates the schema v5 seed with project thresholds and inherited task thresholds', () => {
+    const current = parseStoredAppState(createSeedState())
+
+    expect(current.schemaVersion).toBe(5)
+    expect(current.projects.every((project) => project.urgencyThresholdHours === 72)).toBe(true)
+    expect(current.tasks.every((task) => !('urgencyThresholdHours' in task))).toBe(true)
+    expect(current.tasks.every((task) => task.urgencyThresholdOverrideHours === undefined)).toBe(true)
+  })
+
+  it.each([1, 2, 3, 4] as const)(
+    'migrates schema v%s project defaults and task thresholds without changing effective values',
+    (schemaVersion) => {
+      const legacy = createLegacyState(schemaVersion)
+      legacy.settings.defaultUrgencyThresholdHours = 96
+      legacy.tasks[0].urgencyThresholdHours = 24
+      legacy.tasks[1].urgencyThresholdHours = 120
+
+      const migrated = parseStoredAppState(legacy)
+
+      expect(migrated.schemaVersion).toBe(5)
+      expect(migrated.projects.every((project) => project.urgencyThresholdHours === 96)).toBe(true)
+      expect(migrated.tasks[0].urgencyThresholdOverrideHours).toBe(24)
+      expect(migrated.tasks[1].urgencyThresholdOverrideHours).toBe(120)
+      expect(migrated.tasks[0]).not.toHaveProperty('urgencyThresholdHours')
+      expect(migrated.tasks[1]).not.toHaveProperty('urgencyThresholdHours')
+    },
+  )
+
+  it('preserves the historical 72-hour fallback for missing or invalid v1-v3 task thresholds', () => {
+    const legacyV1 = createLegacyState(1)
+    const legacyV3 = createLegacyState(3)
+    legacyV1.settings.defaultUrgencyThresholdHours = 96
+    legacyV3.settings.defaultUrgencyThresholdHours = 96
+    delete (legacyV1.tasks[0] as Partial<LegacyTask>).urgencyThresholdHours
+    legacyV3.tasks[0].urgencyThresholdHours = 0
+
+    const migratedV1 = parseStoredAppState(legacyV1)
+    const migratedV3 = parseStoredAppState(legacyV3)
+
+    expect(migratedV1.projects[0].urgencyThresholdHours).toBe(96)
+    expect(migratedV3.projects[0].urgencyThresholdHours).toBe(96)
+    expect(migratedV1.tasks[0].urgencyThresholdOverrideHours).toBe(72)
+    expect(migratedV3.tasks[0].urgencyThresholdOverrideHours).toBe(72)
   })
 
   it('sanitizes schema v3 values that became strict in v4 without dropping unrelated data', () => {
-    const legacy = createSeedState()
-    legacy.schemaVersion = 3
+    const legacy = createLegacyState(3)
     legacy.tasks[0].title = 'Сохранить эту задачу'
     legacy.tasks[0].description = 'Описание не должно потеряться'
     legacy.tasks[0].tags = ['важные-данные']
@@ -216,16 +295,17 @@ describe('state migrations for simplified navigation and habit icons', () => {
 
     const migrated = parseStoredAppState(legacy)
 
-    expect(migrated.schemaVersion).toBe(4)
+    expect(migrated.schemaVersion).toBe(5)
     expect(migrated.tasks).toHaveLength(legacy.tasks.length)
     expect(migrated.tasks[0]).toMatchObject({
       title: 'Сохранить эту задачу',
       description: 'Описание не должно потеряться',
       tags: ['важные-данные'],
-      urgencyThresholdHours: 72,
       completedAt: undefined,
       reminders: [],
     })
+    expect(migrated.tasks[0]).not.toHaveProperty('urgencyThresholdHours')
+    expect(migrated.tasks[0].urgencyThresholdOverrideHours).toBe(72)
     expect(Number.isFinite(Date.parse(migrated.tasks[0].createdAt))).toBe(true)
     expect(Number.isFinite(Date.parse(migrated.tasks[0].updatedAt))).toBe(true)
     expect(migrated.tasks[1]).toMatchObject({
@@ -233,6 +313,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
       deadline: undefined,
     })
     expect(migrated.projects[0].color).toBe('#778c70')
+    expect(migrated.projects[0].urgencyThresholdHours).toBe(72)
     expect(migrated.habits[0].color).toBe('#778c70')
     expect(migrated.settings.defaultUrgencyThresholdHours).toBe(72)
     expect(migrated.pomodoro).toMatchObject({
@@ -241,7 +322,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     })
   })
 
-  it('rejects an unparseable Pomodoro start in current schema v4 snapshots', () => {
+  it('rejects an unparseable Pomodoro start in current schema v5 snapshots', () => {
     const invalid = createSeedState()
     invalid.pomodoro.runningSince = 'invalid-running-since'
 
@@ -251,9 +332,10 @@ describe('state migrations for simplified navigation and habit icons', () => {
   it('uses safe fallbacks when normalizing untrusted values outside strict snapshot parsing', () => {
     const damaged = createSeedState()
     damaged.projects[0].color = 'red; background: url(https://attacker.invalid)'
+    damaged.projects[0].urgencyThresholdHours = Number.NaN
     damaged.habits[0].color = '#123'
     damaged.settings.defaultUrgencyThresholdHours = 0
-    damaged.tasks[0].urgencyThresholdHours = Number.NaN
+    damaged.tasks[0].urgencyThresholdOverrideHours = Number.NaN
     damaged.tasks[0].createdAt = 'invalid-created-at'
     damaged.tasks[0].updatedAt = 'invalid-updated-at'
     damaged.tasks[0].completedAt = 'invalid-completed-at'
@@ -264,9 +346,11 @@ describe('state migrations for simplified navigation and habit icons', () => {
     const normalized = normalizeAppState(damaged)
 
     expect(normalized.projects[0].color).toBe('#778c70')
+    expect(normalized.projects[0].urgencyThresholdHours).toBe(72)
     expect(normalized.habits[0].color).toBe('#778c70')
     expect(normalized.settings.defaultUrgencyThresholdHours).toBe(72)
-    expect(normalized.tasks[0].urgencyThresholdHours).toBe(72)
+    expect(normalized.tasks[0]).not.toHaveProperty('urgencyThresholdHours')
+    expect(normalized.tasks[0]).not.toHaveProperty('urgencyThresholdOverrideHours')
     expect(Number.isFinite(Date.parse(normalized.tasks[0].createdAt))).toBe(true)
     expect(Number.isFinite(Date.parse(normalized.tasks[0].updatedAt))).toBe(true)
     expect(normalized.tasks[0]).toMatchObject({
@@ -500,7 +584,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
   })
 
   it('keeps formerly accepted v4 nested IDs without widening top-level identity rules', () => {
-    const state = createSeedState()
+    const state = createLegacyState(4)
     state.tasks[0].subtasks[0].id = ''
     state.tasks[0].reminders[0].id = ''
     state.tasks.find((task) => task.attachments.length)!.attachments[0].id = ''
@@ -513,8 +597,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
   })
 
   it('deterministically repairs legacy identity and project references without dropping entities or plugin data', () => {
-    const legacy = createSeedState() as AppState & Record<string, unknown>
-    legacy.schemaVersion = 3
+    const legacy = createLegacyState(3) as LegacyAppState & Record<string, unknown>
     legacy['plugin.example/root'] = { keep: true }
     legacy.projects[0].id = 'legacy-project'
     legacy.projects.push({
@@ -561,10 +644,9 @@ describe('state migrations for simplified navigation and habit icons', () => {
   })
 
   it('creates stable migration IDs for schema v1 entities that predate required IDs', () => {
-    const legacy = createSeedState() as AppState
-    legacy.schemaVersion = 1
-    delete (legacy.tasks[0] as Partial<AppState['tasks'][number]>).id
-    delete (legacy.projects[0] as Partial<AppState['projects'][number]>).id
+    const legacy = createLegacyState(1)
+    delete (legacy.tasks[0] as Partial<LegacyTask>).id
+    delete (legacy.projects[0] as Partial<LegacyProject>).id
     delete (legacy.habits[0] as Partial<AppState['habits'][number]>).id
 
     const first = parseStoredAppState(legacy)

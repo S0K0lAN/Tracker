@@ -4,7 +4,7 @@ import { createSeedState } from './seed'
 import { attachmentDataUrlMimeType, MAX_ATTACHMENT_BYTES, safeAttachmentDataUrl } from './attachments'
 import { safeCustomBackgroundDataUrl } from './backgrounds'
 
-export const CURRENT_SCHEMA_VERSION = 4
+export const CURRENT_SCHEMA_VERSION = 5
 
 const MAX_PAYLOAD_STRING_BYTES = 10 * 1024 * 1024
 // Per-field and known-user-text budgets must not pre-empt a historical v4
@@ -99,8 +99,22 @@ export function assertSnapshotStateShape(
   }
   assertSnapshotComplexity(raw)
 
-  tasks.forEach((task, index) => assertTaskShape(task, strict, strictSanitizableValues, budget, `tasks[${index}]`))
-  projects.forEach((project, index) => assertProjectShape(project, strict, strictSanitizableValues, budget, `projects[${index}]`))
+  tasks.forEach((task, index) => assertTaskShape(
+    task,
+    strict,
+    strictSanitizableValues,
+    schemaVersion >= 5,
+    budget,
+    `tasks[${index}]`,
+  ))
+  projects.forEach((project, index) => assertProjectShape(
+    project,
+    strict,
+    strictSanitizableValues,
+    schemaVersion >= 5,
+    budget,
+    `projects[${index}]`,
+  ))
   habits.forEach((habit, index) => assertHabitShape(habit, strict, strictSanitizableValues, budget, `habits[${index}]`))
   savedFilters.forEach((filter, index) => assertFilterShape(filter, strict, strictSanitizableValues, budget, `savedFilters[${index}]`))
 
@@ -134,6 +148,7 @@ function assertTaskShape(
   task: Record<string, unknown>,
   strict: boolean,
   strictSanitizableValues: boolean,
+  useProjectUrgencyThresholds: boolean,
   budget: SnapshotValidationBudget,
   path: string,
 ) {
@@ -154,7 +169,11 @@ function assertTaskShape(
   ) {
     throw invalidField(`${path}.deadline`)
   }
-  numberField(task, 'urgencyThresholdHours', strict, path, (value) => !strictSanitizableValues || value > 0)
+  if (useProjectUrgencyThresholds) {
+    numberField(task, 'urgencyThresholdOverrideHours', false, path, (value) => value > 0)
+  } else {
+    numberField(task, 'urgencyThresholdHours', strict, path, (value) => !strictSanitizableValues || value > 0)
+  }
   numberField(task, 'focusMinutes', strict, path, (value) => value >= 0)
   enumField(task, 'importance', ['low', 'high'], strict, path)
   enumField(task, 'urgencyOverride', ['low', 'high'], false, path)
@@ -198,6 +217,7 @@ function assertProjectShape(
   project: Record<string, unknown>,
   strict: boolean,
   strictSanitizableValues: boolean,
+  requireUrgencyThreshold: boolean,
   budget: SnapshotValidationBudget,
   path: string,
 ) {
@@ -205,6 +225,7 @@ function assertProjectShape(
   userTextField(project, 'name', strict, path, budget, SNAPSHOT_LIMITS.shortTextBytes)
   boundedStringField(project, 'createdAt', strict, path, SNAPSHOT_LIMITS.identifierBytes)
   colorField(project, 'color', strict, path, strictSanitizableValues)
+  numberField(project, 'urgencyThresholdHours', requireUrgencyThreshold, path, (value) => value > 0)
   userTextField(project, 'description', false, path, budget, SNAPSHOT_LIMITS.longTextBytes)
 }
 
@@ -658,6 +679,11 @@ export function normalizeAppState(input: unknown): AppState {
     }
   }
   const rawSettings = raw.settings as (Partial<AppState['settings']> & { inboxView?: string; googleDriveClientId?: string }) | undefined
+  const sourceSchemaVersion = raw.schemaVersion ?? CURRENT_SCHEMA_VERSION
+  const legacyProjectUrgencyThreshold = positiveNumber(
+    rawSettings?.defaultUrgencyThresholdHours,
+    DEFAULT_URGENCY_THRESHOLD_HOURS,
+  )
   const providerId = typeof rawSettings?.syncProvider === 'string' ? rawSettings.syncProvider : seed.settings.syncProvider
   const syncProviderConfigs = normalizeProviderConfigs(rawSettings?.syncProviderConfigs)
   const googleDriveConfig = syncProviderConfigs['google-drive']
@@ -691,7 +717,14 @@ export function normalizeAppState(input: unknown): AppState {
       : persistedConnectionStatus
   const now = new Date().toISOString()
   const normalizedProjects = ensureUniqueEntityIds(
-    Array.isArray(raw.projects) ? raw.projects.map((project) => normalizeProject(project, now)) : seed.projects,
+    Array.isArray(raw.projects)
+      ? raw.projects.map((project) => normalizeProject(
+        project,
+        now,
+        sourceSchemaVersion,
+        legacyProjectUrgencyThreshold,
+      ))
+      : seed.projects,
     'project',
   )
   if (!normalizedProjects.some((project) => project.id === 'inbox')) {
@@ -699,12 +732,15 @@ export function normalizeAppState(input: unknown): AppState {
       id: 'inbox',
       name: 'Без проекта',
       color: '#9ca89c',
+      urgencyThresholdHours: legacyProjectUrgencyThreshold,
       createdAt: '1970-01-01T00:00:00.000Z',
     })
   }
   const projectIds = new Set(normalizedProjects.map((project) => project.id))
   const normalizedTasks = ensureUniqueEntityIds(
-    Array.isArray(raw.tasks) ? raw.tasks.map((task) => normalizeTask(task, now)) : seed.tasks,
+    Array.isArray(raw.tasks)
+      ? raw.tasks.map((task) => normalizeTask(task, now, sourceSchemaVersion))
+      : seed.tasks,
     'task',
   ).map((task) => projectIds.has(task.projectId) ? task : { ...task, projectId: 'inbox' })
   const normalizedHabits = ensureUniqueEntityIds(
@@ -799,7 +835,9 @@ function isSensitiveConfigKey(key: string) {
   return /(access.?token|refresh.?token|auth.?token|id.?token|(^|[-_])token|secret|password|api.?key|credential|bearer|authorization|private.?key)/i.test(key)
 }
 
-function normalizeTask(value: Partial<Task>, now: string): Task {
+type LegacyTaskInput = Partial<Task> & { urgencyThresholdHours?: unknown }
+
+function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion: number): Task {
   const allowedStatuses: TaskStatus[] = ['active', 'completed', 'archived', 'deleted']
   const status = value.status && allowedStatuses.includes(value.status) ? value.status : 'active'
   const startAt = normalizedDate(value.startAt)
@@ -807,15 +845,25 @@ function normalizeTask(value: Partial<Task>, now: string): Task {
   const deadline = candidateDeadline && (!startAt || Date.parse(candidateDeadline) >= Date.parse(startAt))
     ? candidateDeadline
     : undefined
+  const {
+    urgencyThresholdHours: legacyUrgencyThresholdHours,
+    urgencyThresholdOverrideHours,
+    ...preservedValue
+  } = value
+  const normalizedThresholdOverride = sourceSchemaVersion < 5
+    ? positiveNumber(legacyUrgencyThresholdHours, DEFAULT_URGENCY_THRESHOLD_HOURS)
+    : optionalPositiveNumber(urgencyThresholdOverrideHours)
   return {
-    ...value,
+    ...preservedValue,
     id: typeof value.id === 'string' ? value.id : '',
     title: value.title?.trim() || 'Без названия',
     description: value.description ?? '',
     projectId: value.projectId ?? 'inbox',
     startAt,
     deadline,
-    urgencyThresholdHours: positiveNumber(value.urgencyThresholdHours, DEFAULT_URGENCY_THRESHOLD_HOURS),
+    ...(normalizedThresholdOverride === undefined
+      ? {}
+      : { urgencyThresholdOverrideHours: normalizedThresholdOverride }),
     importance: value.importance === 'high' ? 'high' : 'low',
     tags: Array.isArray(value.tags) ? value.tags : [],
     subtasks: Array.isArray(value.subtasks) ? value.subtasks : [],
@@ -849,12 +897,20 @@ function normalizeAttachment(value: Task['attachments'][number]): Task['attachme
   }
 }
 
-function normalizeProject(value: Partial<Project>, now: string): Project {
+function normalizeProject(
+  value: Partial<Project>,
+  now: string,
+  sourceSchemaVersion: number,
+  legacyUrgencyThreshold: number,
+): Project {
   return {
     ...value,
     id: typeof value.id === 'string' ? value.id : '',
     name: value.name?.trim() || 'Новый проект',
     color: safeColor(value.color, DEFAULT_ENTITY_COLOR),
+    urgencyThresholdHours: sourceSchemaVersion < 5
+      ? legacyUrgencyThreshold
+      : positiveNumber(value.urgencyThresholdHours, DEFAULT_URGENCY_THRESHOLD_HOURS),
     createdAt: value.createdAt ?? now,
   }
 }
@@ -941,6 +997,10 @@ function safeColor(value: unknown, fallback: string): string {
 
 function positiveNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function optionalPositiveNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
 }
 
 function nonNegativeNumber(value: unknown, fallback: number): number {

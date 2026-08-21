@@ -9,6 +9,18 @@ import './workspace-pages.css'
 
 const projectColors = ['#778c70', '#9b7fbd', '#d78b69', '#5d88a3', '#c18b46', '#b76565', '#6f8f86', '#8472a7']
 
+const urgencyThresholdOptions = [
+  { value: 1, label: '1 час' },
+  { value: 24, label: '1 день' },
+  { value: 72, label: '3 дня' },
+  { value: 168, label: '7 дней' },
+  { value: 336, label: '14 дней' },
+]
+
+const formatUrgencyThreshold = (hours: number) => (
+  urgencyThresholdOptions.find((option) => option.value === hours)?.label ?? `${hours} ч`
+)
+
 export function ProjectsPage({
   onEditTask,
   selectedProjectId,
@@ -27,6 +39,7 @@ export function ProjectsPage({
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [color, setColor] = useState(projectColors[0])
+  const [urgencyThresholdHours, setUrgencyThresholdHours] = useState(state.settings.defaultUrgencyThresholdHours)
   const menuCloseTimer = useRef<ReturnType<typeof setTimeout>>()
   const newProjectTriggerRef = useRef<HTMLButtonElement>(null)
   const projectFormReturnFocusRef = useRef<HTMLElement | null>(null)
@@ -52,6 +65,7 @@ export function ProjectsPage({
     setName('')
     setDescription('')
     setColor(projectColors[0])
+    setUrgencyThresholdHours(state.settings.defaultUrgencyThresholdHours)
   }
 
   const closeProjectForm = () => {
@@ -82,6 +96,7 @@ export function ProjectsPage({
     setName(project.name)
     setDescription(project.description ?? '')
     setColor(project.color)
+    setUrgencyThresholdHours(project.urgencyThresholdHours)
     setCreating(true)
     setOpenMenuId(null)
     setDeleteConfirmId(null)
@@ -95,6 +110,7 @@ export function ProjectsPage({
       name: name.trim(),
       description: description.trim() || undefined,
       color,
+      urgencyThresholdHours,
       createdAt: existing?.createdAt ?? new Date().toISOString(),
     }
     if (existing) updateProject(project)
@@ -180,7 +196,11 @@ export function ProjectsPage({
         </button>
         <section className="project-detail-heading">
           <span style={{ background: selected.color }}><Folder size={18} /></span>
-          <div><strong>{active.length} активных</strong><small>{projectTasks.filter((task) => task.status === 'completed').length} выполнено</small></div>
+          <div>
+            <strong>{active.length} активных</strong>
+            <small>{projectTasks.filter((task) => task.status === 'completed').length} выполнено</small>
+            <small>Срочность за {formatUrgencyThreshold(selected.urgencyThresholdHours)} до дедлайна</small>
+          </div>
         </section>
         <section className="task-list">
           {projectTasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}
@@ -211,6 +231,15 @@ export function ProjectsPage({
           <div className="project-creator__fields">
             <label className="field"><span>Название</span><input autoFocus maxLength={INPUT_LIMITS.projectName} value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, Запуск продукта" /></label>
             <label className="field"><span>Описание</span><input maxLength={INPUT_LIMITS.projectDescription} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Коротко о результате проекта" /></label>
+            <label className="field">
+              <span>Задачи становятся срочными за</span>
+              <select value={urgencyThresholdHours} onChange={(event) => setUrgencyThresholdHours(Number(event.target.value))}>
+                {!urgencyThresholdOptions.some((option) => option.value === urgencyThresholdHours) && (
+                  <option value={urgencyThresholdHours}>{formatUrgencyThreshold(urgencyThresholdHours)}</option>
+                )}
+                {urgencyThresholdOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
           </div>
           <fieldset className="project-color-picker">
             <legend>Цвет проекта</legend>
@@ -239,35 +268,35 @@ export function ProjectsPage({
                 <span className="project-card__stats"><em>{tasks.length}</em><small>активных</small></span>
                 <span className="project-card__deadline">{nearest ? <><CalendarClock size={13} /> {new Date(nearest.deadline!).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</> : 'Нет ближайших сроков'}</span>
               </button>
-              {project.id !== 'inbox' && (
-                <div
-                  className="project-card__actions"
-                  onPointerEnter={() => openProjectMenu(project.id)}
-                  onPointerLeave={() => closeProjectMenuSoon(project.id)}
-                  onFocus={() => openProjectMenu(project.id)}
-                  onBlur={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                      setOpenMenuId(null)
-                      setDeleteConfirmId(null)
-                    }
-                  }}
-                  onKeyDown={onProjectMenuKeyDown}
+              <div
+                className="project-card__actions"
+                onPointerEnter={() => openProjectMenu(project.id)}
+                onPointerLeave={() => closeProjectMenuSoon(project.id)}
+                onFocus={() => openProjectMenu(project.id)}
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setOpenMenuId(null)
+                    setDeleteConfirmId(null)
+                  }
+                }}
+                onKeyDown={onProjectMenuKeyDown}
+              >
+                <button
+                  className="project-card__more"
+                  type="button"
+                  aria-label={`Действия проекта ${project.name}`}
+                  aria-haspopup="menu"
+                  aria-expanded={openMenuId === project.id}
+                  onClick={() => openProjectMenu(project.id)}
                 >
-                  <button
-                    className="project-card__more"
-                    type="button"
-                    aria-label={`Действия проекта ${project.name}`}
-                    aria-haspopup="menu"
-                    aria-expanded={openMenuId === project.id}
-                    onClick={() => openProjectMenu(project.id)}
-                  >
-                    <MoreHorizontal size={20} aria-hidden="true" />
-                  </button>
-                  {openMenuId === project.id && (
-                    <div className="project-card__menu" role="menu" aria-label={`Действия проекта ${project.name}`}>
-                      <button type="button" role="menuitem" onClick={() => openProjectEditor(project)}>
-                        <Pencil size={16} aria-hidden="true" /> Редактировать проект
-                      </button>
+                  <MoreHorizontal size={20} aria-hidden="true" />
+                </button>
+                {openMenuId === project.id && (
+                  <div className="project-card__menu" role="menu" aria-label={`Действия проекта ${project.name}`}>
+                    <button type="button" role="menuitem" onClick={() => openProjectEditor(project)}>
+                      <Pencil size={16} aria-hidden="true" /> Редактировать проект
+                    </button>
+                    {project.id !== 'inbox' && (
                       <button
                         type="button"
                         role="menuitem"
@@ -280,10 +309,10 @@ export function ProjectsPage({
                       >
                         <Trash2 size={16} aria-hidden="true" /> {deleteConfirmId === project.id ? 'Подтвердить удаление' : 'Удалить проект'}
                       </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
+              </div>
             </article>
           )
         })}

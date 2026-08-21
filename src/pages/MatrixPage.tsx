@@ -29,6 +29,10 @@ export function MatrixPage({ onEditTask }: { onEditTask: (task: Task | null) => 
     () => state.tasks.filter((task) => task.status === 'active' && (project === 'all' || task.projectId === project)),
     [project, state.tasks],
   )
+  const projectUrgencyThresholds = useMemo(
+    () => new Map(state.projects.map((item) => [item.id, item.urgencyThresholdHours])),
+    [state.projects],
+  )
 
   return (
     <main className="page page--wide">
@@ -58,7 +62,10 @@ export function MatrixPage({ onEditTask }: { onEditTask: (task: Task | null) => 
       </section>
       <section className="matrix-grid">
         {quadrants.map((quadrant) => {
-          const tasks = activeTasks.filter((task) => task.importance === quadrant.importance && getTaskUrgency(task) === quadrant.urgency)
+          const tasks = activeTasks.filter((task) => (
+            task.importance === quadrant.importance
+            && getTaskUrgency(task, undefined, projectUrgencyThresholds.get(task.projectId)) === quadrant.urgency
+          ))
           return (
             <article className={`quadrant quadrant--${quadrant.number}`} key={quadrant.number}>
               <header className="quadrant__header">

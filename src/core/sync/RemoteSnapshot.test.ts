@@ -39,6 +39,19 @@ function uncheckedRemoteEnvelope(state: AppState): RemoteSnapshotEnvelope {
   }
 }
 
+function createLegacyV1State() {
+  const current = createSeedState()
+  return {
+    ...current,
+    schemaVersion: 1 as const,
+    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, ...task }) => ({
+      ...task,
+      urgencyThresholdHours: urgencyThresholdOverrideHours ?? 72,
+    })),
+    projects: current.projects.map(({ urgencyThresholdHours: _threshold, ...project }) => project),
+  }
+}
+
 function addDeepRemotePlugin(state: AppState) {
   let value: Record<string, unknown> = { leaf: true }
   for (let index = 0; index < 10_000; index += 1) value = { child: value }
@@ -72,12 +85,13 @@ function invalidRemoteStates(): [string, (state: AppState) => void][] {
       state.habits = []
       state.savedFilters = []
       state.projects = [{
-        id: 'inbox', name: 'Без проекта', color: '#778c70', createdAt: '2026-08-21T00:00:00.000Z',
+        id: 'inbox', name: 'Без проекта', color: '#778c70', urgencyThresholdHours: 72, createdAt: '2026-08-21T00:00:00.000Z',
       }, ...Array.from({ length: 20 }, (_, index) => ({
         id: `large-project-${index}`,
         name: `Проект ${index}`,
         description,
         color: '#778c70',
+        urgencyThresholdHours: 72,
         createdAt: '2026-08-21T00:00:00.000Z',
       }))]
     }],
@@ -131,9 +145,8 @@ describe('remote snapshots', () => {
   })
 
   it('decodes an envelope and applies the current migrations', () => {
-    const state = createSeedState()
-    const envelope = createRemoteEnvelope(state)
-    envelope.schemaVersion = 1
+    const legacy = createLegacyV1State()
+    const envelope = uncheckedRemoteEnvelope(legacy as unknown as AppState)
     envelope.data.settings.inboxView = 'list'
     envelope.data.savedFilters.push({ ...remoteFilter('legacy-envelope-orphan'), projectId: 'missing-project' })
     envelope.data.pomodoro.taskId = 'missing-task'
@@ -141,24 +154,36 @@ describe('remote snapshots', () => {
     const decoded = decodeRemoteSnapshot(envelope)
 
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-    expect(decoded.tasks).toEqual(state.tasks)
-    expect(decoded.settings.theme).toBe(state.settings.theme)
+    expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, ...task }) => ({
+      ...task,
+      urgencyThresholdOverrideHours: urgencyThresholdHours,
+    })))
+    expect(decoded.projects).toEqual(legacy.projects.map((project) => ({
+      ...project,
+      urgencyThresholdHours: legacy.settings.defaultUrgencyThresholdHours,
+    })))
+    expect(decoded.settings.theme).toBe(legacy.settings.theme)
     expect(decoded.sync.status).toBe('idle')
     expect(decoded.savedFilters[0].projectId).toBeUndefined()
     expect(decoded.pomodoro.taskId).toBeUndefined()
   })
 
   it('accepts a legacy full AppState snapshot', () => {
-    const legacy = createSeedState()
-    legacy.schemaVersion = 1
+    const legacy = createLegacyV1State()
     legacy.savedFilters.push({ ...remoteFilter('legacy-orphan'), projectId: 'missing-project' })
     legacy.pomodoro.taskId = 'missing-task'
 
     const decoded = decodeRemoteSnapshot(legacy)
 
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-    expect(decoded.tasks).toEqual(legacy.tasks)
-    expect(decoded.projects).toEqual(legacy.projects)
+    expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, ...task }) => ({
+      ...task,
+      urgencyThresholdOverrideHours: urgencyThresholdHours,
+    })))
+    expect(decoded.projects).toEqual(legacy.projects.map((project) => ({
+      ...project,
+      urgencyThresholdHours: legacy.settings.defaultUrgencyThresholdHours,
+    })))
     expect(decoded.savedFilters[0].projectId).toBeUndefined()
     expect(decoded.pomodoro.taskId).toBeUndefined()
   })
@@ -307,7 +332,7 @@ describe('remote snapshots', () => {
     })
   })
 
-  it.each(invalidRemoteStates())('rejects outgoing schema v4 data with %s', (_label, mutate) => {
+  it.each(invalidRemoteStates())('rejects outgoing schema v5 data with %s', (_label, mutate) => {
     const state = createSeedState()
     mutate(state)
 
@@ -317,7 +342,7 @@ describe('remote snapshots', () => {
     }))
   })
 
-  it.each(invalidRemoteStates())('rejects incoming remote schema v4 data with %s', (_label, mutate) => {
+  it.each(invalidRemoteStates())('rejects incoming remote schema v5 data with %s', (_label, mutate) => {
     const state = createSeedState()
     mutate(state)
 

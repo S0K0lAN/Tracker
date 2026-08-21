@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Habit } from '../domain/models'
@@ -130,7 +130,7 @@ describe('habit rhythm', () => {
     expect(within(firstRow).getByText('7 из 7 плановых дней')).toBeInTheDocument()
     expect(within(secondRow).getByText('0 из 7 плановых дней')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /График выполненных привычек и задач/ })).toBeInTheDocument()
-    expect(screen.getByRole('table', { name: 'Выполнения привычек и задач за последние четырнадцать дней' })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: /Выполнения привычек и задач за период .*\(30 дней\)/ })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Последние 7 дней' })).toBeInTheDocument()
     expect(screen.getByText('Серия', { selector: '.habit-list__streak-label' })).toBeInTheDocument()
   })
@@ -189,6 +189,100 @@ describe('habit rhythm', () => {
     expect(screen.getByRole('button', { name: `Отметить Медитация ${dayLabel}` })).toBeInTheDocument()
     expect(within(screen.getByRole('article', { name: 'Ритм привычки Зарядка' })).getByText('14%')).toBeInTheDocument()
     expect(within(screen.getByRole('article', { name: 'Ритм привычки Медитация' })).getByText('0%')).toBeInTheDocument()
+  })
+})
+
+describe('habit completion trend range', () => {
+  it('defaults to thirty local days and exposes accessible presets and date inputs', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 21, 12))
+    const { container } = renderHabits([])
+    await act(async () => { await Promise.resolve() })
+
+    for (const preset of [14, 30, 90, 365]) {
+      expect(screen.getByRole('button', { name: `${preset} дней` })).toHaveAttribute(
+        'aria-pressed',
+        preset === 30 ? 'true' : 'false',
+      )
+    }
+
+    expect(screen.getByLabelText('Начало периода')).toHaveValue('2026-07-23')
+    expect(screen.getByLabelText('Конец периода')).toHaveValue('2026-08-21')
+    expect(container.querySelectorAll('.habit-trend__day')).toHaveLength(30)
+    expect(container.querySelector('.habit-trend__summary')).toHaveTextContent(/30 дней/)
+    expect(screen.getByRole('img', { name: /23 июл.*21 авг.*30 дней/i })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: /23 июл.*21 авг.*\(30 дней\)/i })).toBeInTheDocument()
+  })
+
+  it('renders all ninety selected days and updates the chart and table descriptions', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 21, 12))
+    const { container } = renderHabits([])
+    await act(async () => { await Promise.resolve() })
+
+    fireEvent.click(screen.getByRole('button', { name: '90 дней' }))
+
+    expect(screen.getByRole('button', { name: '90 дней' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '30 дней' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByLabelText('Начало периода')).toHaveValue('2026-05-24')
+    expect(screen.getByLabelText('Конец периода')).toHaveValue('2026-08-21')
+    expect(container.querySelectorAll('.habit-trend__day')).toHaveLength(90)
+    expect(container.querySelector('.habit-trend__summary')).toHaveTextContent(/90 дней/)
+    expect(screen.getByRole('img', { name: /24 мая.*21 авг.*90 дней/i })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: /24 мая.*21 авг.*\(90 дней\)/i })).toBeInTheDocument()
+  })
+
+  it('uses an inclusive custom range without shifting local calendar dates', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 21, 12))
+    const { container } = renderHabits([])
+    await act(async () => { await Promise.resolve() })
+
+    fireEvent.change(screen.getByLabelText('Начало периода'), { target: { value: '2026-08-15' } })
+    fireEvent.change(screen.getByLabelText('Конец периода'), { target: { value: '2026-08-19' } })
+
+    expect(screen.getByLabelText('Начало периода')).toHaveValue('2026-08-15')
+    expect(screen.getByLabelText('Конец периода')).toHaveValue('2026-08-19')
+    for (const preset of [14, 30, 90, 365]) {
+      expect(screen.getByRole('button', { name: `${preset} дней` })).toHaveAttribute('aria-pressed', 'false')
+    }
+
+    const renderedDays = [...container.querySelectorAll<HTMLElement>('.habit-trend__day')]
+    expect(renderedDays).toHaveLength(5)
+    expect(renderedDays[0]).toHaveAttribute('title', expect.stringMatching(/^15\.08\.2026:/))
+    expect(renderedDays.at(-1)).toHaveAttribute('title', expect.stringMatching(/^19\.08\.2026:/))
+    expect(container.querySelector('.habit-trend__summary')).toHaveTextContent(/5 дней/)
+
+    const interval = /15 авг.*19 авг.*5 дней/i
+    expect(screen.getByRole('img', { name: interval })).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: interval })
+    expect(within(table).getByRole('rowheader', { name: '15.08.2026' })).toBeInTheDocument()
+    expect(within(table).getByRole('rowheader', { name: '19.08.2026' })).toBeInTheDocument()
+  })
+
+  it('lets a historical range cross both current boundaries and keeps the selected date when clamping to a year', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 21, 12))
+    const { container } = renderHabits([])
+    await act(async () => { await Promise.resolve() })
+
+    const startInput = screen.getByLabelText('Начало периода')
+    const endInput = screen.getByLabelText('Конец периода')
+    expect(startInput).not.toHaveAttribute('min')
+    expect(endInput).not.toHaveAttribute('min')
+
+    fireEvent.change(startInput, { target: { value: '2025-01-01' } })
+
+    expect(startInput).toHaveValue('2025-01-01')
+    expect(endInput).toHaveValue('2025-12-31')
+    expect(container.querySelectorAll('.habit-trend__day')).toHaveLength(365)
+
+    fireEvent.change(endInput, { target: { value: '2025-01-31' } })
+
+    expect(startInput).toHaveValue('2025-01-01')
+    expect(endInput).toHaveValue('2025-01-31')
+    expect(container.querySelectorAll('.habit-trend__day')).toHaveLength(31)
+    expect(container.querySelector('.habit-trend__summary')).toHaveTextContent(/31 день/)
   })
 })
 

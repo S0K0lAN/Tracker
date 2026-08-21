@@ -5,7 +5,7 @@ import type { Task } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import type { StorageAdapter } from '../core/storage/StorageAdapter'
 import type { AppState } from '../domain/models'
-import { AppProvider } from '../state/AppContext'
+import { AppProvider, useApp } from '../state/AppContext'
 import { TaskEditor } from './TaskEditor'
 import {
   getTaskDraftStorageKey,
@@ -85,6 +85,16 @@ async function renderEditor(
   return onClose
 }
 
+function ProjectRemovalHarness({ onClose }: { onClose: () => void }) {
+  const { removeProject } = useApp()
+  return (
+    <>
+      <button data-testid="remove-project-during-edit" onClick={() => removeProject('work')}>Удалить проект</button>
+      <TaskEditor defaults={{ projectId: 'work' }} onClose={onClose} />
+    </>
+  )
+}
+
 describe('TaskEditor defaults and date validation', () => {
   it('uses and persists a contextual project for a new task', async () => {
     const user = userEvent.setup()
@@ -98,6 +108,117 @@ describe('TaskEditor defaults and date validation', () => {
     await waitFor(() => {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
       expect(saved.tasks.find((item: Task) => item.title === 'Задача из проекта')?.projectId).toBe('work')
+    })
+  })
+
+  it('inherits the selected project threshold, updates it on project switch and saves no override', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    state.projects.find((project) => project.id === 'work')!.urgencyThresholdHours = 24
+    state.projects.find((project) => project.id === 'personal')!.urgencyThresholdHours = 168
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    const onClose = await renderEditor(undefined, { projectId: 'work' })
+    const threshold = screen.getByRole('combobox', { name: 'Порог срочности' })
+
+    await waitFor(() => expect(threshold).toHaveTextContent('Из проекта · 1 день'))
+    expect(screen.getByText('Эффективный порог: 1 день до дедлайна')).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox', { name: 'Проект' }))
+    await user.click(screen.getByRole('option', { name: /Личное/ }))
+
+    expect(threshold).toHaveTextContent('Из проекта · 7 дней')
+    expect(screen.getByText('Эффективный порог: 7 дней до дедлайна')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Название'), 'Наследуемая срочность')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const created = saved.tasks.find((item: Task) => item.title === 'Наследуемая срочность')
+      expect(created.projectId).toBe('personal')
+      expect(created).not.toHaveProperty('urgencyThresholdOverrideHours')
+    })
+  })
+
+  it('saves an explicit preset as a task override', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    state.projects.find((project) => project.id === 'work')!.urgencyThresholdHours = 24
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    const onClose = await renderEditor(undefined, { projectId: 'work' })
+    const threshold = screen.getByRole('combobox', { name: 'Порог срочности' })
+    await waitFor(() => expect(threshold).toHaveTextContent('Из проекта · 1 день'))
+
+    await user.click(threshold)
+    await user.click(screen.getByRole('option', { name: /^3 дня/ }))
+    expect(threshold).toHaveTextContent('3 дня')
+    expect(threshold).toHaveTextContent('Рекомендуемое значение')
+    await user.type(screen.getByLabelText('Название'), 'Собственный порог')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      expect(saved.tasks.find((item: Task) => item.title === 'Собственный порог')?.urgencyThresholdOverrideHours).toBe(72)
+    })
+  })
+
+  it('lets an existing task return from an individual threshold to project inheritance', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    const project = state.projects.find((item) => item.id === 'work')!
+    project.name = 'Работа с порогом'
+    project.urgencyThresholdHours = 24
+    const task = {
+      ...state.tasks.find((item) => item.projectId === 'work')!,
+      urgencyThresholdOverrideHours: 168,
+    }
+    state.tasks = state.tasks.map((item) => item.id === task.id ? task : item)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    const onClose = await renderEditor(task)
+    const threshold = screen.getByRole('combobox', { name: 'Порог срочности' })
+
+    expect(threshold).toHaveTextContent('7 дней')
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveTextContent('Работа с порогом'))
+    await user.click(threshold)
+    await user.click(screen.getByRole('option', { name: /^Из проекта · 1 день/ }))
+    expect(threshold).toHaveTextContent('Из проекта · 1 день')
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      expect(saved.tasks.find((item: Task) => item.id === task.id)).not.toHaveProperty('urgencyThresholdOverrideHours')
+    })
+  })
+
+  it('moves an open draft to the inbox and preserves its inherited threshold if the project disappears', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    state.projects.find((project) => project.id === 'work')!.urgencyThresholdHours = 24
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    const onClose = vi.fn()
+    render(
+      <AppProvider>
+        <ProjectRemovalHarness onClose={onClose} />
+      </AppProvider>,
+    )
+    await screen.findByRole('dialog', { name: 'Что нужно сделать?' })
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveTextContent('Работа'))
+
+    fireEvent.click(screen.getByTestId('remove-project-during-edit'))
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveTextContent('Без проекта'))
+    expect(screen.getByRole('combobox', { name: 'Порог срочности' })).toHaveTextContent('1 день')
+    expect(screen.getByText(/прежний порог срочности сохранён/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Название'), 'Черновик удалённого проекта')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const created = saved.tasks.find((item: Task) => item.title === 'Черновик удалённого проекта')
+      expect(created.projectId).toBe('inbox')
+      expect(created.urgencyThresholdOverrideHours).toBe(24)
     })
   })
 
@@ -125,7 +246,7 @@ const recoveryData: TaskDraftData = {
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
   importance: 'high',
-  urgencyThresholdHours: 24,
+  urgencyThresholdOverrideHours: 24,
   urgencyOverride: 'high',
   tags: 'работа, восстановление',
   subtasks: [{ id: 'draft-subtask', title: 'Проверить цифры', completed: false }],
@@ -385,7 +506,7 @@ describe('TaskEditor recovery journal', () => {
       startAt: '',
       deadline: '',
       importance: 'low',
-      urgencyThresholdHours: createSeedState().settings.defaultUrgencyThresholdHours,
+      urgencyThresholdOverrideHours: '',
       urgencyOverride: '',
       tags: '',
       subtasks: [],
@@ -411,7 +532,7 @@ describe('TaskEditor recovery journal', () => {
       startAt: '',
       deadline: '',
       importance: 'low',
-      urgencyThresholdHours: createSeedState().settings.defaultUrgencyThresholdHours,
+      urgencyThresholdOverrideHours: '',
       urgencyOverride: '',
       tags: '',
       subtasks: [],

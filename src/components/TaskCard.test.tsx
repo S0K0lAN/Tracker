@@ -38,6 +38,30 @@ describe('TaskCard safety and focus', () => {
     expect(formatTaskDate('not-a-date')).toBe('Некорректная дата')
   })
 
+  it('renders urgency from the task project threshold', async () => {
+    const state = createSeedState()
+    const base = state.tasks.find((item) => item.id === 'task-plan')!
+    const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    state.projects = state.projects.map((project) => ({
+      ...project,
+      urgencyThresholdHours: project.id === 'work' ? 48 : project.id === 'personal' ? 12 : project.urgencyThresholdHours,
+    }))
+    state.tasks = [
+      { ...base, id: 'card-urgent', title: 'Карточка срочная', projectId: 'work', deadline, urgencyThresholdOverrideHours: undefined, urgencyOverride: undefined },
+      { ...base, id: 'card-calm', title: 'Карточка несрочная', projectId: 'personal', deadline, urgencyThresholdOverrideHours: undefined, urgencyOverride: undefined },
+    ]
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+
+    renderInbox()
+
+    const urgentCard = (await screen.findByText('Карточка срочная')).closest('.task-card')
+    const calmCard = screen.getByText('Карточка несрочная').closest('.task-card')
+    expect(urgentCard).not.toBeNull()
+    expect(calmCard).not.toBeNull()
+    expect(within(urgentCard as HTMLElement).getByText('Срочно')).toBeInTheDocument()
+    expect(within(calmCard as HTMLElement).getByText('Не срочно')).toBeInTheDocument()
+  })
+
   it('moves focus to the Pomodoro primary action after starting it from the menu', async () => {
     const user = userEvent.setup()
     renderInbox()

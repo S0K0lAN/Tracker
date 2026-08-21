@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Attachment, Task } from '../domain/models'
-import { getTaskTiming } from '../domain/models'
+import { getEffectiveUrgencyThreshold, getTaskTiming } from '../domain/models'
 import { useApp } from '../state/AppContext'
 import { AttachmentViewer } from './AttachmentViewer'
 import { setInert, trapTabKey } from './focusTrap'
@@ -60,7 +60,9 @@ export function TaskDetails({
   const returnFocusRef = useRef<HTMLElement | null>(returnFocusTo ?? (document.activeElement as HTMLElement | null))
   const restoreFocusRef = useRef(true)
   const project = state.projects.find((item) => item.id === task.projectId)
-  const timing = getTaskTiming(task)
+  const timing = getTaskTiming(task, new Date(), project?.urgencyThresholdHours)
+  const effectiveUrgencyThreshold = getEffectiveUrgencyThreshold(task, project?.urgencyThresholdHours)
+  const hasIndividualUrgencyThreshold = task.urgencyThresholdOverrideHours !== undefined
   const completedSubtasks = task.subtasks.filter((item) => item.completed).length
   const startAt = formatDateTime(task.startAt)
   const deadline = formatDateTime(task.deadline)
@@ -208,7 +210,16 @@ export function TaskDetails({
             </div>
             <div>
               <dt><Clock3 size={16} /> Порог срочности</dt>
-              <dd>{task.urgencyThresholdHours} ч до дедлайна</dd>
+              <dd>
+                {effectiveUrgencyThreshold} ч до дедлайна
+                <small>
+                  {hasIndividualUrgencyThreshold
+                    ? 'Индивидуальный для задачи'
+                    : project
+                      ? `Наследуется из проекта «${project.name}»`
+                      : 'Системное значение'}
+                </small>
+              </dd>
             </div>
           </dl>
 
