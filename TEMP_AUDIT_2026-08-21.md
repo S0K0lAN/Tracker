@@ -307,3 +307,8 @@ complexity budgets.
 Issues #27, #30, #33, #35 и #39 получили комментарии с test evidence и закрыты
 как выполненные. Future/needs-thought/conflict issues остались открыты и не
 изменялись; предложения по ним находятся в разделе 3.
+
+Оставшиеся подтверждённые замечания опубликованы отдельным commit
+[`080bb13`](https://github.com/S0K0lAN/Tracker/commit/080bb132c157397a7de3f246d3d3b5542ecd8d6b)
+в [draft PR #50](https://github.com/S0K0lAN/Tracker/pull/50). PR не закрывает и
+не меняет future/needs-thought/conflict issues.
