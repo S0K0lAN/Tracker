@@ -9,12 +9,18 @@ const CORRUPT_KEY = 'focus-flow.state.v1.corrupt'
 const BACKUP_CORRUPT_KEY = 'focus-flow.state.v1.backup.corrupt'
 const IMPORT_CORRUPT_KEY = 'focus-flow.state.v1.import-backup.corrupt'
 
-function quarantine(raw: string, key: string) {
+function quarantine(raw: string, key: string): boolean {
   try {
     localStorage.setItem(key, raw)
-  } catch (error) {
-    throw new Error('Не удалось сохранить повреждённый snapshot для ручного восстановления', { cause: error })
+    return true
+  } catch {
+    // Quarantine is diagnostic and must never block recovery from a valid backup.
+    return false
   }
+}
+
+function quarantineFailedError() {
+  return new Error('Не удалось сохранить повреждённый snapshot для ручного восстановления')
 }
 
 export class LocalStorageAdapter implements StorageAdapter {
@@ -25,19 +31,29 @@ export class LocalStorageAdapter implements StorageAdapter {
       return parseStoredAppState(JSON.parse(raw))
     } catch (primaryError) {
       if (primaryError instanceof UnsupportedSchemaVersionError) throw primaryError
-      quarantine(raw, CORRUPT_KEY)
+      const primaryQuarantined = quarantine(raw, CORRUPT_KEY)
       const backup = localStorage.getItem(BACKUP_KEY)
       if (backup) {
+        let recovered: AppState
         try {
-          const recovered = parseStoredAppState(JSON.parse(backup))
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(recovered))
-          return recovered
+          recovered = parseStoredAppState(JSON.parse(backup))
         } catch (backupError) {
           if (backupError instanceof UnsupportedSchemaVersionError) throw backupError
-          quarantine(backup, BACKUP_CORRUPT_KEY)
+          const backupQuarantined = quarantine(backup, BACKUP_CORRUPT_KEY)
+          if (!primaryQuarantined || !backupQuarantined) throw quarantineFailedError()
           localStorage.removeItem(BACKUP_KEY)
+          localStorage.removeItem(STORAGE_KEY)
+          return null
         }
+
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(recovered))
+        } catch (writeError) {
+          throw new Error('Не удалось восстановить snapshot из резервной копии', { cause: writeError })
+        }
+        return recovered
       }
+      if (!primaryQuarantined) throw quarantineFailedError()
       localStorage.removeItem(STORAGE_KEY)
       return null
     }
@@ -50,7 +66,7 @@ export class LocalStorageAdapter implements StorageAdapter {
       return parseStoredAppState(JSON.parse(raw))
     } catch (error) {
       if (error instanceof UnsupportedSchemaVersionError) throw error
-      quarantine(raw, IMPORT_CORRUPT_KEY)
+      if (!quarantine(raw, IMPORT_CORRUPT_KEY)) throw quarantineFailedError()
       localStorage.removeItem(IMPORT_BACKUP_KEY)
       return null
     }

@@ -35,6 +35,7 @@ import { PomodoroTimer } from './components/PomodoroTimer'
 import { Toast } from './components/Toast'
 import { setInert, trapTabKey } from './components/focusTrap'
 import { useApp } from './state/AppContext'
+import { useNow } from './hooks/useNow'
 
 const navigation = [
   { to: '/today', label: 'Сегодня', icon: SunMedium },
@@ -55,11 +56,11 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { navigate } = useRouter()
   const asideRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-  const [drawerMode, setDrawerMode] = useState(() => window.matchMedia?.('(max-width: 1100px)').matches ?? false)
+  const [drawerMode, setDrawerMode] = useState(() => window.matchMedia?.('(max-width: 820px)').matches ?? false)
   const activeCount = state.tasks.filter((task) => task.status === 'active').length
 
   useEffect(() => {
-    const media = window.matchMedia?.('(max-width: 1100px)')
+    const media = window.matchMedia?.('(max-width: 820px)')
     if (!media) return
     const update = () => setDrawerMode(media.matches)
     update()
@@ -147,20 +148,21 @@ function NotFoundPage() {
 }
 
 export function App() {
+  useNow()
   const [viewTaskId, setViewTaskId] = useState<string>()
   const taskOpenerRef = useRef<HTMLElement | null>(null)
   const [editorTask, setEditorTask] = useState<Task | null | undefined>(undefined)
-  const [editorDefaults, setEditorDefaults] = useState<Partial<Pick<Task, 'startAt' | 'deadline'>> | undefined>()
+  const [editorDefaults, setEditorDefaults] = useState<Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>> | undefined>()
   const [menuOpen, setMenuOpen] = useState(false)
   const { path, navigate } = useRouter()
   const { state, completionNotice, undoTaskCompletion, dismissCompletionNotice } = useApp()
   const viewedTask = state.tasks.find((task) => task.id === viewTaskId && task.status !== 'deleted' && task.status !== 'archived')
-  const openEditor = (task: Task | null, defaults?: Partial<Pick<Task, 'startAt' | 'deadline'>>) => {
+  const openEditor = (task: Task | null, defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>) => {
     if (!task) setViewTaskId(undefined)
     setEditorDefaults(task ? undefined : defaults)
     setEditorTask(task)
   }
-  const openTask = (task: Task | null, defaults?: Partial<Pick<Task, 'startAt' | 'deadline'>>) => {
+  const openTask = (task: Task | null, defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>) => {
     if (task) {
       taskOpenerRef.current = document.activeElement as HTMLElement | null
       setViewTaskId(task.id)

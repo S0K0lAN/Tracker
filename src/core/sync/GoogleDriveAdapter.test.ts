@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { GoogleDriveAdapter } from './GoogleDriveAdapter'
+import { GoogleDriveAdapter, MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES } from './GoogleDriveAdapter'
 import { SyncProviderError } from './SyncAdapter'
 
 const remoteFile = {
@@ -39,6 +39,66 @@ describe('GoogleDriveAdapter', () => {
     expect(fetcher.mock.calls[0][0]).toContain('/drive/v3/files/remote-id?alt=media')
   })
 
+  it('rejects oversized Drive metadata before downloading the body', async () => {
+    const fetcher = vi.fn()
+    const adapter = new GoogleDriveAdapter('token', fetcher)
+
+    await expect(adapter.download({
+      id: 'remote-id',
+      revision: '7',
+      size: MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES + 1,
+    })).rejects.toMatchObject({ code: 'invalid-remote' })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('rejects an oversized Content-Length before reading or parsing the body', async () => {
+    const text = vi.fn().mockResolvedValue('{}')
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'Content-Length': String(MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES + 1) }),
+      body: null,
+      text,
+    } as unknown as Response
+    const fetcher = vi.fn().mockResolvedValue(response)
+    const adapter = new GoogleDriveAdapter('token', fetcher)
+
+    await expect(adapter.download({ id: 'remote-id', revision: '7' })).rejects.toMatchObject({
+      code: 'invalid-remote',
+    })
+    expect(text).not.toHaveBeenCalled()
+  })
+
+  it('bounds streamed response bytes before attempting JSON parsing', async () => {
+    const oversizedBody = new Uint8Array(MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES + 1)
+    const fetcher = vi.fn().mockResolvedValue(new Response(oversizedBody, { status: 200 }))
+    const adapter = new GoogleDriveAdapter('token', fetcher)
+
+    await expect(adapter.download({ id: 'remote-id', revision: '7' })).rejects.toMatchObject({
+      code: 'invalid-remote',
+    })
+  })
+
+  it('supports a text-only Response fallback while still validating the payload', async () => {
+    const payload = { format: 'focus-flow', formatVersion: 1, data: { tasks: [] } }
+    const text = vi.fn().mockResolvedValue(JSON.stringify(payload))
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: null,
+      text,
+    } as unknown as Response
+    const fetcher = vi.fn().mockResolvedValue(response)
+    const adapter = new GoogleDriveAdapter('token', fetcher)
+
+    await expect(adapter.download({ id: 'remote-id', revision: '7' })).resolves.toEqual({
+      head: { id: 'remote-id', revision: '7' },
+      payload,
+    })
+    expect(text).toHaveBeenCalledOnce()
+  })
+
   it('creates a JSON snapshot in appDataFolder when no remote file exists', async () => {
     const fetcher = vi
       .fn()
@@ -50,6 +110,34 @@ describe('GoogleDriveAdapter', () => {
     expect(fetcher.mock.calls[1][0]).toContain('upload/drive/v3/files?uploadType=multipart')
     expect(fetcher.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'POST' }))
     expect(String(fetcher.mock.calls[1][1]?.body)).toContain('appDataFolder')
+  })
+
+  it('accepts a serialized upload envelope exactly at the 10 MiB UTF-8 boundary', async () => {
+    const payload = 'я'.repeat((MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES - 2) / 2)
+    expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBe(MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES)
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(remoteFile), { status: 200 }))
+    const adapter = new GoogleDriveAdapter('token', fetcher)
+
+    await expect(adapter.upload(payload)).resolves.toMatchObject({ id: 'remote-id', revision: '7' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    ['create', undefined],
+    ['update', '7'],
+  ] as const)('rejects an oversized multibyte %s upload before any network request', async (_operation, expectedRevision) => {
+    const payload = 'я'.repeat(MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES / 2)
+    expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBe(MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES + 2)
+    const fetcher = vi.fn()
+    const adapter = new GoogleDriveAdapter('token', fetcher)
+
+    await expect(adapter.upload(payload, { expectedRevision })).rejects.toMatchObject({
+      code: 'invalid-remote',
+    })
+    expect(fetcher).not.toHaveBeenCalled()
   })
 
   it('refuses to create when a remote snapshot appeared after the absence check', async () => {

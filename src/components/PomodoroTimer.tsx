@@ -15,20 +15,22 @@ export function PomodoroTimer() {
   const [clock, setClock] = useState(Date.now())
   const timer = state.pomodoro
   const task = state.tasks.find((item) => item.id === timer.taskId)
+  const runningSinceAt = timer.runningSince ? Date.parse(timer.runningSince) : Number.NaN
+  const running = Number.isFinite(runningSinceAt)
   const remaining = useMemo(() => {
-    if (!timer.runningSince) return timer.remainingSeconds
-    const elapsed = Math.floor((clock - new Date(timer.runningSince).getTime()) / 1000)
+    if (!running) return timer.remainingSeconds
+    const elapsed = Math.max(0, Math.floor((clock - runningSinceAt) / 1000))
     return Math.max(0, timer.remainingSeconds - elapsed)
-  }, [clock, timer.remainingSeconds, timer.runningSince])
+  }, [clock, running, runningSinceAt, timer.remainingSeconds])
 
   useEffect(() => {
-    if (!timer.runningSince) return
+    if (!running) return
     const interval = window.setInterval(() => setClock(Date.now()), 500)
     return () => window.clearInterval(interval)
-  }, [timer.runningSince])
+  }, [running])
 
   useEffect(() => {
-    if (!timer.taskId || !timer.runningSince || remaining > 0) return
+    if (!timer.taskId || !running || remaining > 0) return
     if (timer.mode === 'focus') {
       addFocusMinutes(timer.taskId, Math.round(timer.durationSeconds / 60))
       const completedFocusSessions = timer.completedFocusSessions + 1
@@ -48,7 +50,7 @@ export function PomodoroTimer() {
         runningSince: undefined,
       })
     }
-  }, [addFocusMinutes, remaining, timer, updatePomodoro])
+  }, [addFocusMinutes, remaining, running, timer, updatePomodoro])
 
   if (!task || timer.taskId === undefined) return null
 
@@ -72,7 +74,7 @@ export function PomodoroTimer() {
   const seconds = (remaining % 60).toString().padStart(2, '0')
 
   return (
-    <aside className="pomodoro-dock" aria-label="Таймер фокуса" aria-live="polite">
+    <aside className="pomodoro-dock" aria-label="Таймер фокуса">
       <div className="pomodoro-dock__progress" style={{ transform: `scaleX(${progress})` }} />
       <header>
         <span className="pomodoro-dock__icon">{timer.mode === 'focus' ? <Timer size={17} /> : <Coffee size={17} />}</span>
@@ -80,14 +82,14 @@ export function PomodoroTimer() {
           <small>{timer.mode === 'focus' ? 'Фокус' : timer.mode === 'short-break' ? 'Короткий перерыв' : 'Длинный перерыв'}</small>
           <strong title={task.title}>{task.title}</strong>
         </div>
-        <button type="button" className="icon-button" onClick={close} aria-label="Закрыть помодоро"><X size={16} /></button>
+        <button type="button" className="icon-button" onClick={close} aria-label="Закрыть таймер"><X size={16} /></button>
       </header>
       <div className="pomodoro-dock__body">
         <time dateTime={`PT${remaining}S`}>{minutes}:{seconds}</time>
         <div className="pomodoro-dock__actions">
           <button type="button" className="icon-button" onClick={reset} aria-label="Сбросить таймер"><RotateCcw size={16} /></button>
-          <button type="button" className="pomodoro-dock__main" onClick={timer.runningSince ? pause : start} aria-label={timer.runningSince ? 'Поставить таймер на паузу' : 'Запустить таймер'}>
-            {timer.runningSince ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+          <button type="button" className="pomodoro-dock__main" onClick={running ? pause : start} aria-label={running ? 'Поставить таймер на паузу' : 'Запустить таймер'}>
+            {running ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
           </button>
         </div>
       </div>

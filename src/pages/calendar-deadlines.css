@@ -36,6 +36,22 @@
   line-height: 12px;
 }
 
+.week-day__deadlines .week-day__deadlines-more {
+  min-height: 24px;
+  justify-content: flex-start;
+  padding: 0 3px;
+  color: var(--danger);
+  background: transparent;
+  border: 0;
+  font-size: calc(10px * var(--app-font-scale));
+  line-height: 12px;
+}
+
+.week-day__deadlines .week-day__deadlines-more:hover {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+}
+
 .month-day .month-day__deadline {
   color: var(--accent-strong);
   background: var(--accent-soft);
@@ -70,4 +86,73 @@
 
 .week-day__deadlines-empty {
   min-height: 1px;
+}
+
+.month-calendar__week {
+  --month-range-top: 40px;
+
+  position: relative;
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.month-calendar__week > .month-day {
+  min-width: 0;
+}
+
+.month-day__range-space {
+  width: 100%;
+  min-height: calc(var(--month-range-lanes) * 25px - 3px);
+  flex: 0 0 calc(var(--month-range-lanes) * 25px - 3px);
+  pointer-events: none;
+}
+
+.month-calendar__ranges {
+  position: absolute;
+  z-index: 3;
+  inset: var(--month-range-top) 0 auto;
+  min-width: 0;
+  display: grid;
+  gap: 3px 0;
+  pointer-events: none;
+}
+
+.month-calendar__range {
+  max-width: calc(100% - 6px);
+  margin-inline: 3px;
+  pointer-events: auto;
+}
+
+.month-day .month-day__deadline-more {
+  min-height: 24px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger-soft) 58%, transparent);
+}
+
+@media (max-width: 820px) {
+  .month-calendar__week {
+    --month-range-top: 36px;
+  }
+}
+
+@media (max-width: 700px) {
+  .month-calendar__week {
+    --month-range-top: 29px;
+  }
+
+  .month-calendar__range {
+    max-width: calc(100% - 2px);
+    margin-inline: 1px;
+    padding-inline: 3px;
+    font-size: min(calc(9px * var(--app-font-scale)), 10px);
+  }
+
+  .week-day__deadlines .week-day__deadlines-more {
+    min-height: 24px;
+    padding-inline: 1px;
+    font-size: calc(9px * var(--app-font-scale));
+  }
 }

@@ -6,16 +6,54 @@ import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 import { TaskEditor } from './TaskEditor'
 
-async function renderEditor(task?: Task) {
+const STORAGE_KEY = 'focus-flow.state.v1'
+
+async function renderEditor(
+  task?: Task,
+  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>,
+) {
   const onClose = vi.fn()
   render(
     <AppProvider>
-      <TaskEditor task={task} onClose={onClose} />
+      <TaskEditor task={task} defaults={defaults} onClose={onClose} />
     </AppProvider>,
   )
   await screen.findByRole('dialog', { name: task?.title ?? 'Что нужно сделать?' })
   return onClose
 }
+
+describe('TaskEditor defaults and date validation', () => {
+  it('uses and persists a contextual project for a new task', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor(undefined, { projectId: 'work' })
+
+    expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveTextContent('Работа')
+    await user.type(screen.getByLabelText('Название'), 'Задача из проекта')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      expect(saved.tasks.find((item: Task) => item.title === 'Задача из проекта')?.projectId).toBe('work')
+    })
+  })
+
+  it('blocks a deadline earlier than the start, announces the error and focuses the deadline', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor()
+    await user.type(screen.getByLabelText('Название'), 'Задача с неверным сроком')
+    await user.type(screen.getByLabelText('Начало'), '21.08.2026, 12:00')
+    await user.tab()
+    await user.type(screen.getByLabelText('Дедлайн'), '21.08.2026, 11:00')
+    await user.tab()
+
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Дедлайн не может быть раньше начала')
+    expect(screen.getByLabelText('Дедлайн')).toHaveFocus()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
 
 async function previewAndApply(transcript: string) {
   const user = userEvent.setup()

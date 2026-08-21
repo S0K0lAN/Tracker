@@ -45,7 +45,7 @@ Focus Flow — персональный local-first таск-трекер для
   настройки расписания/цвета ещё нет;
 - темы, акцент, семейство и масштаб шрифта, плотность, reduced motion,
   встроенные/пользовательский фон и синхронизация;
-- schema v3, миграция schema v2 и backup/recovery localStorage;
+- schema v4, миграции schema v2/v3 и backup/recovery localStorage;
 - localStorage-адаптер с import-backup/restore;
 - переносимый JSON-export/import с preview, ограничением размера и отменой через import-backup;
 - OAuth Google Identity Services, скачивание/загрузка Drive, ручная и автоматическая синхронизация;
@@ -255,7 +255,7 @@ import-backup и повторно отправлять правку, сдела�
 - Поднять portal `SelectMenu` выше modal backdrop и проверить pointer/keyboard
   сценарии dropdown внутри TaskEditor.
 - Вынести state reducer в application-команды и нормализованные репозитории.
-- Расширить contract-тесты schema v3, миграции исторической schema v2 и
+- Расширить contract-тесты schema v4, миграции исторических schema v2/v3 и
   recovery повреждённого localStorage.
 - Сделать undo после удаления и завершения.
 - Добавить drag-and-drop задач с равноценным клавиатурным действием.

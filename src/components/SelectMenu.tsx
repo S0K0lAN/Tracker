@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown } from 'lucide-react'
+import { getFocusable } from './focusTrap'
 import './select-menu.css'
 
 export interface SelectMenuOption<T extends string | number> {
@@ -80,12 +81,34 @@ export function SelectMenu<T extends string | number>({
       setQuery('')
       setActiveIndex(Math.max(0, options.findIndex((option) => option.value === value)))
     }
-  }, [open, options, value])
+  }, [open, value])
+
+  useEffect(() => {
+    setActiveIndex((current) => Math.min(current, Math.max(0, visibleOptions.length - 1)))
+  }, [visibleOptions.length])
 
   const select = (option: SelectMenuOption<T>) => {
     onChange(option.value)
     setOpen(false)
     requestAnimationFrame(() => triggerRef.current?.focus())
+  }
+
+  const closeAndFocusAdjacent = (backward: boolean) => {
+    const trigger = triggerRef.current
+    if (!trigger) {
+      setOpen(false)
+      return
+    }
+    const scope = trigger.closest<HTMLElement>('[role="dialog"]') ?? document.body
+    const focusable = getFocusable(scope).filter((element) => !popoverRef.current?.contains(element))
+    const triggerIndex = focusable.indexOf(trigger)
+    const target = triggerIndex < 0
+      ? trigger
+      : backward
+        ? focusable[triggerIndex - 1] ?? focusable[focusable.length - 1]
+        : focusable[triggerIndex + 1] ?? focusable[0]
+    setOpen(false)
+    requestAnimationFrame(() => target?.focus())
   }
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -128,11 +151,12 @@ export function SelectMenu<T extends string | number>({
         type="button"
         ref={triggerRef}
         className="select-menu__trigger"
-        role="combobox"
+        role={searchable && open ? undefined : 'combobox'}
+        aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
         aria-label={label}
-        aria-activedescendant={open ? `${listboxId}-${activeIndex}` : undefined}
+        aria-activedescendant={!searchable && open && visibleOptions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={onKeyDown}
       >
@@ -160,7 +184,9 @@ export function SelectMenu<T extends string | number>({
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Tab') {
-                  setOpen(false)
+                  event.preventDefault()
+                  event.stopPropagation()
+                  closeAndFocusAdjacent(event.shiftKey)
                   return
                 }
                 if (event.key === 'Escape') {
@@ -182,6 +208,11 @@ export function SelectMenu<T extends string | number>({
               }}
               placeholder={`Найти: ${label.toLowerCase()}`}
               aria-label={`Поиск: ${label.toLowerCase()}`}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="true"
+              aria-controls={listboxId}
+              aria-activedescendant={visibleOptions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
             />
           )}
           <div className="select-menu__options" id={listboxId} role="listbox" aria-label={label}>

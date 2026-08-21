@@ -391,7 +391,10 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
     root.dataset.compact = String(state.settings.compactMode)
     root.dataset.reduceMotion = String(state.settings.reduceMotion)
     root.dataset.background = state.settings.backgroundPreset
-    root.style.setProperty('--background-dim', String(state.settings.backgroundDim / 100))
+    const backgroundDim = state.settings.backgroundPreset === 'custom'
+      ? Math.max(65, state.settings.backgroundDim)
+      : state.settings.backgroundDim
+    root.style.setProperty('--background-dim', String(backgroundDim / 100))
     root.style.setProperty('--app-font-family', FONT_FAMILY_STACKS[state.settings.fontFamily])
     root.style.setProperty('--app-font-scale', String(state.settings.fontScale / 100))
     root.style.setProperty(
@@ -1155,17 +1158,30 @@ export function AppProvider({ children, syncRegistry }: AppProviderProps) {
         }
       },
       resetDemo: async () => {
+        if (localDataOperationRef.current
+          || syncInFlightRef.current
+          || stateRef.current.sync.status === 'connecting'
+          || stateRef.current.sync.status === 'syncing') {
+          throw new Error('Дождитесь завершения синхронизации перед сбросом')
+        }
+        localDataOperationRef.current = true
+        const seed = createSeedState()
         syncEpochRef.current += 1
         syncQueuedRef.current = false
-        await releaseRuntime()
-        await storage.clear()
-        const seed = createSeedState()
-        stateRef.current = seed
-        conflictCandidateRef.current = undefined
-        setSyncConflict(undefined)
-        setImportBackupAvailable(false)
-        setStorageWriteError(undefined)
-        dispatch({ type: 'replace', state: seed })
+        try {
+          await releaseRuntime()
+          await storage.replaceWithBackup(seed)
+          skipNextSaveRef.current = true
+          observedHashRef.current = seed.settings.autoSync ? syncableHash(seed) : undefined
+          stateRef.current = seed
+          conflictCandidateRef.current = undefined
+          setSyncConflict(undefined)
+          setImportBackupAvailable(true)
+          setStorageWriteError(undefined)
+          dispatch({ type: 'replace', state: seed })
+        } finally {
+          localDataOperationRef.current = false
+        }
       },
     }),
     [activeSyncIntent, commitSyncState, completionNotice, connectSyncProvider, disconnectSyncProvider, importBackupAvailable, ready, releaseRuntime, resolveSyncConflict, runSync, selectSyncProvider, state, syncConflict, updateSyncProviderConfig],

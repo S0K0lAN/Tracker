@@ -1,12 +1,15 @@
+import { DEFAULT_URGENCY_THRESHOLD_HOURS } from './models'
 import type { AppState, Habit, Project, SavedFilter, Task, TaskStatus } from './models'
 import { createSeedState } from './seed'
 import { attachmentDataUrlMimeType, MAX_ATTACHMENT_BYTES, safeAttachmentDataUrl } from './attachments'
 import { safeCustomBackgroundDataUrl } from './backgrounds'
 
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 4
 
 const FONT_FAMILIES = ['system', 'humanist', 'readable'] as const
 const FONT_SCALES = [90, 100, 110, 120] as const
+const DEFAULT_ENTITY_COLOR = '#778c70'
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i
 
 export class UnsupportedSchemaVersionError extends Error {
   constructor(readonly schemaVersion: number) {
@@ -42,18 +45,19 @@ export function assertSnapshotStateShape(
   options: SnapshotShapeOptions = {},
 ): void {
   const strict = schemaVersion >= 2
+  const strictSanitizableValues = schemaVersion >= 4
   const tasks = recordArray(raw, 'tasks', true)
   const projects = recordArray(raw, 'projects', true)
   const habits = recordArray(raw, 'habits', true)
   const savedFilters = recordArray(raw, 'savedFilters', strict)
 
-  tasks.forEach((task, index) => assertTaskShape(task, strict, `tasks[${index}]`))
-  projects.forEach((project, index) => assertProjectShape(project, strict, `projects[${index}]`))
-  habits.forEach((habit, index) => assertHabitShape(habit, strict, `habits[${index}]`))
+  tasks.forEach((task, index) => assertTaskShape(task, strict, strictSanitizableValues, `tasks[${index}]`))
+  projects.forEach((project, index) => assertProjectShape(project, strict, strictSanitizableValues, `projects[${index}]`))
+  habits.forEach((habit, index) => assertHabitShape(habit, strict, strictSanitizableValues, `habits[${index}]`))
   savedFilters.forEach((filter, index) => assertFilterShape(filter, strict, `savedFilters[${index}]`))
 
   const pomodoro = recordField(raw, 'pomodoro', strict)
-  if (pomodoro) assertPomodoroShape(pomodoro, strict, 'pomodoro')
+  if (pomodoro) assertPomodoroShape(pomodoro, strict, strictSanitizableValues, 'pomodoro')
   const settings = recordField(raw, 'settings', true)
   if (settings) {
     assertSettingsShape(
@@ -61,6 +65,7 @@ export function assertSnapshotStateShape(
       strict,
       Boolean(options.requireLocalSettings),
       schemaVersion >= 3,
+      strictSanitizableValues,
       'settings',
     )
   }
@@ -68,14 +73,29 @@ export function assertSnapshotStateShape(
   if (sync) assertSyncShape(sync, strict, 'sync')
 }
 
-function assertTaskShape(task: Record<string, unknown>, strict: boolean, path: string) {
-  for (const key of ['id', 'title', 'description', 'projectId', 'createdAt', 'updatedAt'] as const) {
+function assertTaskShape(
+  task: Record<string, unknown>,
+  strict: boolean,
+  strictSanitizableValues: boolean,
+  path: string,
+) {
+  for (const key of ['id', 'title', 'description', 'projectId'] as const) {
     stringField(task, key, strict, path)
   }
-  for (const key of ['startAt', 'deadline', 'completedAt', 'archivedAt', 'deletedAt'] as const) {
-    stringField(task, key, false, path)
+  for (const key of ['createdAt', 'updatedAt'] as const) {
+    dateStringField(task, key, strict, path, strictSanitizableValues)
   }
-  numberField(task, 'urgencyThresholdHours', strict, path, (value) => value >= 0)
+  for (const key of ['startAt', 'deadline', 'completedAt', 'archivedAt', 'deletedAt'] as const) {
+    dateStringField(task, key, false, path, strictSanitizableValues)
+  }
+  if (strictSanitizableValues
+    && typeof task.startAt === 'string'
+    && typeof task.deadline === 'string'
+    && Date.parse(task.deadline) < Date.parse(task.startAt)
+  ) {
+    throw invalidField(`${path}.deadline`)
+  }
+  numberField(task, 'urgencyThresholdHours', strict, path, (value) => !strictSanitizableValues || value > 0)
   numberField(task, 'focusMinutes', strict, path, (value) => value >= 0)
   enumField(task, 'importance', ['low', 'high'], strict, path)
   enumField(task, 'urgencyOverride', ['low', 'high'], false, path)
@@ -111,17 +131,19 @@ function assertTaskShape(task: Record<string, unknown>, strict: boolean, path: s
   reminders.forEach((reminder, index) => {
     const itemPath = `${path}.reminders[${index}]`
     stringField(reminder, 'id', true, itemPath)
-    stringField(reminder, 'at', true, itemPath)
+    dateStringField(reminder, 'at', true, itemPath, strictSanitizableValues)
   })
 }
 
-function assertProjectShape(project: Record<string, unknown>, strict: boolean, path: string) {
-  for (const key of ['id', 'name', 'color', 'createdAt'] as const) stringField(project, key, strict, path)
+function assertProjectShape(project: Record<string, unknown>, strict: boolean, strictSanitizableValues: boolean, path: string) {
+  for (const key of ['id', 'name', 'createdAt'] as const) stringField(project, key, strict, path)
+  colorField(project, 'color', strict, path, strictSanitizableValues)
   stringField(project, 'description', false, path)
 }
 
-function assertHabitShape(habit: Record<string, unknown>, strict: boolean, path: string) {
-  for (const key of ['id', 'name', 'icon', 'color'] as const) stringField(habit, key, strict, path)
+function assertHabitShape(habit: Record<string, unknown>, strict: boolean, strictSanitizableValues: boolean, path: string) {
+  for (const key of ['id', 'name', 'icon'] as const) stringField(habit, key, strict, path)
+  colorField(habit, 'color', strict, path, strictSanitizableValues)
   stringField(habit, 'description', false, path)
   numberArray(habit, 'targetDays', strict, path, (value) => Number.isInteger(value) && value >= 0 && value <= 6)
   stringArray(habit, 'completions', strict, path)
@@ -137,9 +159,14 @@ function assertFilterShape(filter: Record<string, unknown>, strict: boolean, pat
   enumField(filter, 'status', ['active', 'completed', 'all'], strict, path)
 }
 
-function assertPomodoroShape(pomodoro: Record<string, unknown>, strict: boolean, path: string) {
+function assertPomodoroShape(
+  pomodoro: Record<string, unknown>,
+  strict: boolean,
+  strictSanitizableValues: boolean,
+  path: string,
+) {
   stringField(pomodoro, 'taskId', false, path)
-  stringField(pomodoro, 'runningSince', false, path)
+  dateStringField(pomodoro, 'runningSince', false, path, strictSanitizableValues)
   enumField(pomodoro, 'mode', ['focus', 'short-break', 'long-break'], strict, path)
   for (const key of ['durationSeconds', 'remainingSeconds', 'completedFocusSessions'] as const) {
     numberField(pomodoro, key, strict, path, (value) => value >= 0)
@@ -151,6 +178,7 @@ function assertSettingsShape(
   strict: boolean,
   requireLocal: boolean,
   requireTypography: boolean,
+  strictSanitizableValues: boolean,
   path: string,
 ) {
   enumField(settings, 'theme', ['light', 'dark', 'system'], strict, path)
@@ -161,7 +189,13 @@ function assertSettingsShape(
   enumField(settings, 'inboxSort', ['created-desc', 'deadline-asc', 'importance-desc', 'title-asc'], strict, path)
   enumField(settings, 'backgroundPreset', ['none', 'mist', 'dawn', 'forest', 'custom'], strict, path)
   for (const key of ['compactMode', 'reduceMotion'] as const) booleanField(settings, key, strict, path)
-  numberField(settings, 'defaultUrgencyThresholdHours', strict, path, (value) => value >= 0)
+  numberField(
+    settings,
+    'defaultUrgencyThresholdHours',
+    strict,
+    path,
+    (value) => !strictSanitizableValues || value > 0,
+  )
   numberField(settings, 'backgroundDim', strict, path, (value) => value >= 0 && value <= 100)
   stringField(settings, 'customBackgroundDataUrl', false, path)
   if ('customBackgroundDataUrl' in settings
@@ -210,6 +244,30 @@ function stringField(record: Record<string, unknown>, key: string, required: boo
   const value = record[key]
   if (value === undefined && !required) return
   if (typeof value !== 'string') throw invalidField(`${path}.${key}`)
+}
+
+function dateStringField(
+  record: Record<string, unknown>,
+  key: string,
+  required: boolean,
+  path: string,
+  requireParseable = true,
+) {
+  const value = record[key]
+  if (value === undefined && !required) return
+  if (typeof value !== 'string' || (requireParseable && !isParseableDate(value))) throw invalidField(`${path}.${key}`)
+}
+
+function colorField(
+  record: Record<string, unknown>,
+  key: string,
+  required: boolean,
+  path: string,
+  requireSafeColor = true,
+) {
+  const value = record[key]
+  if (value === undefined && !required) return
+  if (typeof value !== 'string' || (requireSafeColor && !isSafeHexColor(value))) throw invalidField(`${path}.${key}`)
 }
 
 function booleanField(record: Record<string, unknown>, key: string, required: boolean, path: string) {
@@ -318,10 +376,7 @@ export function normalizeAppState(input: unknown): AppState {
     projects: Array.isArray(raw.projects) ? raw.projects.map((project) => normalizeProject(project, now)) : seed.projects,
     habits: Array.isArray(raw.habits) ? raw.habits.map(normalizeHabit) : seed.habits,
     savedFilters: Array.isArray(raw.savedFilters) ? raw.savedFilters.map((filter) => normalizeFilter(filter, now)) : [],
-    pomodoro: {
-      ...seed.pomodoro,
-      ...(raw.pomodoro ?? {}),
-    },
+    pomodoro: normalizePomodoro(raw.pomodoro, seed.pomodoro),
     settings: (() => {
       const settings: AppState['settings'] & { googleDriveClientId?: string } = {
         ...seed.settings,
@@ -332,6 +387,10 @@ export function normalizeAppState(input: unknown): AppState {
         fontScale: FONT_SCALES.includes(rawSettings?.fontScale as typeof FONT_SCALES[number])
           ? rawSettings?.fontScale as AppState['settings']['fontScale']
           : seed.settings.fontScale,
+        defaultUrgencyThresholdHours: positiveNumber(
+          rawSettings?.defaultUrgencyThresholdHours,
+          seed.settings.defaultUrgencyThresholdHours,
+        ),
         syncProvider: providerId,
         syncProviderConfigs,
         inboxView: rawSettings?.inboxView === 'board' ? 'board' : 'list',
@@ -366,6 +425,21 @@ function normalizeProviderConfigs(value: unknown): Record<string, Record<string,
   }))
 }
 
+function normalizePomodoro(value: unknown, fallback: AppState['pomodoro']): AppState['pomodoro'] {
+  const raw = isRecord(value) ? value : {}
+  const mode = raw.mode === 'short-break' || raw.mode === 'long-break' ? raw.mode : 'focus'
+  return {
+    ...fallback,
+    ...raw,
+    taskId: typeof raw.taskId === 'string' ? raw.taskId : undefined,
+    mode,
+    durationSeconds: nonNegativeNumber(raw.durationSeconds, fallback.durationSeconds),
+    remainingSeconds: nonNegativeNumber(raw.remainingSeconds, fallback.remainingSeconds),
+    runningSince: normalizedDate(raw.runningSince),
+    completedFocusSessions: nonNegativeNumber(raw.completedFocusSessions, fallback.completedFocusSessions),
+  }
+}
+
 function isSensitiveConfigKey(key: string) {
   return /(access.?token|refresh.?token|auth.?token|id.?token|(^|[-_])token|secret|password|api.?key|credential|bearer|authorization|private.?key)/i.test(key)
 }
@@ -373,23 +447,44 @@ function isSensitiveConfigKey(key: string) {
 function normalizeTask(value: Partial<Task>, now: string): Task {
   const allowedStatuses: TaskStatus[] = ['active', 'completed', 'archived', 'deleted']
   const status = value.status && allowedStatuses.includes(value.status) ? value.status : 'active'
+  const startAt = normalizedDate(value.startAt)
+  const candidateDeadline = normalizedDate(value.deadline)
+  const deadline = candidateDeadline && (!startAt || Date.parse(candidateDeadline) >= Date.parse(startAt))
+    ? candidateDeadline
+    : undefined
   return {
     ...value,
     id: value.id ?? crypto.randomUUID(),
     title: value.title?.trim() || 'Без названия',
     description: value.description ?? '',
     projectId: value.projectId ?? 'inbox',
-    urgencyThresholdHours: Number(value.urgencyThresholdHours) || 72,
+    startAt,
+    deadline,
+    urgencyThresholdHours: positiveNumber(value.urgencyThresholdHours, DEFAULT_URGENCY_THRESHOLD_HOURS),
     importance: value.importance === 'high' ? 'high' : 'low',
     tags: Array.isArray(value.tags) ? value.tags : [],
     subtasks: Array.isArray(value.subtasks) ? value.subtasks : [],
     attachments: Array.isArray(value.attachments) ? value.attachments.map(normalizeAttachment) : [],
-    reminders: Array.isArray(value.reminders) ? value.reminders : [],
+    reminders: Array.isArray(value.reminders)
+      ? value.reminders.flatMap((reminder) => {
+        const normalized = normalizeReminder(reminder)
+        return normalized ? [normalized] : []
+      })
+      : [],
     status,
-    createdAt: value.createdAt ?? now,
-    updatedAt: value.updatedAt ?? now,
+    createdAt: normalizedDate(value.createdAt) ?? now,
+    updatedAt: normalizedDate(value.updatedAt) ?? now,
+    completedAt: normalizedDate(value.completedAt),
+    archivedAt: normalizedDate(value.archivedAt),
+    deletedAt: normalizedDate(value.deletedAt),
     focusMinutes: Number(value.focusMinutes) || 0,
   }
+}
+
+function normalizeReminder(value: unknown): Task['reminders'][number] | undefined {
+  if (!isRecord(value) || typeof value.id !== 'string') return undefined
+  const at = normalizedDate(value.at)
+  return at ? { ...value, id: value.id, at } : undefined
 }
 
 function normalizeAttachment(value: Task['attachments'][number]): Task['attachments'][number] {
@@ -404,7 +499,7 @@ function normalizeProject(value: Partial<Project>, now: string): Project {
     ...value,
     id: value.id ?? crypto.randomUUID(),
     name: value.name?.trim() || 'Новый проект',
-    color: value.color ?? '#778c70',
+    color: safeColor(value.color, DEFAULT_ENTITY_COLOR),
     createdAt: value.createdAt ?? now,
   }
 }
@@ -429,7 +524,7 @@ function normalizeHabit(value: Partial<Habit>): Habit {
     icon: legacyIcons[value.icon ?? ''] ?? value.icon ?? 'sparkles',
     targetDays: Array.isArray(value.targetDays) ? value.targetDays : [1, 2, 3, 4, 5],
     completions: Array.isArray(value.completions) ? value.completions : [],
-    color: value.color ?? '#778c70',
+    color: safeColor(value.color, DEFAULT_ENTITY_COLOR),
   }
 }
 
@@ -447,4 +542,28 @@ function normalizeFilter(value: Partial<SavedFilter>, now: string): SavedFilter 
     status: value.status === 'completed' || value.status === 'all' ? value.status : 'active',
     createdAt: value.createdAt ?? now,
   }
+}
+
+function isParseableDate(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value))
+}
+
+function normalizedDate(value: unknown): string | undefined {
+  return isParseableDate(value) ? value : undefined
+}
+
+function isSafeHexColor(value: unknown): value is string {
+  return typeof value === 'string' && value.length === 7 && HEX_COLOR_PATTERN.test(value)
+}
+
+function safeColor(value: unknown, fallback: string): string {
+  return isSafeHexColor(value) ? value : fallback
+}
+
+function positiveNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function nonNegativeNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
 }

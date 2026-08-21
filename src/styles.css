@@ -2609,6 +2609,14 @@ h1, h2, h3, p {
   width: 18px;
 }
 
+.reset-demo-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .settings-card > header div {
   min-width: 0;
   flex: 1;
@@ -3184,6 +3192,23 @@ h1, h2, h3, p {
   display: none;
 }
 
+.visually-hidden {
+  width: 1px !important;
+  height: 1px !important;
+  position: absolute !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+.project-detail-mobile-action {
+  display: none;
+}
+
 :root[data-compact='true'] .task-card {
   min-height: 62px;
   padding-top: 10px;
@@ -3311,6 +3336,7 @@ h1, h2, h3, p {
   .settings-layout { grid-template-columns: 1fr; }
   .settings-index { position: static; flex-direction: row; overflow-x: auto; }
   .settings-index a { flex: 0 0 auto; }
+  .settings-card { scroll-margin-top: 78px; }
   .task-card__more { opacity: 1; }
   .global-task-toast { right: 14px; bottom: 82px; }
 }
@@ -3386,6 +3412,11 @@ h1, h2, h3, p {
   .page { width: calc(100% - 22px); }
   .page-header { gap: 12px; }
   .page-header__actions { display: none; }
+  .project-detail-mobile-action {
+    width: 100%;
+    display: flex;
+    margin: -8px 0 16px;
+  }
   .overview-strip strong { font-size: calc(20px * var(--app-font-scale)); }
   .toolbar .button { flex: 1; padding: 0 8px; font-size: calc(12px * var(--app-font-scale)); }
   .task-card { grid-template-columns: auto minmax(0, 1fr); padding-right: 8px; }

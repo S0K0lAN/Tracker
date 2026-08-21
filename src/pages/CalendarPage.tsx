@@ -34,6 +34,8 @@ const WEEK_HOUR_HEIGHT = 34
 const THREE_DAY_HOUR_HEIGHT = 38
 const DAY_HOUR_HEIGHT = 44
 const MONTH_CELL_LIMIT = 3
+const MONTH_DEADLINE_LANE_LIMIT = 3
+const DEADLINE_OVERFLOW_LANE_HEIGHT = 26
 
 function plannedDate(day: Date, hours = 9, minutes = 0) {
   const date = new Date(day)
@@ -127,6 +129,11 @@ function taskDateRangeLabel(task: Task) {
   }
   const point = deadline ?? start
   return point && !Number.isNaN(point.getTime()) ? shortDate.format(point) : ''
+}
+
+function taskDeadlineAriaLabel(task: Task) {
+  const rangeLabel = taskDateRangeLabel(task)
+  return `Дедлайн: ${task.title}${rangeLabel ? `, ${rangeLabel}` : ''}`
 }
 
 function sortTasksForDay(tasks: Task[], date: Date) {
@@ -247,18 +254,22 @@ function TimeCalendar({
   mode,
   onCreate,
   onEdit,
+  onOpenDay,
 }: {
   days: Date[]
   tasks: Task[]
   mode: 'week' | 'three-days' | 'day'
   onCreate: (date: Date) => void
   onEdit: (task: Task) => void
+  onOpenDay: (date: Date, opener?: HTMLElement) => void
 }) {
   const hourHeight = mode === 'day' ? DAY_HOUR_HEIGHT : mode === 'three-days' ? THREE_DAY_HOUR_HEIGHT : WEEK_HOUR_HEIGHT
   const deadlinesByDay = days.map((day) => tasks.filter((task) => task.deadline && isSameLocalDay(task.deadline, day)))
   const mostDeadlinesInDay = Math.max(0, ...deadlinesByDay.map((items) => items.length))
   const visibleDeadlineLanes = Math.max(1, Math.min(mode === 'day' ? 5 : 3, mostDeadlinesInDay))
-  const deadlineLaneHeight = 10 + visibleDeadlineLanes * 23 + (mostDeadlinesInDay > visibleDeadlineLanes ? 14 : 0)
+  const deadlineLaneHeight = 10
+    + visibleDeadlineLanes * 23
+    + (mostDeadlinesInDay > visibleDeadlineLanes ? DEADLINE_OVERFLOW_LANE_HEIGHT : 0)
   const gridHeight = (ALL_DAY_END_HOUR - ALL_DAY_START_HOUR) * hourHeight
   const calendarStyle = {
     '--calendar-day-count': days.length,
@@ -309,7 +320,16 @@ function TimeCalendar({
                   <i aria-hidden="true" /><span>{task.title}</span>
                 </button>
               ))}
-              {dayDeadlines.length > deadlineLimit && <small>Ещё {dayDeadlines.length - deadlineLimit}</small>}
+              {dayDeadlines.length > deadlineLimit && (
+                <button
+                  type="button"
+                  className="week-day__deadlines-more"
+                  onClick={(event) => onOpenDay(day, event.currentTarget)}
+                  aria-label={`Показать все задачи и дедлайны на ${dateForAria(day)}, скрыто ${dayDeadlines.length - deadlineLimit}`}
+                >
+                  Ещё {dayDeadlines.length - deadlineLimit}
+                </button>
+              )}
               {dayDeadlines.length === 0 && <span className="week-day__deadlines-empty" aria-hidden="true" />}
             </div>
             <div className="week-day__grid">
@@ -346,6 +366,69 @@ function dateForAria(date: Date) {
   return date.toLocaleDateString('ru-RU')
 }
 
+interface MonthDeadlineSegment {
+  task: Task
+  columnStart: number
+  columnSpan: number
+  lane: number
+  startsBeforeWeek: boolean
+  endsAfterWeek: boolean
+}
+
+interface MonthDeadlineWeek {
+  days: Date[]
+  ranges: MonthDeadlineSegment[]
+  laneCount: number
+  hiddenDeadlineCounts: number[]
+}
+
+function layoutMonthDeadlineWeeks(tasks: Task[], days: Date[]): MonthDeadlineWeek[] {
+  if (days.length === 0) return []
+  const ranges = layoutDeadlineRanges(
+    tasks.filter((task) => task.deadline),
+    days[0],
+    days[days.length - 1],
+  )
+
+  return Array.from({ length: Math.ceil(days.length / 7) }, (_, weekIndex) => {
+    const weekStart = weekIndex * 7
+    const weekEnd = Math.min(days.length - 1, weekStart + 6)
+    const weekDays = days.slice(weekStart, weekEnd + 1)
+    const weekRanges = ranges.flatMap((range): MonthDeadlineSegment[] => {
+      const rangeStart = range.columnStart
+      const rangeEnd = range.columnStart + range.columnSpan - 1
+      if (rangeEnd < weekStart || rangeStart > weekEnd) return []
+      const segmentStart = Math.max(rangeStart, weekStart)
+      const segmentEnd = Math.min(rangeEnd, weekEnd)
+      return [{
+        task: range.task,
+        columnStart: segmentStart - weekStart,
+        columnSpan: segmentEnd - segmentStart + 1,
+        lane: range.lane,
+        startsBeforeWeek: range.startsBeforeView || rangeStart < weekStart,
+        endsAfterWeek: range.endsAfterView || rangeEnd > weekEnd,
+      }]
+    })
+    const visibleRanges = weekRanges.filter((range) => range.lane < MONTH_DEADLINE_LANE_LIMIT)
+    const hiddenDeadlineCounts = Array.from({ length: weekDays.length }, () => 0)
+
+    weekRanges.forEach((range) => {
+      if (range.lane < MONTH_DEADLINE_LANE_LIMIT) return
+      const rangeEnd = Math.min(weekDays.length - 1, range.columnStart + range.columnSpan - 1)
+      for (let dayIndex = range.columnStart; dayIndex <= rangeEnd; dayIndex += 1) {
+        hiddenDeadlineCounts[dayIndex] += 1
+      }
+    })
+
+    return {
+      days: weekDays,
+      ranges: visibleRanges,
+      laneCount: visibleRanges.reduce((count, range) => Math.max(count, range.lane + 1), 0),
+      hiddenDeadlineCounts,
+    }
+  })
+}
+
 function MonthCalendar({
   anchor,
   tasks,
@@ -358,6 +441,7 @@ function MonthCalendar({
   onEdit: (task: Task) => void
 }) {
   const days = monthGridDays(anchor)
+  const weeks = layoutMonthDeadlineWeeks(tasks, days)
 
   const openCell = (event: MouseEvent<HTMLElement>, date: Date) => {
     if ((event.target as HTMLElement).closest('button')) return
@@ -367,44 +451,100 @@ function MonthCalendar({
   return (
     <section className="month-calendar" aria-label={monthLabel.format(anchor)}>
       {weekdayLabels.map((label) => <span className="month-weekday" key={label}>{label}</span>)}
-      {days.map((date) => {
-        const dayTasks = sortTasksForDay(tasksForLocalDate(tasks, date), date)
-        const visibleTasks = dayTasks.slice(0, MONTH_CELL_LIMIT)
-        const hiddenCount = dayTasks.length - visibleTasks.length
-        return (
-          <article
-            className={`month-day ${date.getMonth() !== anchor.getMonth() ? 'month-day--muted' : ''}`}
-            key={date.toISOString()}
-            onClick={(event) => openCell(event, date)}
-            data-task-count={dayTasks.length}
-          >
-            <button className="month-day__number" type="button" onClick={(event) => onOpenDay(date, event.currentTarget)} aria-label={`Показать задачи на ${dateForAria(date)}`}>
-              {date.getDate()}
-            </button>
-            <div className="month-day__items">
-              {visibleTasks.map((task) => {
-                const deadlineOnDay = task.deadline && isSameLocalDay(task.deadline, date)
-                const startsOnDay = task.startAt && isSameLocalDay(task.startAt, date)
-                return (
-                  <button
-                    type="button"
-                    className={`month-day__task ${deadlineOnDay ? 'month-day__deadline calendar-deadline-strip' : ''} ${!deadlineOnDay && !startsOnDay ? 'month-day__ongoing' : ''} ${task.importance === 'high' ? 'calendar-deadline-strip--important' : ''}`}
-                    key={task.id}
-                    onClick={() => onEdit(task)}
-                    aria-label={`${deadlineOnDay ? 'Дедлайн' : startsOnDay ? 'Запланировано' : 'Продолжается'}: ${task.title}`}
-                    title={`${deadlineOnDay ? 'Дедлайн' : startsOnDay ? 'Запланировано' : 'Продолжается'}: ${task.title}`}
-                    data-importance={task.importance}
-                  >
-                    {deadlineOnDay ? <i aria-hidden="true" /> : startsOnDay ? <Clock3 size={11} /> : <Rows3 size={11} />}
-                    <span>{task.title}</span>
-                  </button>
-                )
-              })}
-              {hiddenCount > 0 && <button className="month-day__more" onClick={(event) => onOpenDay(date, event.currentTarget)}>Ещё {hiddenCount}</button>}
+      {weeks.map(({ days: weekDays, ranges, laneCount, hiddenDeadlineCounts }, weekIndex) => (
+        <div
+          className="month-calendar__week"
+          key={weekDays[0].toISOString()}
+          style={{ '--month-range-lanes': laneCount } as CSSProperties}
+          data-range-lanes={laneCount}
+        >
+          {weekDays.map((date, dayIndex) => {
+            const dayTasks = sortTasksForDay(tasksForLocalDate(tasks, date), date)
+            const scheduledTasks = dayTasks.filter((task) => task.startAt && !task.deadline && isSameLocalDay(task.startAt, date))
+            const visibleTasks = scheduledTasks.slice(0, MONTH_CELL_LIMIT)
+            const hiddenScheduledCount = scheduledTasks.length - visibleTasks.length
+            const hiddenDeadlineCount = hiddenDeadlineCounts[dayIndex]
+            return (
+              <article
+                className={`month-day ${date.getMonth() !== anchor.getMonth() ? 'month-day--muted' : ''}`}
+                key={date.toISOString()}
+                onClick={(event) => openCell(event, date)}
+                data-task-count={dayTasks.length}
+              >
+                <button className="month-day__number" type="button" onClick={(event) => onOpenDay(date, event.currentTarget)} aria-label={`Показать задачи на ${dateForAria(date)}`}>
+                  {date.getDate()}
+                </button>
+                {laneCount > 0 && <span className="month-day__range-space" aria-hidden="true" />}
+                <div className="month-day__items">
+                  {hiddenDeadlineCount > 0 && (
+                    <button
+                      type="button"
+                      className="month-day__more month-day__deadline-more"
+                      onClick={(event) => onOpenDay(date, event.currentTarget)}
+                      aria-label={`Показать все задачи и дедлайны на ${dateForAria(date)}, скрытых сроков ${hiddenDeadlineCount}`}
+                    >
+                      Ещё {hiddenDeadlineCount}
+                    </button>
+                  )}
+                  {visibleTasks.map((task) => (
+                    <button
+                      type="button"
+                      className="month-day__task"
+                      key={task.id}
+                      onClick={() => onEdit(task)}
+                      aria-label={`Запланировано: ${task.title}`}
+                      title={`Запланировано: ${task.title}`}
+                      data-importance={task.importance}
+                    >
+                      <Clock3 size={11} />
+                      <span>{task.title}</span>
+                    </button>
+                  ))}
+                  {hiddenScheduledCount > 0 && (
+                    <button
+                      type="button"
+                      className="month-day__more"
+                      onClick={(event) => onOpenDay(date, event.currentTarget)}
+                      aria-label={`Показать все задачи на ${dateForAria(date)}, скрыто ${hiddenScheduledCount}`}
+                    >
+                      Ещё {hiddenScheduledCount}
+                    </button>
+                  )}
+                </div>
+              </article>
+            )
+          })}
+          {ranges.length > 0 && (
+            <div
+              className="month-calendar__ranges"
+              role="group"
+              aria-label={`Сроки ${dateForAria(weekDays[0])} — ${dateForAria(weekDays[6])}`}
+              style={{
+                gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                gridTemplateRows: `repeat(${laneCount}, 22px)`,
+              }}
+            >
+              {ranges.map(({ task, columnStart, columnSpan, lane, startsBeforeWeek, endsAfterWeek }) => (
+                <button
+                  type="button"
+                  className={`deadline-range month-calendar__range month-day__deadline ${task.importance === 'high' ? 'is-important' : ''} ${startsBeforeWeek ? 'continues-before' : ''} ${endsAfterWeek ? 'continues-after' : ''} ${isOverdue(task) ? 'is-overdue' : ''}`}
+                  style={{ gridColumn: `${columnStart + 1} / span ${columnSpan}`, gridRow: lane + 1 }}
+                  key={`${task.id}-${weekIndex}`}
+                  onClick={() => onEdit(task)}
+                  title={`${task.title}: ${taskDateRangeLabel(task)}`}
+                  aria-label={taskDeadlineAriaLabel(task)}
+                  data-task-id={task.id}
+                  data-range-lane={lane}
+                  data-range-span={columnSpan}
+                  data-importance={task.importance}
+                >
+                  <i aria-hidden="true" /><span>{task.title}</span>
+                </button>
+              ))}
             </div>
-          </article>
-        )
-      })}
+          )}
+        </div>
+      ))}
     </section>
   )
 }
@@ -660,11 +800,13 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
   }
 
   const createForDay = (date: Date) => {
+    if (dayDialogOpener.current?.isConnected) dayDialogOpener.current.focus()
     setOpenDay(null)
     onEditTask(null, { startAt: plannedDate(date) })
   }
 
   const editFromDialog = (task: Task) => {
+    if (dayDialogOpener.current?.isConnected) dayDialogOpener.current.focus()
     setOpenDay(null)
     onEditTask(task)
   }
@@ -731,6 +873,7 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
             mode={mode}
             onCreate={(date) => onEditTask(null, { startAt: plannedDate(date) })}
             onEdit={onEditTask}
+            onOpenDay={showDay}
           />
         )}
         {mode === 'deadlines' && (

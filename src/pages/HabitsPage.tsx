@@ -20,6 +20,7 @@ import {
 import { PageHeader } from '../components/PageHeader'
 import type { Habit, Task } from '../domain/models'
 import { useApp } from '../state/AppContext'
+import { useNow } from '../hooks/useNow'
 import './habits.css'
 
 export const HABIT_ICONS = [
@@ -144,25 +145,28 @@ function getTodayStatus(rhythm: HabitRhythm) {
 
 export function HabitsPage() {
   const { state, toggleHabit, addHabit, updateHabit } = useApp()
+  const now = useNow()
+  const todayKey = toDateKey(now)
+  const today = useMemo(() => atStartOfDay(now), [todayKey])
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string>()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState<(typeof HABIT_ICONS)[number]['value']>('sparkles')
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => {
-    const date = atStartOfDay(new Date())
+    const date = new Date(today)
     date.setDate(date.getDate() - 6 + index)
     return date
-  }), [])
+  }), [today])
   const trendDays = useMemo(() => Array.from({ length: 14 }, (_, index) => {
-    const date = atStartOfDay(new Date())
+    const date = new Date(today)
     date.setDate(date.getDate() - 13 + index)
     return date
-  }), [])
+  }), [today])
 
   const rhythms = useMemo(
-    () => new Map(state.habits.map((habit) => [habit.id, getHabitRhythm(habit, days)])),
-    [days, state.habits],
+    () => new Map(state.habits.map((habit) => [habit.id, getHabitRhythm(habit, days, today)])),
+    [days, state.habits, today],
   )
   const completionTrend = useMemo(
     () => getCompletionTrend(state.habits, state.tasks, trendDays),
@@ -260,12 +264,11 @@ export function HabitsPage() {
           <div><span className="eyebrow">Последние 14 дней</span><h2 id="habit-trend-title">Выполнения по дням</h2></div>
           <div className="habit-trend__legend" aria-label="Легенда графика"><span><i className="is-habit" /> Привычки</span><span><i className="is-task" /> Задачи</span></div>
         </header>
-        <div className="habit-trend__chart" role="img" aria-label="График выполненных привычек и задач за последние четырнадцать дней">
+        <div className="habit-trend__chart" role="img" aria-label="График выполненных привычек и задач за последние четырнадцать дней. Подробные значения приведены в таблице после графика.">
           {completionTrend.map((point) => (
             <div
-              className={`habit-trend__day ${point.dateKey === toDateKey(new Date()) ? 'is-today' : ''}`}
+              className={`habit-trend__day ${point.dateKey === todayKey ? 'is-today' : ''}`}
               key={point.dateKey}
-              aria-label={`${point.date.toLocaleDateString('ru-RU')}: привычек ${point.habits}, задач ${point.tasks}`}
             >
               <span className="habit-trend__values" aria-hidden="true">
                 <i className="is-habit" style={{ '--bar-height': `${Math.max(point.habits ? 10 : 2, (point.habits / trendMaximum) * 100)}%` } as CSSProperties}><em>{point.habits || ''}</em></i>
@@ -274,6 +277,21 @@ export function HabitsPage() {
               <small>{point.date.toLocaleDateString('ru-RU', { weekday: 'short' })}<strong>{point.date.getDate()}</strong></small>
             </div>
           ))}
+        </div>
+        <div className="visually-hidden">
+          <table>
+            <caption>Выполнения привычек и задач за последние четырнадцать дней</caption>
+            <thead><tr><th scope="col">Дата</th><th scope="col">Привычки</th><th scope="col">Задачи</th></tr></thead>
+            <tbody>
+              {completionTrend.map((point) => (
+                <tr key={point.dateKey}>
+                  <th scope="row">{point.date.toLocaleDateString('ru-RU')}</th>
+                  <td>{point.habits}</td>
+                  <td>{point.tasks}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -317,7 +335,7 @@ export function HabitsPage() {
 
       <section className="habit-list" aria-labelledby="habit-week-title">
         <div className="habit-list__header">
-          <div><h2 id="habit-week-title">Эта неделя</h2><p>Отмечайте выполнение отдельно для каждой привычки</p></div>
+          <div><h2 id="habit-week-title">Последние 7 дней</h2><p>Отмечайте выполнение отдельно для каждой привычки</p></div>
           <div className="week-labels">
             {days.map((day) => <span key={toDateKey(day)}>{day.toLocaleDateString('ru-RU', { weekday: 'short' })}<strong>{day.getDate()}</strong></span>)}
           </div>
@@ -343,7 +361,7 @@ export function HabitsPage() {
                   const key = toDateKey(day)
                   const done = habit.completions.includes(key)
                   const scheduled = habit.targetDays.includes(day.getDay())
-                  const future = atStartOfDay(day) > atStartOfDay(new Date())
+                  const future = atStartOfDay(day) > today
                   const disabled = future || (!scheduled && !done)
                   const dayLabel = day.toLocaleDateString('ru-RU')
                   const actionLabel = scheduled || done

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { createRemoteEnvelope, syncableHash } from '../core/sync/RemoteSnapshot'
 import { SyncProviderError, type RemoteHead, type RemoteSnapshot, type SyncAdapter, type SyncProviderDefinition } from '../core/sync/SyncAdapter'
@@ -16,6 +17,7 @@ function deferred<T>() {
 }
 
 function SyncHarness() {
+  const [resetError, setResetError] = useState('')
   const {
     state,
     addTask,
@@ -45,7 +47,7 @@ function SyncHarness() {
           updatedAt: new Date().toISOString(),
         })}
       >mutate</button>
-      <button type="button" onClick={() => void resetDemo()}>reset</button>
+      <button type="button" onClick={() => { void resetDemo().then(() => setResetError(''), (error: unknown) => setResetError(error instanceof Error ? error.message : 'reset failed')) }}>reset</button>
       <button type="button" onClick={() => void restoreImportBackup()}>restore</button>
       <button type="button" onClick={() => updateSyncProviderConfig('endpoint', 'https://new.example.test')}>config</button>
       <button type="button" onClick={() => void resolveSyncConflict('remote')}>choose remote</button>
@@ -58,6 +60,7 @@ function SyncHarness() {
         lastSyncedHash: state.sync.lastSyncedHash,
         lastSyncedAt: state.sync.lastSyncedAt,
       })}</output>
+      <output aria-label="reset error">{resetError}</output>
       {syncConflict && <div role="alert">conflict</div>}
       <ul>{state.tasks.map((task) => <li key={task.id}>{task.title}</li>)}</ul>
     </div>
@@ -726,11 +729,12 @@ describe('AppProvider synchronization races', () => {
     await waitFor(() => expect(screen.getByText('success')).toBeInTheDocument())
   })
 
-  it('ignores a late remote response after reset even when provider cleanup fails', async () => {
+  it('rejects reset while a slow synchronization is in flight without cancelling or mutating it', async () => {
     const download = deferred<RemoteSnapshot | null>()
     const local = createSeedState()
     local.settings.syncProvider = 'slow-storage'
     local.settings.autoSync = false
+    local.tasks[0].title = 'Локальные данные во время синхронизации'
     local.sync = {
       status: 'idle',
       connectionStatus: 'connected',
@@ -741,7 +745,7 @@ describe('AppProvider synchronization races', () => {
       lastSyncedHash: syncableHash(local),
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(local))
-    const disconnect = vi.fn().mockRejectedValue(new Error('Provider cleanup failed'))
+    const disconnect = vi.fn()
     const adapter: SyncAdapter = {
       descriptor: {
         id: 'slow-storage',
@@ -760,7 +764,7 @@ describe('AppProvider synchronization races', () => {
       createRuntime: () => ({ acquireAdapter: async () => adapter, disconnect }),
     }
     const remote = createSeedState()
-    remote.tasks[0].title = 'Не должно вернуться после сброса'
+    remote.tasks[0].title = 'Удалённые данные после синхронизации'
 
     render(
       <AppProvider syncRegistry={new SyncProviderRegistry([definition])}>
@@ -772,14 +776,60 @@ describe('AppProvider synchronization races', () => {
     fireEvent.click(screen.getByRole('button', { name: 'sync' }))
     await waitFor(() => expect(adapter.download).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('button', { name: 'reset' }))
-    await waitFor(() => expect(disconnect).toHaveBeenCalled())
+
+    await waitFor(() => expect(screen.getByLabelText('reset error')).toHaveTextContent('Дождитесь завершения синхронизации перед сбросом'))
+    expect(disconnect).not.toHaveBeenCalled()
+    expect(screen.getByText('Локальные данные во время синхронизации')).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Локальные данные во время синхронизации')
+    expect(localStorage.getItem(IMPORT_BACKUP_KEY)).toBeNull()
+
     download.resolve({
       head: { id: 'remote-file', revision: '2' },
       payload: createRemoteEnvelope(remote),
     })
 
-    await waitFor(() => expect(screen.queryByText('Не должно вернуться после сброса')).not.toBeInTheDocument())
-    expect(screen.getByText('Подготовить план недели')).toBeInTheDocument()
+    await screen.findByText('Удалённые данные после синхронизации')
+  })
+
+  it('resets through a transactional replacement and can restore the pre-reset copy', async () => {
+    const current = createSeedState()
+    current.tasks[0].title = 'Пользовательские данные до сброса'
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(current))
+
+    render(<AppProvider><SyncHarness /></AppProvider>)
+    await screen.findByText('Пользовательские данные до сброса')
+    fireEvent.click(screen.getByRole('button', { name: 'reset' }))
+
+    await screen.findByText('Подготовить план недели')
+    expect(JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!).tasks[0].title).toBe('Пользовательские данные до сброса')
+
+    fireEvent.click(screen.getByRole('button', { name: 'restore' }))
+    await screen.findByText('Пользовательские данные до сброса')
+  })
+
+  it('keeps current data and the previous import backup when reset persistence fails', async () => {
+    const current = createSeedState()
+    const previousBackup = createSeedState()
+    current.tasks[0].title = 'Данные, которые нельзя потерять'
+    previousBackup.tasks[0].title = 'Существующая копия отмены'
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(current))
+    localStorage.setItem(IMPORT_BACKUP_KEY, JSON.stringify(previousBackup))
+
+    render(<AppProvider><SyncHarness /></AppProvider>)
+    await screen.findByText('Данные, которые нельзя потерять')
+    const originalSetItem = Storage.prototype.setItem
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === STORAGE_KEY) throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      return originalSetItem.call(this, key, value)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'reset' }))
+
+    await waitFor(() => expect(setItem).toHaveBeenCalledWith(STORAGE_KEY, expect.any(String)))
+    expect(screen.getByText('Данные, которые нельзя потерять')).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Данные, которые нельзя потерять')
+    expect(JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!).tasks[0].title).toBe('Существующая копия отмены')
+    setItem.mockRestore()
   })
 
   it('drops a rejected session after 401 and acquires a fresh adapter on retry', async () => {

@@ -199,24 +199,27 @@ export class GoogleIdentityAuthorization implements AuthorizationProvider {
       const cancel = () => finish(() => reject(new AuthorizationError('cancel', 'Google authorization was cancelled')))
       this.cancelPending = cancel
       const callback = (response: GoogleTokenResponse) => {
+        const revokeOrphanToken = () => {
+          if (!response.access_token) return
+          try { oauth2.revoke?.(response.access_token, () => undefined) } catch { /* best effort */ }
+        }
         if (generation !== this.connectionGeneration) {
-          if (response.access_token) {
-            try { oauth2.revoke?.(response.access_token, () => undefined) } catch { /* best effort */ }
-          }
+          revokeOrphanToken()
           cancel()
           return
         }
         if (response.error) {
-          finish(() => reject(oauthError(response.error, response.error_description, response)))
+          revokeOrphanToken()
+          finish(() => reject(oauthError(response.error, response.error_description)))
           return
         }
 
         const lifetimeSeconds = Number(response.expires_in)
         if (!response.access_token || !Number.isFinite(lifetimeSeconds) || lifetimeSeconds <= 0) {
+          revokeOrphanToken()
           finish(() => reject(new AuthorizationError(
             'unavailable',
             'Google returned an invalid access token response',
-            response,
           )))
           return
         }

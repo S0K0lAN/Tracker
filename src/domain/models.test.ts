@@ -36,6 +36,26 @@ describe('task urgency', () => {
     expect(getTaskUrgency(task, now)).toBe('low')
   })
 
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'falls back to 72 hours for an invalid urgency threshold (%s)',
+    (urgencyThresholdHours) => {
+      const task = {
+        ...baseTask,
+        deadline: '2026-08-01T12:00:00.000Z',
+        urgencyThresholdHours,
+      }
+
+      expect(getTaskUrgency(task, now)).toBe('high')
+    },
+  )
+
+  it('treats an unparseable deadline as absent instead of urgent or overdue', () => {
+    const task = { ...baseTask, deadline: 'not-a-date' }
+
+    expect(getTaskUrgency(task, now)).toBe('low')
+    expect(isOverdue(task, now)).toBe(false)
+  })
+
   it('manual override wins over automatic urgency', () => {
     const task = { ...baseTask, deadline: '2026-07-30T13:00:00.000Z', urgencyOverride: 'low' as const }
     expect(getTaskUrgency(task, now)).toBe('low')

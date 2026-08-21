@@ -16,6 +16,14 @@ function renderProjects() {
 }
 
 describe('project card actions', () => {
+  it('keeps the visible mobile project CTA text in its accessible name', async () => {
+    const user = userEvent.setup()
+    renderProjects()
+    await user.click(await screen.findByRole('button', { name: 'Открыть проект Работа' }))
+
+    expect(screen.getByRole('button', { name: 'Задача в проект «Работа»' })).toHaveTextContent('Задача в проект')
+  })
+
   it('shows the project menu on hover and edits the project', async () => {
     const user = userEvent.setup()
     renderProjects()

@@ -74,6 +74,8 @@ export function SettingsPage() {
   const [pendingBackup, setPendingBackup] = useState<PendingBackupImport>()
   const [importingBackup, setImportingBackup] = useState(false)
   const [restoringBackup, setRestoringBackup] = useState(false)
+  const [confirmDemoReset, setConfirmDemoReset] = useState(false)
+  const [resettingDemo, setResettingDemo] = useState(false)
   const [appearanceStatus, setAppearanceStatus] = useState<'saved' | 'saving' | 'error'>('saved')
   const appearanceReadyRef = useRef(false)
   const backgroundRef = useRef<HTMLInputElement>(null)
@@ -81,6 +83,8 @@ export function SettingsPage() {
   const backupImportTriggerRef = useRef<HTMLButtonElement>(null)
   const backupDialogRef = useRef<HTMLElement>(null)
   const backupCancelRef = useRef<HTMLButtonElement>(null)
+  const resetDemoTriggerRef = useRef<HTMLButtonElement>(null)
+  const resetDemoCancelRef = useRef<HTMLButtonElement>(null)
   const plugins = pluginRegistry.list()
   const syncing = state.sync.status === 'syncing' || state.sync.status === 'connecting'
   const selectedProvider = syncProviders.find((provider) => provider.id === state.settings.syncProvider)
@@ -97,6 +101,7 @@ export function SettingsPage() {
     || restoringBackup
     || !selectedProvider
     || missingRequiredConfig
+  const resetConfirmationBusy = syncing || importingBackup || restoringBackup || resettingDemo
   const authorizationRequired = state.sync.connectionStatus === 'authorization-required'
   const connectLabel = authorizationRequired
     ? selectedProvider?.resumeLabel ?? `Продолжить с ${selectedProvider?.name ?? 'хранилищем'}`
@@ -125,6 +130,8 @@ export function SettingsPage() {
     customBackgroundDataUrl: state.settings.customBackgroundDataUrl,
     backgroundDim: state.settings.backgroundDim,
   })
+  const backgroundDimMinimum = state.settings.backgroundPreset === 'custom' ? 65 : 10
+  const effectiveBackgroundDim = Math.max(backgroundDimMinimum, state.settings.backgroundDim)
 
   const updateAppearance = (settings: Parameters<typeof updateSettings>[0]) => {
     updateSettings(settings)
@@ -157,6 +164,10 @@ export function SettingsPage() {
       requestAnimationFrame(() => backupImportTriggerRef.current?.focus())
     }
   }, [pendingBackup])
+
+  useLayoutEffect(() => {
+    if (confirmDemoReset) resetDemoCancelRef.current?.focus()
+  }, [confirmDemoReset])
 
   const readBackground = async (file?: File) => {
     if (!file) return
@@ -266,6 +277,28 @@ export function SettingsPage() {
     }
   }
 
+  const confirmResetDemo = async () => {
+    if (resetConfirmationBusy) return
+    setResettingDemo(true)
+    setBackupError('')
+    setBackupStatus('')
+    try {
+      await resetDemo()
+      setConfirmDemoReset(false)
+      requestAnimationFrame(() => resetDemoTriggerRef.current?.focus())
+      setBackupStatus('Демо-данные восстановлены. Предыдущие локальные данные сохранены')
+    } catch {
+      setBackupError('Не удалось восстановить демо-данные. Текущие данные не изменены')
+    } finally {
+      setResettingDemo(false)
+    }
+  }
+
+  const cancelResetDemo = () => {
+    setConfirmDemoReset(false)
+    requestAnimationFrame(() => resetDemoTriggerRef.current?.focus())
+  }
+
   return (
     <main className="page page--settings">
       <PageHeader eyebrow="Ваше пространство" title="Настройки" description="Подстройте Focus Flow под свой ритм" />
@@ -346,7 +379,7 @@ export function SettingsPage() {
                     aria-pressed={state.settings.backgroundPreset === preset}
                   ><span>{label}</span></button>
                 ))}
-                <button type="button" className={`background-swatch background-swatch--custom ${state.settings.backgroundPreset === 'custom' ? 'is-selected' : ''}`} onClick={() => backgroundRef.current?.click()} aria-label="Загрузить свой фон">
+                <button type="button" className={`background-swatch background-swatch--custom ${state.settings.backgroundPreset === 'custom' ? 'is-selected' : ''}`} onClick={() => backgroundRef.current?.click()} aria-label="Загрузить свой фон" aria-pressed={state.settings.backgroundPreset === 'custom'}>
                   {state.settings.customBackgroundDataUrl ? <img src={state.settings.customBackgroundDataUrl} alt="" /> : <Upload size={16} />}
                   <span>Свой</span>
                 </button>
@@ -356,8 +389,8 @@ export function SettingsPage() {
             </div>
             {state.settings.backgroundPreset !== 'none' && (
               <label className="setting-row">
-                <div><strong>Затемнение фона</strong><span>Чтобы текст и панели оставались читаемыми</span></div>
-                <span className="background-range"><Image size={15} /><input aria-label="Затемнение фона" type="range" min="10" max="80" step="5" value={state.settings.backgroundDim} onChange={(event) => updateAppearance({ backgroundDim: Number(event.target.value) })} /><em>{state.settings.backgroundDim}%</em></span>
+                <div><strong>Затемнение фона</strong><span>{state.settings.backgroundPreset === 'custom' ? 'Для своего изображения безопасный минимум — 65%' : 'Чтобы текст и панели оставались читаемыми'}</span></div>
+                <span className="background-range"><Image size={15} /><input aria-label="Затемнение фона" type="range" min={backgroundDimMinimum} max="80" step="5" value={effectiveBackgroundDim} onChange={(event) => updateAppearance({ backgroundDim: Number(event.target.value) })} /><em>{effectiveBackgroundDim}%</em></span>
               </label>
             )}
             <footer className="appearance-actions">
@@ -506,12 +539,12 @@ export function SettingsPage() {
           </section>
 
           <section className="settings-card" id="plugins">
-            <header><span><Plug /></span><div><h2>Расширения</h2><p>Версионированные точки подключения</p></div><span className="status-pill">API v1</span></header>
-            <div className="plugin-empty"><Sparkles /><div><strong>{plugins.length ? `${plugins.length} расширений подключено` : 'Готово к расширению'}</strong><p>Плагины смогут добавлять действия задач, панели и настройки без доступа к внутреннему состоянию.</p></div><button className="button button--ghost" onClick={() => setShowPluginDetails(!showPluginDetails)}>{showPluginDetails ? 'Скрыть' : 'Контракты'} <ExternalLink size={15} /></button></div>
+            <header><span><Plug /></span><div><h2>Расширения</h2><p>Экспериментальный каркас для разработки</p></div><span className="status-pill">Эксперимент</span></header>
+            <div className="plugin-empty"><Sparkles /><div><strong>{plugins.length ? `${plugins.length} встроенных расширений зарегистрировано` : 'Сторонние расширения отключены'}</strong><p>Сейчас доступен только in-process реестр для кода, собранного вместе с приложением.</p></div><button className="button button--ghost" onClick={() => setShowPluginDetails(!showPluginDetails)}>{showPluginDetails ? 'Скрыть' : 'Контракты (внутренние)'} <ExternalLink size={15} /></button></div>
             {showPluginDetails && (
               <div className="plugin-contracts">
                 <code>task-actions</code><code>sidebar</code><code>settings</code>
-                <p>Plugin API v1 принимает только заявленные capabilities и не предоставляет прямой доступ к store, файлам или токенам.</p>
+                <p>Это внутренние экспериментальные slots, а не публичный API. Permissions и sandbox ещё не реализованы. Динамическая загрузка стороннего JavaScript отключена.</p>
               </div>
             )}
           </section>
@@ -521,8 +554,8 @@ export function SettingsPage() {
             {backupStatus && (
               <Toast
                 tone="success"
-                action={importBackupAvailable && backupStatus.includes('импортирована')
-                  ? { label: 'Отменить импорт', disabled: syncing || importingBackup || restoringBackup, onClick: () => void restorePreviousBackup() }
+                action={importBackupAvailable && (backupStatus.includes('импортирована') || backupStatus.includes('Демо-данные'))
+                  ? { label: backupStatus.includes('Демо-данные') ? 'Отменить сброс' : 'Отменить импорт', disabled: syncing || importingBackup || restoringBackup || resettingDemo, onClick: () => void restorePreviousBackup() }
                   : undefined}
                 onClose={() => setBackupStatus('')}
               >
@@ -531,7 +564,7 @@ export function SettingsPage() {
             )}
             {backupError && !pendingBackup && <p className="backup-message backup-message--error" role="alert"><CircleAlert size={17} /> {backupError}</p>}
             <div className="setting-row">
-              <div><strong>Скачать резервную копию</strong><span>Задачи, проекты, привычки, оформление и вложения в переносимом JSON без OAuth-настроек</span></div>
+              <div><strong>Скачать резервную копию</strong><span>Переносимый JSON содержит задачи и вложения без OAuth-настроек; файл не зашифрован — храните его как конфиденциальный</span></div>
               <button type="button" className="button button--ghost" disabled={importingBackup || restoringBackup} onClick={downloadBackup}><Download size={16} /> Скачать JSON</button>
             </div>
             <div className="setting-row">
@@ -567,7 +600,24 @@ export function SettingsPage() {
             )}
             <div className="setting-row">
               <div><strong>Восстановить демо-данные</strong><span>Текущие локальные изменения будут заменены</span></div>
-              <button className="button button--danger-ghost" disabled={syncing || importingBackup || restoringBackup} onClick={() => void resetDemo()}><RotateCcw size={16} /> Сбросить</button>
+              {confirmDemoReset ? (
+                <div
+                  className="reset-demo-confirm"
+                  role="group"
+                  aria-label="Подтверждение сброса демо-данных"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape' || resetConfirmationBusy) return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    cancelResetDemo()
+                  }}
+                >
+                  <button type="button" className="button button--danger-ghost" disabled={resetConfirmationBusy} onClick={() => void confirmResetDemo()}><RotateCcw className={resettingDemo ? 'spin' : undefined} size={16} /> {resettingDemo ? 'Восстанавливаем…' : 'Точно сбросить'}</button>
+                  <button ref={resetDemoCancelRef} type="button" className="button button--ghost" disabled={resetConfirmationBusy} onClick={cancelResetDemo}>Отмена</button>
+                </div>
+              ) : (
+                <button ref={resetDemoTriggerRef} type="button" className="button button--danger-ghost" disabled={resetConfirmationBusy} onClick={() => setConfirmDemoReset(true)}><RotateCcw size={16} /> Сбросить</button>
+              )}
             </div>
           </section>
         </div>

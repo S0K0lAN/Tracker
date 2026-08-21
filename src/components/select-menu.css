@@ -93,7 +93,7 @@
 
 .select-menu__popover {
   position: fixed;
-  z-index: 80;
+  z-index: 140;
   padding: 5px;
   background: var(--surface-strong);
   border: 1px solid var(--line-strong);

@@ -186,6 +186,10 @@
   background: var(--custom-background-image) center / cover no-repeat;
 }
 
+:root[data-background='custom'] .app-shell::after {
+  opacity: max(0.65, var(--background-dim, 0.65));
+}
+
 :root:not([data-background='none']) body {
   background: transparent;
 }

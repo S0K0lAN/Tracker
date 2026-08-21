@@ -17,6 +17,7 @@ const localInput = (value?: string) => {
   return local.toISOString().slice(0, 16)
 }
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined)
+const DATE_ORDER_ERROR = 'Дедлайн не может быть раньше начала'
 
 export function TaskEditor({
   task,
@@ -24,13 +25,13 @@ export function TaskEditor({
   onClose,
 }: {
   task?: Task
-  defaults?: Partial<Pick<Task, 'startAt' | 'deadline'>>
+  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>
   onClose: () => void
 }) {
   const { state, addTask, updateTask, removeTask } = useApp()
   const [title, setTitle] = useState(task?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
-  const [projectId, setProjectId] = useState(task?.projectId ?? 'inbox')
+  const [projectId, setProjectId] = useState(task?.projectId ?? defaults?.projectId ?? 'inbox')
   const [startAt, setStartAt] = useState(localInput(task?.startAt ?? defaults?.startAt))
   const [deadline, setDeadline] = useState(localInput(task?.deadline ?? defaults?.deadline))
   const [startAtValid, setStartAtValid] = useState(true)
@@ -79,6 +80,16 @@ export function TaskEditor({
     [tags],
   )
 
+  const updateStartAt = (value: string) => {
+    setStartAt(value)
+    setError((current) => current === DATE_ORDER_ERROR ? '' : current)
+  }
+
+  const updateDeadline = (value: string) => {
+    setDeadline(value)
+    setError((current) => current === DATE_ORDER_ERROR ? '' : current)
+  }
+
   const save = () => {
     if (!title.trim()) {
       setError('Добавьте название задачи')
@@ -88,6 +99,11 @@ export function TaskEditor({
     if (!startAtValid || !deadlineValid) {
       setError('Исправьте дату и время перед сохранением')
       editorRef.current?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus()
+      return
+    }
+    if (startAt && deadline && new Date(deadline).getTime() < new Date(startAt).getTime()) {
+      setError(DATE_ORDER_ERROR)
+      editorRef.current?.querySelectorAll<HTMLInputElement>('.date-time-field input')[1]?.focus()
       return
     }
     const now = new Date().toISOString()
@@ -161,12 +177,12 @@ export function TaskEditor({
     const hasSpokenDate = Boolean(parsed.startAt || parsed.deadline)
     if (parsed.title) setTitle(parsed.title)
     if (parsed.startAt) {
-      setStartAt(localInput(parsed.startAt))
-      setDeadline('')
+      updateStartAt(localInput(parsed.startAt))
+      updateDeadline('')
     }
     if (parsed.deadline) {
-      setDeadline(localInput(parsed.deadline))
-      setStartAt('')
+      updateDeadline(localInput(parsed.deadline))
+      updateStartAt('')
     }
     if (hasSpokenDate) {
       setStartAtValid(true)
@@ -280,8 +296,8 @@ export function TaskEditor({
               ]}
             />
           </div>
-          <DateTimePicker label="Начало" value={startAt} onChange={setStartAt} onValidityChange={setStartAtValid} defaultTime="09:00" resetToken={dateInputResetToken} />
-          <DateTimePicker label="Дедлайн" value={deadline} onChange={setDeadline} onValidityChange={setDeadlineValid} defaultTime="18:00" resetToken={dateInputResetToken} />
+          <DateTimePicker label="Начало" value={startAt} onChange={updateStartAt} onValidityChange={setStartAtValid} defaultTime="09:00" resetToken={dateInputResetToken} />
+          <DateTimePicker label="Дедлайн" value={deadline} onChange={updateDeadline} onValidityChange={setDeadlineValid} defaultTime="18:00" resetToken={dateInputResetToken} />
           <div className="field">
             <span>Становится срочной за</span>
             <SelectMenu<number>
@@ -385,7 +401,7 @@ export function TaskEditor({
               ))}
             </div>
           </div>
-          {error && <p className="form-error">{error}</p>}
+          {error && <p className="form-error" role="alert">{error}</p>}
         </div>
 
         <footer className="task-editor__footer">

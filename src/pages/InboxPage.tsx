@@ -7,6 +7,7 @@ import { useApp } from '../state/AppContext'
 import { PageHeader } from '../components/PageHeader'
 import { SelectMenu } from '../components/SelectMenu'
 import { TaskCard } from '../components/TaskCard'
+import { useNow } from '../hooks/useNow'
 import './inbox-layouts.css'
 
 type FilterMode = 'all' | 'today' | 'important' | 'urgent'
@@ -14,6 +15,7 @@ const VIRTUAL_LIST_THRESHOLD = 150
 
 export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => void }) {
   const { state, updateSettings, archiveCompletedTasks } = useApp()
+  const now = useNow()
   const [query, setQuery] = useState('')
   const [showCompleted, setShowCompleted] = useState(false)
   const [filter, setFilter] = useState<FilterMode>('all')
@@ -29,9 +31,9 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         if (task.status === 'archived' || task.status === 'deleted') return false
         if (!showCompleted && task.status === 'completed') return false
         if (query && !`${task.title} ${task.description} ${task.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())) return false
-        if (filter === 'today' && !isSameLocalDay(task.startAt) && !isSameLocalDay(task.deadline)) return false
+        if (filter === 'today' && !isSameLocalDay(task.startAt, now) && !isSameLocalDay(task.deadline, now)) return false
         if (filter === 'important' && task.importance !== 'high') return false
-        if (filter === 'urgent' && getTaskUrgency(task) !== 'high') return false
+        if (filter === 'urgent' && getTaskUrgency(task, now) !== 'high') return false
         if (projectId && task.projectId !== projectId) return false
         if (selectedTags.length > 0) {
           const tagMatch = tagMode === 'all'
@@ -41,12 +43,11 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         }
         return true
       }), state.settings.inboxSort),
-    [filter, projectId, query, selectedTags, showCompleted, state.settings.inboxSort, state.tasks, tagMode],
+    [filter, now, projectId, query, selectedTags, showCompleted, state.settings.inboxSort, state.tasks, tagMode],
   )
 
   const summary = useMemo(() => {
     const result = { active: 0, completed: 0, today: 0, urgent: 0, important: 0 }
-    const now = new Date()
     for (const task of state.tasks) {
       if (task.status === 'completed') {
         result.completed += 1
@@ -54,12 +55,12 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
       }
       if (task.status !== 'active') continue
       result.active += 1
-      if (isSameLocalDay(task.startAt, now)) result.today += 1
+      if (isSameLocalDay(task.startAt, now) || isSameLocalDay(task.deadline, now)) result.today += 1
       if (getTaskUrgency(task, now) === 'high') result.urgent += 1
       if (task.importance === 'high') result.important += 1
     }
     return result
-  }, [state.tasks])
+  }, [now, state.tasks])
   const activeCount = summary.active
   const completedCount = summary.completed
   const view = state.settings.inboxView
@@ -67,7 +68,7 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
   return (
     <main className="page">
       <PageHeader
-        eyebrow="Четверг · обзор дня"
+        eyebrow={`${capitalize(now.toLocaleDateString('ru-RU', { weekday: 'long' }))} · обзор дня`}
         title="Входящие"
         description={`${activeCount} активных задач во всех проектах`}
         actions={<button className="button button--primary header-add" onClick={() => onEditTask(null)}><Plus size={18} /> Добавить задачу</button>}
@@ -176,7 +177,7 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         </div>
       </section>
 
-      <section className={`task-list task-list--${view}`} aria-live="polite">
+      <section className={`task-list task-list--${view}`}>
         <div className="section-heading"><h2>{view === 'list' ? 'Все задачи' : 'Доска по проектам'}</h2><span>{visibleTasks.length}</span></div>
         {view === 'list' && visibleTasks.length < VIRTUAL_LIST_THRESHOLD && visibleTasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}
         {view === 'list' && visibleTasks.length >= VIRTUAL_LIST_THRESHOLD && <VirtualTaskList tasks={visibleTasks} onOpen={onEditTask} />}
@@ -192,6 +193,10 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
       </section>
     </main>
   )
+}
+
+function capitalize(value: string) {
+  return value ? `${value[0].toLocaleUpperCase('ru-RU')}${value.slice(1)}` : value
 }
 
 function VirtualTaskList({ tasks, onOpen }: { tasks: Task[]; onOpen(task: Task): void }) {

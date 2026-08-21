@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPortableBackup } from '../core/storage/PortableBackup'
 import { createSeedState } from '../domain/seed'
@@ -125,5 +126,64 @@ describe('Settings portable backup', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('requires an explicit reset confirmation and offers undo from the preserved local copy', async () => {
+    const user = userEvent.setup()
+    const local = createSeedState()
+    local.tasks[0].title = 'Личные данные перед сбросом'
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(local))
+
+    render(<AppProvider><SettingsPage /></AppProvider>)
+    const reset = await screen.findByRole('button', { name: 'Сбросить' })
+    await user.click(reset)
+
+    expect(screen.getByRole('group', { name: 'Подтверждение сброса демо-данных' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Отмена' })).toHaveFocus()
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Личные данные перед сбросом')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('button', { name: 'Точно сбросить' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Сбросить' })).toHaveFocus())
+
+    await user.click(screen.getByRole('button', { name: 'Сбросить' }))
+    expect(screen.getByRole('button', { name: 'Отмена' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Сбросить' })).toHaveFocus())
+
+    await user.click(screen.getByRole('button', { name: 'Сбросить' }))
+    await user.click(screen.getByRole('button', { name: 'Точно сбросить' }))
+
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Подготовить план недели'))
+    expect(JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!).tasks[0].title).toBe('Личные данные перед сбросом')
+    expect(screen.getByRole('status')).toHaveTextContent('Предыдущие локальные данные сохранены')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить сброс' }))
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Личные данные перед сбросом'))
+  })
+
+  it.each(['light', 'dark'] as const)('enforces the safe custom-background overlay in the %s theme', async (theme) => {
+    const state = createSeedState()
+    state.settings.theme = theme
+    state.settings.backgroundPreset = 'custom'
+    state.settings.customBackgroundDataUrl = 'data:image/png;base64,AAAA'
+    state.settings.backgroundDim = 10
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+
+    render(<AppProvider><SettingsPage /></AppProvider>)
+    const dim = await screen.findByRole('slider', { name: 'Затемнение фона' })
+
+    expect(dim).toHaveAttribute('min', '65')
+    expect(dim).toHaveValue('65')
+    expect(document.documentElement.style.getPropertyValue('--background-dim')).toBe('0.65')
+  })
+
+  it('describes plugins as a disabled experimental in-process scaffold', async () => {
+    render(<AppProvider><SettingsPage /></AppProvider>)
+    await screen.findByRole('heading', { name: 'Расширения' })
+
+    expect(screen.getByText('Сторонние расширения отключены')).toBeInTheDocument()
+    expect(screen.queryByText('API v1')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Контракты \(внутренние\)/ }))
+    expect(screen.getByText(/Это внутренние экспериментальные slots, а не публичный API/)).toBeInTheDocument()
   })
 })

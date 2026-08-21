@@ -13,7 +13,10 @@ const taskDateFormatter = new Intl.DateTimeFormat('ru-RU', {
   minute: '2-digit',
 })
 
-const formatDate = (value: string) => taskDateFormatter.format(Date.parse(value))
+export const formatTaskDate = (value: string) => {
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? taskDateFormatter.format(timestamp) : 'Некорректная дата'
+}
 
 export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
   const { state, toggleTask, archiveTask, removeTask, updatePomodoro } = useApp()
@@ -81,7 +84,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
           )}
           {task.deadline && (
             <span className={`meta-item ${timing.overdue ? 'meta-item--danger' : ''}`}>
-              <CalendarClock size={13} /> {formatDate(task.deadline)}
+              <CalendarClock size={13} /> {formatTaskDate(task.deadline)}
             </span>
           )}
           <span className={`meta-item urgency urgency--${urgency}`}>
@@ -146,7 +149,15 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
               <FileText size={16} /> Открыть
             </button>
             {task.status === 'active' && (
-              <button type="button" role="menuitem" onClick={() => { startPomodoroForTask(task.id, updatePomodoro); setMenuOpen(false) }}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  startPomodoroForTask(task.id, updatePomodoro)
+                  setMenuOpen(false)
+                  requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.pomodoro-dock__main')?.focus())
+                }}
+              >
                 <Play size={16} /> Таймер фокуса · 25 минут
               </button>
             )}

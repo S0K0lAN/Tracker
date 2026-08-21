@@ -119,6 +119,26 @@ describe('GoogleIdentityAuthorization', () => {
     expect(authorization.getSession()).toBeNull()
   })
 
+  it('revokes a token from an invalid response without retaining the response as an error cause', async () => {
+    const google = installGoogle()
+    const authorization = new GoogleIdentityAuthorization('client-id', {
+      loadScript: async () => undefined,
+    })
+
+    const connecting = authorization.connect()
+    await vi.waitFor(() => expect(google.requestAccessToken).toHaveBeenCalled())
+    google.config()?.callback({ access_token: 'orphaned-token', expires_in: 0 })
+    const error = await connecting.catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({
+      name: 'AuthorizationError',
+      code: 'unavailable',
+      cause: undefined,
+    })
+    expect(google.revoke).toHaveBeenCalledWith('orphaned-token', expect.any(Function))
+    expect(authorization.getSession()).toBeNull()
+  })
+
   it('maps a closed OAuth popup to a typed cancellation error', async () => {
     const google = installGoogle()
     const authorization = new GoogleIdentityAuthorization('client-id', {

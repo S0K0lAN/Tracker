@@ -6,6 +6,8 @@ const STORAGE_KEY = 'focus-flow.state.v1'
 const BACKUP_KEY = 'focus-flow.state.v1.backup'
 const IMPORT_BACKUP_KEY = 'focus-flow.state.v1.import-backup'
 const CORRUPT_KEY = 'focus-flow.state.v1.corrupt'
+const BACKUP_CORRUPT_KEY = 'focus-flow.state.v1.backup.corrupt'
+const IMPORT_CORRUPT_KEY = 'focus-flow.state.v1.import-backup.corrupt'
 
 describe('LocalStorageAdapter remote import safety', () => {
   it('keeps a dedicated recoverable copy before replacing local data', async () => {
@@ -78,6 +80,102 @@ describe('LocalStorageAdapter remote import safety', () => {
     expect(loaded?.tasks[0].title).toBe('Восстановлено')
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Восстановлено')
     expect(localStorage.getItem(CORRUPT_KEY)).toBe('{broken')
+  })
+
+  it('recovers from a valid backup even when the damaged primary cannot be quarantined', async () => {
+    const adapter = new LocalStorageAdapter()
+    const backup = createSeedState()
+    backup.tasks[0].title = 'Восстановлено без quarantine'
+    localStorage.setItem(STORAGE_KEY, '{broken')
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(backup))
+    const originalSetItem = Storage.prototype.setItem
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === CORRUPT_KEY) throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      return originalSetItem.call(this, key, value)
+    })
+
+    const loaded = await adapter.load()
+    setItem.mockRestore()
+
+    expect(loaded?.tasks[0].title).toBe('Восстановлено без quarantine')
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).tasks[0].title).toBe('Восстановлено без quarantine')
+    expect(localStorage.getItem(BACKUP_KEY)).toBe(JSON.stringify(backup))
+  })
+
+  it('keeps an invalid primary when quota prevents quarantine and there is no backup', async () => {
+    const adapter = new LocalStorageAdapter()
+    localStorage.setItem(STORAGE_KEY, '{broken-primary')
+    const originalSetItem = Storage.prototype.setItem
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === CORRUPT_KEY) throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      return originalSetItem.call(this, key, value)
+    })
+
+    await expect(adapter.load()).rejects.toThrow('Не удалось сохранить повреждённый snapshot')
+    setItem.mockRestore()
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('{broken-primary')
+    expect(localStorage.getItem(CORRUPT_KEY)).toBeNull()
+  })
+
+  it('keeps both invalid sources when quota prevents both quarantines', async () => {
+    const adapter = new LocalStorageAdapter()
+    localStorage.setItem(STORAGE_KEY, '{broken-primary')
+    localStorage.setItem(BACKUP_KEY, '{broken-backup')
+    const originalSetItem = Storage.prototype.setItem
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === CORRUPT_KEY || key === BACKUP_CORRUPT_KEY) {
+        throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      }
+      return originalSetItem.call(this, key, value)
+    })
+
+    await expect(adapter.load()).rejects.toThrow('Не удалось сохранить повреждённый snapshot')
+    setItem.mockRestore()
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('{broken-primary')
+    expect(localStorage.getItem(BACKUP_KEY)).toBe('{broken-backup')
+    expect(localStorage.getItem(CORRUPT_KEY)).toBeNull()
+    expect(localStorage.getItem(BACKUP_CORRUPT_KEY)).toBeNull()
+  })
+
+  it('keeps an invalid import backup when quota prevents quarantine', async () => {
+    const adapter = new LocalStorageAdapter()
+    localStorage.setItem(IMPORT_BACKUP_KEY, '{broken-import')
+    const originalSetItem = Storage.prototype.setItem
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === IMPORT_CORRUPT_KEY) throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      return originalSetItem.call(this, key, value)
+    })
+
+    await expect(adapter.loadImportBackup()).rejects.toThrow('Не удалось сохранить повреждённый snapshot')
+    setItem.mockRestore()
+
+    expect(localStorage.getItem(IMPORT_BACKUP_KEY)).toBe('{broken-import')
+    expect(localStorage.getItem(IMPORT_CORRUPT_KEY)).toBeNull()
+  })
+
+  it('keeps a valid backup when writing the recovered primary fails', async () => {
+    const adapter = new LocalStorageAdapter()
+    const backup = createSeedState()
+    backup.tasks[0].title = 'Единственная валидная копия'
+    const serializedBackup = JSON.stringify(backup)
+    localStorage.setItem(STORAGE_KEY, '{broken')
+    localStorage.setItem(BACKUP_KEY, serializedBackup)
+    const originalSetItem = Storage.prototype.setItem
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === STORAGE_KEY && value.includes('Единственная валидная копия')) {
+        throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      }
+      return originalSetItem.call(this, key, value)
+    })
+
+    await expect(adapter.load()).rejects.toThrow('Не удалось восстановить snapshot из резервной копии')
+    setItem.mockRestore()
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('{broken')
+    expect(localStorage.getItem(BACKUP_KEY)).toBe(serializedBackup)
+    expect(localStorage.getItem(BACKUP_CORRUPT_KEY)).toBeNull()
   })
 
   it('recovers semantic corruption instead of replacing it with demo data', async () => {

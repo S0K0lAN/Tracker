@@ -54,7 +54,7 @@ test('calendar views, matrix and habit actions respond', async ({ page }) => {
   await page.locator('.sidebar').getByRole('link', { name: /Календарь/ }).click()
   await page.getByRole('button', { name: 'Месяц' }).click()
   await expect(page.locator('.month-calendar')).toBeVisible()
-  await page.getByRole('button', { name: 'Дедлайны' }).click()
+  await page.getByRole('button', { name: 'Дедлайны', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Ближайшие сроки' })).toBeVisible()
 
   await page.locator('.sidebar').getByRole('link', { name: /Матрица/ }).click()

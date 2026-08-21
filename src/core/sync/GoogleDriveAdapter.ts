@@ -10,6 +10,7 @@ import {
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
 const FILE_NAME = 'focus-flow-data.json'
+export const MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES = 10 * 1024 * 1024
 
 export const googleDriveDescriptor: SyncProviderDescriptor = {
   id: 'google-drive',
@@ -38,6 +39,70 @@ function toRemoteHead(file: DriveFile): RemoteHead {
     modifiedAt: file.modifiedTime,
     size: file.size ? Number(file.size) : undefined,
   }
+}
+
+function invalidRemoteSizeError() {
+  return new SyncProviderError('invalid-remote', 'Копия в Google Drive превышает лимит 10 МБ')
+}
+
+function invalidUploadError(message: string, cause?: unknown) {
+  return new SyncProviderError('invalid-remote', message, cause)
+}
+
+function assertAllowedSnapshotSize(size: number | undefined) {
+  if (size === undefined) return
+  if (!Number.isSafeInteger(size) || size < 0 || size > MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES) {
+    throw invalidRemoteSizeError()
+  }
+}
+
+function responseContentLength(response: Response): number | undefined {
+  const value = response.headers.get('content-length')
+  if (value === null || !/^\d+$/.test(value.trim())) return undefined
+  return Number(value)
+}
+
+async function responseTextWithinLimit(response: Response): Promise<string> {
+  assertAllowedSnapshotSize(responseContentLength(response))
+  if (!response.body) {
+    const text = await response.text()
+    if (new TextEncoder().encode(text).byteLength > MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES) {
+      throw invalidRemoteSizeError()
+    }
+    return text
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let size = 0
+  let text = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES) {
+      void reader.cancel().catch(() => undefined)
+      throw invalidRemoteSizeError()
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+  return text + decoder.decode()
+}
+
+function serializeSnapshotWithinLimit(payload: unknown): string {
+  let serialized: string | undefined
+  try {
+    serialized = JSON.stringify(payload)
+  } catch (error) {
+    throw invalidUploadError('Локальная копия не может быть сериализована в JSON', error)
+  }
+  if (serialized === undefined) {
+    throw invalidUploadError('Локальная копия не может быть сериализована в JSON')
+  }
+  if (new TextEncoder().encode(serialized).byteLength > MAX_GOOGLE_DRIVE_SNAPSHOT_BYTES) {
+    throw invalidUploadError('Локальная копия превышает лимит Google Drive 10 МБ')
+  }
+  return serialized
 }
 
 function errorForStatus(status: number, operation: string) {
@@ -94,19 +159,22 @@ export class GoogleDriveAdapter implements SyncAdapter {
   async download(head?: RemoteHead): Promise<RemoteSnapshot | null> {
     const resolvedHead = head ?? await this.head()
     if (!resolvedHead) return null
+    assertAllowedSnapshotSize(resolvedHead.size)
     const response = await this.request(
       `${DRIVE_API}/files/${encodeURIComponent(resolvedHead.id)}?alt=media`,
       { headers: this.headers() },
       'Загрузка копии',
     )
     try {
-      return { head: resolvedHead, payload: await response.json() }
+      const serialized = await responseTextWithinLimit(response)
+      return { head: resolvedHead, payload: JSON.parse(serialized) as unknown }
     } catch (error) {
+      if (error instanceof SyncProviderError) throw error
       throw new SyncProviderError('invalid-remote', 'Копия в Google Drive содержит повреждённый JSON', error)
     }
   }
 
-  private async create(payload: unknown): Promise<RemoteHead> {
+  private async create(serializedPayload: string): Promise<RemoteHead> {
     const boundary = `focus_flow_${Date.now()}`
     const metadata = JSON.stringify({
       name: FILE_NAME,
@@ -121,7 +189,7 @@ export class GoogleDriveAdapter implements SyncAdapter {
       `--${boundary}`,
       'Content-Type: application/json',
       '',
-      JSON.stringify(payload),
+      serializedPayload,
       `--${boundary}--`,
     ].join('\r\n')
     const response = await this.request(
@@ -136,13 +204,13 @@ export class GoogleDriveAdapter implements SyncAdapter {
     return toRemoteHead((await response.json()) as DriveFile)
   }
 
-  private async update(file: DriveFile, payload: unknown): Promise<RemoteHead> {
+  private async update(file: DriveFile, serializedPayload: string): Promise<RemoteHead> {
     const response = await this.request(
       `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name,modifiedTime,version,size`,
       {
         method: 'PATCH',
         headers: this.headers('application/json'),
-        body: JSON.stringify(payload),
+        body: serializedPayload,
       },
       'Обновление копии',
     )
@@ -150,12 +218,13 @@ export class GoogleDriveAdapter implements SyncAdapter {
   }
 
   async upload(payload: unknown, options: UploadOptions = {}): Promise<RemoteHead> {
+    const serializedPayload = serializeSnapshotWithinLimit(payload)
     const file = await this.findDataFile()
     if (!file) {
       if (typeof options.expectedRevision === 'string') {
         throw new SyncProviderError('conflict', 'Копия Google Drive была удалена на другом устройстве')
       }
-      return this.create(payload)
+      return this.create(serializedPayload)
     }
     if (options.expectedRevision === null) {
       throw new SyncProviderError('conflict', 'Копия Google Drive уже создана на другом устройстве')
@@ -164,6 +233,6 @@ export class GoogleDriveAdapter implements SyncAdapter {
     if (typeof options.expectedRevision === 'string' && current.revision !== options.expectedRevision) {
       throw new SyncProviderError('conflict', 'Копия Google Drive изменилась на другом устройстве')
     }
-    return this.update(file, payload)
+    return this.update(file, serializedPayload)
   }
 }

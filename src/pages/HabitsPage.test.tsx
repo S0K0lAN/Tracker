@@ -1,12 +1,14 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Habit } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 import { getCompletionTrend, getHabitRhythm, HabitsPage, HABIT_ICONS, toDateKey } from './HabitsPage'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
+
+afterEach(() => vi.useRealTimers())
 
 function rollingWeek(now: Date) {
   return Array.from({ length: 7 }, (_, index) => {
@@ -128,7 +130,33 @@ describe('habit rhythm', () => {
     expect(within(firstRow).getByText('7 из 7 плановых дней')).toBeInTheDocument()
     expect(within(secondRow).getByText('0 из 7 плановых дней')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: /График выполненных привычек и задач/ })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: 'Выполнения привычек и задач за последние четырнадцать дней' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Последние 7 дней' })).toBeInTheDocument()
     expect(screen.getByText('Серия', { selector: '.habit-list__streak-label' })).toBeInTheDocument()
+  })
+
+  it('moves the rolling days forward after midnight without remounting', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 21, 23, 59, 30))
+    renderHabits([{
+      id: 'daily-clock',
+      name: 'Ежедневная привычка',
+      icon: 'target',
+      targetDays: [0, 1, 2, 3, 4, 5, 6],
+      completions: [],
+      color: '#778c70',
+    }])
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.getByRole('button', { name: 'Отметить Ежедневная привычка 21.08.2026' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Отметить Ежедневная привычка 22.08.2026' })).not.toBeInTheDocument()
+
+    act(() => {
+      vi.setSystemTime(new Date(2026, 7, 22, 0, 0, 5))
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(screen.getByRole('button', { name: 'Отметить Ежедневная привычка 22.08.2026' })).toBeInTheDocument()
   })
 
   it('toggles only the selected habit and updates only its rhythm', async () => {

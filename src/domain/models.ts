@@ -7,6 +7,8 @@ export type BackgroundPreset = 'none' | 'mist' | 'dawn' | 'forest' | 'custom'
 export type AppFontFamily = 'system' | 'humanist' | 'readable'
 export type AppFontScale = 90 | 100 | 110 | 120
 
+export const DEFAULT_URGENCY_THRESHOLD_HOURS = 72
+
 export interface Subtask {
   id: string
   title: string
@@ -132,10 +134,14 @@ export interface AppState {
 }
 
 export function getTaskTiming(task: Task, now = new Date()): { urgency: Urgency; overdue: boolean } {
-  const deadlineAt = task.deadline ? Date.parse(task.deadline) : undefined
+  const parsedDeadline = task.deadline ? Date.parse(task.deadline) : Number.NaN
+  const deadlineAt = Number.isFinite(parsedDeadline) ? parsedDeadline : undefined
   const nowAt = now.getTime()
+  const urgencyThresholdHours = Number.isFinite(task.urgencyThresholdHours) && task.urgencyThresholdHours > 0
+    ? task.urgencyThresholdHours
+    : DEFAULT_URGENCY_THRESHOLD_HOURS
   const urgency = task.urgencyOverride
-    ?? (deadlineAt !== undefined && (deadlineAt - nowAt) / 3_600_000 <= task.urgencyThresholdHours ? 'high' : 'low')
+    ?? (deadlineAt !== undefined && (deadlineAt - nowAt) / 3_600_000 <= urgencyThresholdHours ? 'high' : 'low')
   return {
     urgency,
     overdue: Boolean(deadlineAt !== undefined && task.status === 'active' && deadlineAt < nowAt),

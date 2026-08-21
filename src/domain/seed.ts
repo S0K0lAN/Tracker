@@ -56,7 +56,7 @@ export const createSeedState = (): AppState => {
   const everyDay = [1, 2, 3, 4, 5, 6, 0]
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     projects: [
       { id: 'inbox', name: 'Без проекта', color: '#9ca89c', createdAt: dateAt(-100, 9) },
       { id: 'work', name: 'Работа', color: '#778c70', description: 'Рабочие задачи и инициативы', createdAt: dateAt(-90, 9) },

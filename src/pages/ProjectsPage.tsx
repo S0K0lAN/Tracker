@@ -8,7 +8,11 @@ import './workspace-pages.css'
 
 const projectColors = ['#778c70', '#9b7fbd', '#d78b69', '#5d88a3', '#c18b46', '#b76565', '#6f8f86', '#8472a7']
 
-export function ProjectsPage({ onEditTask }: { onEditTask: (task: Task | null) => void }) {
+export function ProjectsPage({
+  onEditTask,
+}: {
+  onEditTask: (task: Task | null, defaults?: Partial<Pick<Task, 'projectId'>>) => void
+}) {
   const { state, addProject, updateProject, removeProject } = useApp()
   const [creating, setCreating] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -121,15 +125,22 @@ export function ProjectsPage({ onEditTask }: { onEditTask: (task: Task | null) =
           eyebrow="Проект"
           title={selected.name}
           description={selected.description ?? `${active.length} активных задач`}
-          actions={<button className="button button--primary" onClick={() => onEditTask(null)}><Plus size={18} /> Задача</button>}
+          actions={<button className="button button--primary" onClick={() => onEditTask(null, { projectId: selected.id })}><Plus size={18} /> Задача</button>}
         />
+        <button
+          className="button button--primary project-detail-mobile-action"
+          onClick={() => onEditTask(null, { projectId: selected.id })}
+          aria-label={`Задача в проект «${selected.name}»`}
+        >
+          <Plus size={18} /> Задача в проект
+        </button>
         <section className="project-detail-heading">
           <span style={{ background: selected.color }}><Folder size={18} /></span>
           <div><strong>{active.length} активных</strong><small>{projectTasks.filter((task) => task.status === 'completed').length} выполнено</small></div>
         </section>
         <section className="task-list">
           {projectTasks.map((task) => <TaskCard key={task.id} task={task} onOpen={onEditTask} />)}
-          {projectTasks.length === 0 && <div className="empty-state"><span><Folder /></span><h3>Проект пока пуст</h3><p>Добавьте первую задачу и выберите этот проект в редакторе.</p></div>}
+          {projectTasks.length === 0 && <div className="empty-state"><span><Folder /></span><h3>Проект пока пуст</h3><p>Добавьте первую задачу — проект подставится в редактор автоматически.</p></div>}
         </section>
       </main>
     )
