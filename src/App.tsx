@@ -21,6 +21,7 @@ import {
 import { NavLink, useRouter } from './core/router/Router'
 import { matchProjectRoute, projectPath } from './core/router/projectRoute'
 import type { Task } from './domain/models'
+import { isInboxTask } from './domain/taskFilters'
 import { TaskDetails } from './components/TaskDetails'
 import { TaskEditor } from './components/TaskEditor'
 import { InboxPage } from './pages/InboxPage'
@@ -58,7 +59,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const asideRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const [drawerMode, setDrawerMode] = useState(() => window.matchMedia?.('(max-width: 820px)').matches ?? false)
-  const activeCount = state.tasks.filter((task) => task.status === 'active').length
+  const activeCount = state.tasks.filter((task) => task.status === 'active' && isInboxTask(task)).length
 
   useEffect(() => {
     const media = window.matchMedia?.('(max-width: 820px)')
