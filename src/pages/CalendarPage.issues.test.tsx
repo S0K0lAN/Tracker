@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { App } from '../App'
 import { RouterProvider } from '../core/router/Router'
-import type { Task } from '../domain/models'
+import type { AppState, Task } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 import { CalendarPage } from './CalendarPage'
@@ -32,9 +32,10 @@ function taskFrom(template: Task, id: string, title: string, timing: Pick<Task, 
   }
 }
 
-function renderCalendar(tasks: Task[]) {
+function renderCalendar(tasks: Task[], configure?: (state: AppState) => void) {
   const state = createSeedState()
   state.tasks = tasks
+  configure?.(state)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   const onEditTask = vi.fn()
   const result = render(
@@ -59,6 +60,89 @@ function renderCalendarApp(tasks: Task[]) {
 }
 
 describe('CalendarPage GitHub issues #33 and #35', () => {
+  it('marks the current local date in every calendar mode and keeps the frame on the full day surface', async () => {
+    const user = userEvent.setup()
+    const { container } = renderCalendar([])
+    const todayLabel = new Date().toLocaleDateString('ru-RU')
+
+    await screen.findByRole('heading', { name: 'Календарь', level: 1 })
+
+    for (const mode of ['Год', 'Месяц', 'Неделя', '3 дня', 'День'] as const) {
+      await user.click(screen.getByRole('button', { name: mode }))
+      const currentDates = container.querySelectorAll<HTMLElement>('[aria-current="date"]')
+
+      expect(currentDates).toHaveLength(1)
+      expect(currentDates[0].getAttribute('aria-label')).toContain(todayLabel)
+
+      const framedDay = mode === 'Год'
+        ? currentDates[0]
+        : currentDates[0].closest<HTMLElement>(mode === 'Месяц' ? '.month-day' : '.week-day')
+      expect(framedDay).toHaveClass('is-today')
+    }
+  })
+
+  it('shows separate visual indicators and accessible labels for importance and inherited computed urgency', async () => {
+    const today = startOfLocalDay(new Date())
+    const deadline = new Date(Date.now() + 36 * 60 * 60_000).toISOString()
+    const template = createSeedState().tasks.find((task) => task.status === 'active')!
+    const inheritedUrgent = {
+      ...taskFrom(template, 'inherited-urgent', 'Срочная по порогу проекта', { startAt: at(today, 9), deadline }),
+      projectId: 'work',
+      importance: 'low' as const,
+      urgencyOverride: undefined,
+      urgencyThresholdOverrideHours: undefined,
+    }
+    const importantCalm = {
+      ...taskFrom(template, 'important-calm', 'Важная без срочности', { startAt: at(today, 10), deadline }),
+      projectId: 'personal',
+      importance: 'high' as const,
+      urgencyOverride: undefined,
+      urgencyThresholdOverrideHours: undefined,
+    }
+    const importantUrgent = {
+      ...taskFrom(template, 'important-urgent', 'Важная и срочная', { startAt: at(today, 11), deadline }),
+      projectId: 'work',
+      importance: 'high' as const,
+      urgencyOverride: undefined,
+      urgencyThresholdOverrideHours: undefined,
+    }
+    const { container } = renderCalendar(
+      [inheritedUrgent, importantCalm, importantUrgent],
+      (state) => {
+        state.projects.find((project) => project.id === 'work')!.urgencyThresholdHours = 48
+        state.projects.find((project) => project.id === 'personal')!.urgencyThresholdHours = 24
+      },
+    )
+
+    await screen.findByRole('heading', { name: 'Календарь', level: 1 })
+    const timedTask = (title: string) => [...container.querySelectorAll<HTMLButtonElement>('.calendar-task')]
+      .find((task) => task.textContent?.includes(title))!
+
+    const urgent = timedTask(inheritedUrgent.title)
+    expect(urgent).toHaveAttribute('data-importance', 'low')
+    expect(urgent).toHaveAttribute('data-urgency', 'high')
+    expect(urgent).toHaveAccessibleName(/Срочная задача/)
+    expect(urgent).not.toHaveAccessibleName(/Важная задача/)
+    expect(urgent.querySelector('.calendar-task-signal--urgency')).toBeInTheDocument()
+    expect(urgent.querySelector('.calendar-task-signal--importance')).not.toBeInTheDocument()
+
+    const important = timedTask(importantCalm.title)
+    expect(important).toHaveAttribute('data-importance', 'high')
+    expect(important).toHaveAttribute('data-urgency', 'low')
+    expect(important).toHaveAccessibleName(/Важная задача/)
+    expect(important).not.toHaveAccessibleName(/Срочная задача/)
+    expect(important.querySelector('.calendar-task-signal--importance')).toBeInTheDocument()
+    expect(important.querySelector('.calendar-task-signal--urgency')).not.toBeInTheDocument()
+
+    const both = timedTask(importantUrgent.title)
+    expect(both).toHaveAttribute('data-importance', 'high')
+    expect(both).toHaveAttribute('data-urgency', 'high')
+    expect(both).toHaveAccessibleName(/Важная задача/)
+    expect(both).toHaveAccessibleName(/Срочная задача/)
+    expect(both.querySelector('.calendar-task-signal--importance')).toBeInTheDocument()
+    expect(both.querySelector('.calendar-task-signal--urgency')).toBeInTheDocument()
+  })
+
   it('opens every task of the day from the accessible deadline overflow and restores focus', async () => {
     const user = userEvent.setup()
     const today = startOfLocalDay(new Date())
@@ -114,6 +198,8 @@ describe('CalendarPage GitHub issues #33 and #35', () => {
     const deadlineOnly = taskFrom(template, 'deadline-only', 'Только дедлайн', {
       deadline: at(addLocalDays(gridStart, 8), 15),
     })
+    deadlineOnly.importance = 'low'
+    deadlineOnly.urgencyOverride = 'low'
     const { container, onEditTask } = renderCalendar([crossing, overlapping, deadlineOnly])
 
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })

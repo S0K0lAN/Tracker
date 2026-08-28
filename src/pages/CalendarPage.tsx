@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Plus, X } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Flag, Plus, X, Zap } from 'lucide-react'
 import type { Task } from '../domain/models'
-import { isOverdue, isSameLocalDay } from '../domain/models'
+import { getTaskUrgency, isOverdue, isSameLocalDay } from '../domain/models'
 import { useApp } from '../state/AppContext'
+import { useNow } from '../hooks/useNow'
 import { PageHeader } from '../components/PageHeader'
 import { trapTabKey } from '../components/focusTrap'
 import {
@@ -129,9 +130,39 @@ function taskDateRangeLabel(task: Task) {
   return point && !Number.isNaN(point.getTime()) ? shortDate.format(point) : ''
 }
 
-function taskDeadlineAriaLabel(task: Task) {
+function taskSignalLabels(task: Task, isUrgent: boolean) {
+  return [
+    task.importance === 'high' ? 'Важная задача' : '',
+    isUrgent ? 'Срочная задача' : '',
+  ].filter(Boolean)
+}
+
+function taskAccessibleName(label: string, task: Task, isUrgent: boolean) {
+  return [label, ...taskSignalLabels(task, isUrgent)].join(', ')
+}
+
+function TaskSignals({ task, isUrgent }: { task: Task; isUrgent: boolean }) {
+  if (task.importance !== 'high' && !isUrgent) return null
+
+  return (
+    <span className="calendar-task-signals" aria-hidden="true">
+      {task.importance === 'high' && (
+        <span className="calendar-task-signal calendar-task-signal--importance" title="Важная задача">
+          <Flag size={12} fill="currentColor" aria-hidden="true" />
+        </span>
+      )}
+      {isUrgent && (
+        <span className="calendar-task-signal calendar-task-signal--urgency" title="Срочная задача">
+          <Zap size={12} fill="currentColor" aria-hidden="true" />
+        </span>
+      )}
+    </span>
+  )
+}
+
+function taskDeadlineAriaLabel(task: Task, isUrgent: boolean) {
   const rangeLabel = taskDateRangeLabel(task)
-  return `Дедлайн: ${task.title}${rangeLabel ? `, ${rangeLabel}` : ''}`
+  return taskAccessibleName(`Дедлайн: ${task.title}${rangeLabel ? `, ${rangeLabel}` : ''}`, task, isUrgent)
 }
 
 function sortTasksForDay(tasks: Task[], date: Date) {
@@ -178,12 +209,14 @@ function DayTasksDialog({
   onClose,
   onCreate,
   onEdit,
+  urgentTaskIds,
 }: {
   date: Date
   tasks: Task[]
   onClose: () => void
   onCreate: () => void
   onEdit: (task: Task) => void
+  urgentTaskIds: ReadonlySet<string>
 }) {
   const dialogRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -222,13 +255,24 @@ function DayTasksDialog({
           <button ref={closeRef} className="button button--ghost button--icon" onClick={onClose} aria-label="Закрыть список задач"><X size={18} /></button>
         </header>
         <div className="calendar-day-dialog__list">
-          {tasks.map((task) => (
-            <button className="calendar-day-dialog__task" key={task.id} onClick={() => onEdit(task)}>
-              <span className={task.deadline && isSameLocalDay(task.deadline, date) ? 'is-deadline' : ''} aria-hidden="true" />
-              <strong>{task.title}</strong>
-              <small>{taskTimeRange(task) || taskDateRangeLabel(task) || 'Без времени'}</small>
-            </button>
-          ))}
+          {tasks.map((task) => {
+            const isUrgent = urgentTaskIds.has(task.id)
+            const timingLabel = taskTimeRange(task) || taskDateRangeLabel(task) || 'Без времени'
+            return (
+              <button
+                className="calendar-day-dialog__task"
+                key={task.id}
+                onClick={() => onEdit(task)}
+                aria-label={taskAccessibleName(`${task.title}, ${timingLabel}`, task, isUrgent)}
+                data-importance={task.importance}
+                data-urgency={isUrgent ? 'high' : 'low'}
+              >
+                <span className="calendar-day-dialog__task-marker" aria-hidden="true" />
+                <strong><TaskSignals task={task} isUrgent={isUrgent} /><span>{task.title}</span></strong>
+                <small>{timingLabel}</small>
+              </button>
+            )
+          })}
           {tasks.length === 0 && (
             <div className="calendar-day-dialog__empty">
               <CalendarDays size={24} />
@@ -253,6 +297,8 @@ function TimeCalendar({
   onCreate,
   onEdit,
   onOpenDay,
+  today,
+  urgentTaskIds,
 }: {
   days: Date[]
   tasks: Task[]
@@ -260,6 +306,8 @@ function TimeCalendar({
   onCreate: (date: Date) => void
   onEdit: (task: Task) => void
   onOpenDay: (date: Date, opener?: HTMLElement) => void
+  today: Date
+  urgentTaskIds: ReadonlySet<string>
 }) {
   const hourHeight = mode === 'day' ? DAY_HOUR_HEIGHT : mode === 'three-days' ? THREE_DAY_HOUR_HEIGHT : WEEK_HOUR_HEIGHT
   const deadlinesByDay = days.map((day) => tasks.filter((task) => task.deadline && isSameLocalDay(task.deadline, day)))
@@ -299,25 +347,31 @@ function TimeCalendar({
           hourHeight,
         })
         const dayDeadlines = deadlinesByDay[dayIndex]
-        const isToday = sameLocalDate(day, new Date())
+        const isToday = sameLocalDate(day, today)
         const deadlineLimit = mode === 'day' ? 5 : 3
         return (
-          <div className="week-day" key={day.toISOString()}>
-            <button className={`week-day__header ${isToday ? 'is-today' : ''}`} onClick={() => onCreate(day)} aria-label={`Запланировать на ${dateForAria(day)}`}>
+          <div className={`week-day ${isToday ? 'is-today' : ''}`} key={day.toISOString()}>
+            <button className={`week-day__header ${isToday ? 'is-today' : ''}`} onClick={() => onCreate(day)} aria-label={`Запланировать на ${dateForAria(day)}`} aria-current={isToday ? 'date' : undefined}>
               <span>{dayLabel.format(day)}</span><strong>{day.getDate()}</strong>
             </button>
             <div className="week-day__deadlines" role="group" aria-label={`Дедлайны ${dateForAria(day)}`}>
-              {dayDeadlines.slice(0, deadlineLimit).map((task) => (
-                <button
-                  className={`calendar-deadline-strip ${task.importance === 'high' ? 'calendar-deadline-strip--important' : ''}`}
-                  key={task.id}
-                  onClick={() => onEdit(task)}
-                  title={`Дедлайн: ${task.title}`}
-                  data-importance={task.importance}
-                >
-                  <i aria-hidden="true" /><span>{task.title}</span>
-                </button>
-              ))}
+              {dayDeadlines.slice(0, deadlineLimit).map((task) => {
+                const isUrgent = urgentTaskIds.has(task.id)
+                return (
+                  <button
+                    className="calendar-deadline-strip"
+                    key={task.id}
+                    onClick={() => onEdit(task)}
+                    title={`Дедлайн: ${task.title}`}
+                    aria-label={taskAccessibleName(`Дедлайн: ${task.title}`, task, isUrgent)}
+                    data-importance={task.importance}
+                    data-urgency={isUrgent ? 'high' : 'low'}
+                  >
+                    <CalendarDays className="calendar-deadline-strip__glyph" size={12} aria-hidden="true" />
+                    <TaskSignals task={task} isUrgent={isUrgent} /><span>{task.title}</span>
+                  </button>
+                )
+              })}
               {dayDeadlines.length > deadlineLimit && (
                 <button
                   type="button"
@@ -332,26 +386,31 @@ function TimeCalendar({
             </div>
             <div className="week-day__grid">
               {Array.from({ length: 24 }, (_, index) => <i key={index} />)}
-              {positionedTasks.map(({ task, top, height, column, columnCount, durationMinutes }) => (
-                <button
-                  className={`calendar-task ${task.importance === 'high' ? 'calendar-task--important' : ''}`}
-                  style={{
-                    top: `${top}px`,
-                    height: `${height}px`,
-                    '--calendar-task-lines': calendarTaskLineLimit(height, mode),
-                    ...eventHorizontalStyle(column, columnCount),
-                  } as CSSProperties}
-                  onClick={() => onEdit(task)}
-                  key={task.id}
-                  aria-label={`${task.title}, ${taskTimeRange(task)}`}
-                  title={`${task.title} · ${taskTimeRange(task)}`}
-                  data-overlap-column={`${column + 1}/${columnCount}`}
-                  data-duration-minutes={durationMinutes}
-                  data-importance={task.importance}
-                >
-                  <strong>{task.title}</strong>
-                </button>
-              ))}
+              {positionedTasks.map(({ task, top, height, column, columnCount, durationMinutes }) => {
+                const isUrgent = urgentTaskIds.has(task.id)
+                const timeRange = taskTimeRange(task)
+                return (
+                  <button
+                    className="calendar-task"
+                    style={{
+                      top: `${top}px`,
+                      height: `${height}px`,
+                      '--calendar-task-lines': calendarTaskLineLimit(height, mode),
+                      ...eventHorizontalStyle(column, columnCount),
+                    } as CSSProperties}
+                    onClick={() => onEdit(task)}
+                    key={task.id}
+                    aria-label={taskAccessibleName(`${task.title}, ${timeRange}`, task, isUrgent)}
+                    title={`${task.title} · ${timeRange}`}
+                    data-overlap-column={`${column + 1}/${columnCount}`}
+                    data-duration-minutes={durationMinutes}
+                    data-importance={task.importance}
+                    data-urgency={isUrgent ? 'high' : 'low'}
+                  >
+                    <span className="calendar-task__content"><TaskSignals task={task} isUrgent={isUrgent} /><strong>{task.title}</strong></span>
+                  </button>
+                )
+              })}
             </div>
           </div>
         )
@@ -432,11 +491,15 @@ function MonthCalendar({
   tasks,
   onOpenDay,
   onEdit,
+  today,
+  urgentTaskIds,
 }: {
   anchor: Date
   tasks: Task[]
   onOpenDay: (date: Date, opener?: HTMLElement) => void
   onEdit: (task: Task) => void
+  today: Date
+  urgentTaskIds: ReadonlySet<string>
 }) {
   const days = monthGridDays(anchor)
   const weeks = layoutMonthDeadlineWeeks(tasks, days)
@@ -462,14 +525,15 @@ function MonthCalendar({
             const visibleTasks = scheduledTasks.slice(0, MONTH_CELL_LIMIT)
             const hiddenScheduledCount = scheduledTasks.length - visibleTasks.length
             const hiddenDeadlineCount = hiddenDeadlineCounts[dayIndex]
+            const isToday = sameLocalDate(date, today)
             return (
               <article
-                className={`month-day ${date.getMonth() !== anchor.getMonth() ? 'month-day--muted' : ''}`}
+                className={`month-day ${isToday ? 'is-today' : ''} ${date.getMonth() !== anchor.getMonth() ? 'month-day--muted' : ''}`}
                 key={date.toISOString()}
                 onClick={(event) => openCell(event, date)}
                 data-task-count={dayTasks.length}
               >
-                <button className="month-day__number" type="button" onClick={(event) => onOpenDay(date, event.currentTarget)} aria-label={`Показать задачи на ${dateForAria(date)}`}>
+                <button className="month-day__number" type="button" onClick={(event) => onOpenDay(date, event.currentTarget)} aria-label={`Показать задачи на ${dateForAria(date)}`} aria-current={isToday ? 'date' : undefined}>
                   {date.getDate()}
                 </button>
                 {laneCount > 0 && <span className="month-day__range-space" aria-hidden="true" />}
@@ -484,20 +548,25 @@ function MonthCalendar({
                       Ещё {hiddenDeadlineCount}
                     </button>
                   )}
-                  {visibleTasks.map((task) => (
-                    <button
-                      type="button"
-                      className="month-day__task"
-                      key={task.id}
-                      onClick={() => onEdit(task)}
-                      aria-label={`Запланировано: ${task.title}`}
-                      title={`Запланировано: ${task.title}`}
-                      data-importance={task.importance}
-                    >
-                      <Clock3 size={11} />
-                      <span>{task.title}</span>
-                    </button>
-                  ))}
+                  {visibleTasks.map((task) => {
+                    const isUrgent = urgentTaskIds.has(task.id)
+                    return (
+                      <button
+                        type="button"
+                        className="month-day__task"
+                        key={task.id}
+                        onClick={() => onEdit(task)}
+                        aria-label={taskAccessibleName(`Запланировано: ${task.title}`, task, isUrgent)}
+                        title={`Запланировано: ${task.title}`}
+                        data-importance={task.importance}
+                        data-urgency={isUrgent ? 'high' : 'low'}
+                      >
+                        <Clock3 className="month-day__task-clock" size={11} aria-hidden="true" />
+                        <TaskSignals task={task} isUrgent={isUrgent} />
+                        <span>{task.title}</span>
+                      </button>
+                    )
+                  })}
                   {hiddenScheduledCount > 0 && (
                     <button
                       type="button"
@@ -522,23 +591,27 @@ function MonthCalendar({
                 gridTemplateRows: `repeat(${laneCount}, 22px)`,
               }}
             >
-              {ranges.map(({ task, columnStart, columnSpan, lane, startsBeforeWeek, endsAfterWeek }) => (
-                <button
-                  type="button"
-                  className={`deadline-range month-calendar__range month-day__deadline ${task.importance === 'high' ? 'is-important' : ''} ${startsBeforeWeek ? 'continues-before' : ''} ${endsAfterWeek ? 'continues-after' : ''} ${isOverdue(task) ? 'is-overdue' : ''}`}
-                  style={{ gridColumn: `${columnStart + 1} / span ${columnSpan}`, gridRow: lane + 1 }}
-                  key={`${task.id}-${weekIndex}`}
-                  onClick={() => onEdit(task)}
-                  title={`${task.title}: ${taskDateRangeLabel(task)}`}
-                  aria-label={taskDeadlineAriaLabel(task)}
-                  data-task-id={task.id}
-                  data-range-lane={lane}
-                  data-range-span={columnSpan}
-                  data-importance={task.importance}
-                >
-                  <i aria-hidden="true" /><span>{task.title}</span>
-                </button>
-              ))}
+              {ranges.map(({ task, columnStart, columnSpan, lane, startsBeforeWeek, endsAfterWeek }) => {
+                const isUrgent = urgentTaskIds.has(task.id)
+                return (
+                  <button
+                    type="button"
+                    className={`deadline-range month-calendar__range month-day__deadline ${startsBeforeWeek ? 'continues-before' : ''} ${endsAfterWeek ? 'continues-after' : ''} ${isOverdue(task, today) ? 'is-overdue' : ''}`}
+                    style={{ gridColumn: `${columnStart + 1} / span ${columnSpan}`, gridRow: lane + 1 }}
+                    key={`${task.id}-${weekIndex}`}
+                    onClick={() => onEdit(task)}
+                    title={`${task.title}: ${taskDateRangeLabel(task)}`}
+                    aria-label={taskDeadlineAriaLabel(task, isUrgent)}
+                    data-task-id={task.id}
+                    data-range-lane={lane}
+                    data-range-span={columnSpan}
+                    data-importance={task.importance}
+                    data-urgency={isUrgent ? 'high' : 'low'}
+                  >
+                    <TaskSignals task={task} isUrgent={isUrgent} /><span>{task.title}</span>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -552,11 +625,13 @@ function YearCalendar({
   tasks,
   onOpenDay,
   onOpenMonth,
+  today,
 }: {
   anchor: Date
   tasks: Task[]
   onOpenDay: (date: Date, opener?: HTMLElement) => void
   onOpenMonth: (date: Date) => void
+  today: Date
 }) {
   const months = Array.from({ length: 12 }, (_, month) => new Date(anchor.getFullYear(), month, 1))
 
@@ -576,12 +651,14 @@ function YearCalendar({
               {Array.from({ length: daysInMonth }, (_, index) => {
                 const date = new Date(month.getFullYear(), month.getMonth(), index + 1)
                 const count = tasksForLocalDate(tasks, date).length
+                const isToday = sameLocalDate(date, today)
                 return (
                   <button
-                    className={`${sameLocalDate(date, new Date()) ? 'is-today' : ''} ${count ? 'has-tasks' : ''}`}
+                    className={`${isToday ? 'is-today' : ''} ${count ? 'has-tasks' : ''}`}
                     key={index + 1}
                     onClick={(event) => onOpenDay(date, event.currentTarget)}
                     aria-label={`${dateForAria(date)}${count ? `, задач: ${count}` : ', задач нет'}`}
+                    aria-current={isToday ? 'date' : undefined}
                   >
                     {index + 1}
                     {count > 0 && <i aria-hidden="true">{count > 9 ? '9+' : count}</i>}
@@ -607,11 +684,22 @@ function periodTitle(mode: CalendarMode, anchor: Date) {
 
 export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, defaults?: Partial<Pick<Task, 'startAt' | 'deadline'>>) => void }) {
   const { state } = useApp()
+  const now = useNow()
   const [mode, setMode] = useState<CalendarMode>('week')
   const [anchor, setAnchor] = useState(new Date())
   const [openDay, setOpenDay] = useState<Date | null>(null)
   const dayDialogOpener = useRef<HTMLElement | null>(null)
   const activeTasks = useMemo(() => state.tasks.filter((task) => task.status === 'active'), [state.tasks])
+  const projectUrgencyThresholds = useMemo(
+    () => new Map(state.projects.map((project) => [project.id, project.urgencyThresholdHours])),
+    [state.projects],
+  )
+  const urgentTaskIds = useMemo(
+    () => new Set(activeTasks
+      .filter((task) => getTaskUrgency(task, now, projectUrgencyThresholds.get(task.projectId)) === 'high')
+      .map((task) => task.id)),
+    [activeTasks, now, projectUrgencyThresholds],
+  )
 
   const showDay = (date: Date, opener?: HTMLElement) => {
     dayDialogOpener.current = opener ?? null
@@ -685,8 +773,8 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
       </section>
 
       <CalendarSwipeSurface onMove={move}>
-        {mode === 'year' && <YearCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onOpenMonth={openMonth} />}
-        {mode === 'month' && <MonthCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onEdit={onEditTask} />}
+        {mode === 'year' && <YearCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onOpenMonth={openMonth} today={now} />}
+        {mode === 'month' && <MonthCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onEdit={onEditTask} today={now} urgentTaskIds={urgentTaskIds} />}
         {(mode === 'week' || mode === 'three-days' || mode === 'day') && (
           <TimeCalendar
             days={timeDays}
@@ -695,6 +783,8 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
             onCreate={(date) => onEditTask(null, { startAt: plannedDate(date) })}
             onEdit={onEditTask}
             onOpenDay={showDay}
+            today={now}
+            urgentTaskIds={urgentTaskIds}
           />
         )}
       </CalendarSwipeSurface>
@@ -708,6 +798,7 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
           onClose={closeDay}
           onCreate={() => createForDay(openDay)}
           onEdit={editFromDialog}
+          urgentTaskIds={urgentTaskIds}
         />
       )}
     </main>

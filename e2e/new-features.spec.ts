@@ -2,6 +2,8 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
+const CALENDAR_GREEN = 'rgb(47, 125, 75)'
+const CALENDAR_GREEN_SOFT = 'rgb(225, 241, 230)'
 const runtimeErrors = new WeakMap<Page, string[]>()
 
 test.beforeEach(async ({ page }) => {
@@ -293,12 +295,124 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
   expect(monthSpans.reduce((total, span) => total + span, 0)).toBe(3)
 })
 
-test('month deadline range updates its color when importance changes', async ({ page }) => {
+test('calendar uses a fixed green task palette and a white today frame in every view', async ({ page }) => {
+  await page.goto('/calendar')
+  await page.evaluate((storageKey) => {
+    const state = JSON.parse(localStorage.getItem(storageKey)!)
+    const template = state.tasks.find((task: { status: string }) => task.status === 'active')
+    const workProject = state.projects.find((project: { id: string }) => project.id === 'work')
+    const today = new Date()
+    const startOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 13, 0)
+    const urgentStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 14, 0)
+    const urgentDeadline = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 15, 0)
+
+    state.settings.accent = 'violet'
+    workProject.urgencyThresholdHours = 48
+    state.tasks.unshift(
+      {
+        ...template,
+        id: 'calendar-green-important',
+        title: 'Зелёная важная задача',
+        projectId: 'work',
+        startAt: startOnly.toISOString(),
+        deadline: undefined,
+        importance: 'high',
+        urgencyOverride: 'low',
+        urgencyThresholdOverrideHours: undefined,
+      },
+      {
+        ...template,
+        id: 'calendar-green-urgent',
+        title: 'Зелёная вычисленно срочная задача',
+        projectId: 'work',
+        startAt: urgentStart.toISOString(),
+        deadline: urgentDeadline.toISOString(),
+        importance: 'low',
+        urgencyOverride: undefined,
+        urgencyThresholdOverrideHours: undefined,
+      },
+    )
+    localStorage.setItem(storageKey, JSON.stringify(state))
+  }, STORAGE_KEY)
+  await page.reload()
+
+  for (const mode of ['Неделя', '3 дня', 'День'] as const) {
+    await page.getByRole('button', { name: mode, exact: true }).click()
+    const currentDate = page.locator('[aria-current="date"]')
+    await expect(currentDate).toHaveCount(1)
+    const frame = await currentDate.evaluate((node) => {
+      const day = node.closest('.week-day')!
+      const style = getComputedStyle(day, '::after')
+      return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth }
+    })
+    expect(frame).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px' })
+
+    const importantTask = page.locator('.calendar-task').filter({ hasText: 'Зелёная важная задача' })
+    await expect(importantTask).toHaveAttribute('data-importance', 'high')
+    await expect(importantTask).toHaveAttribute('data-urgency', 'low')
+    await expect(importantTask).toHaveAccessibleName(/Важная задача/)
+    await expect(importantTask).not.toHaveAccessibleName(/Срочная задача/)
+    await expect(importantTask.locator('.calendar-task-signal--importance')).toBeVisible()
+    expect(await importantTask.evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { background: style.backgroundColor, border: style.borderLeftColor }
+    })).toEqual({ background: CALENDAR_GREEN_SOFT, border: CALENDAR_GREEN })
+
+    const urgentTask = page.locator('.calendar-task').filter({ hasText: 'Зелёная вычисленно срочная задача' })
+    await expect(urgentTask).toHaveAttribute('data-importance', 'low')
+    await expect(urgentTask).toHaveAttribute('data-urgency', 'high')
+    await expect(urgentTask).toHaveAccessibleName(/Срочная задача/)
+    await expect(urgentTask).not.toHaveAccessibleName(/Важная задача/)
+    await expect(urgentTask.locator('.calendar-task-signal--urgency')).toBeVisible()
+    expect(await urgentTask.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
+
+    const deadlineStrip = page.locator('.calendar-deadline-strip').filter({ hasText: 'Зелёная вычисленно срочная задача' })
+    await expect(deadlineStrip).toHaveAttribute('data-urgency', 'high')
+    expect(await deadlineStrip.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
+  }
+
+  await page.getByRole('button', { name: 'Месяц', exact: true }).click()
+  const monthCurrentDate = page.locator('[aria-current="date"]')
+  await expect(monthCurrentDate).toHaveCount(1)
+  expect(await monthCurrentDate.evaluate((node) => {
+    const style = getComputedStyle(node.closest('.month-day')!, '::after')
+    return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth }
+  })).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px' })
+
+  const monthTask = page.locator('.month-day__task').filter({ hasText: 'Зелёная важная задача' })
+  await expect(monthTask).toHaveAccessibleName(/Важная задача/)
+  await expect(monthTask.locator('.calendar-task-signal--importance')).toBeVisible()
+  expect(await monthTask.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
+  const monthRange = page.locator('[data-task-id="calendar-green-urgent"]')
+  await expect(monthRange).toHaveAccessibleName(/Срочная задача/)
+  await expect(monthRange.locator('.calendar-task-signal--urgency')).toBeVisible()
+  expect(await monthRange.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { background: style.backgroundColor, border: style.borderLeftColor }
+  })).toEqual({ background: CALENDAR_GREEN_SOFT, border: CALENDAR_GREEN })
+
+  await page.getByRole('button', { name: 'Год', exact: true }).click()
+  const yearCurrentDate = page.locator('[aria-current="date"]')
+  await expect(yearCurrentDate).toHaveCount(1)
+  expect(await yearCurrentDate.evaluate((node) => getComputedStyle(node).boxShadow)).toContain('rgb(255, 255, 255)')
+  expect(await yearCurrentDate.locator('i').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN)
+})
+
+test('month deadline range stays green and adds an importance icon when importance changes', async ({ page }) => {
   await page.goto('/calendar')
   await page.getByRole('button', { name: 'Месяц', exact: true }).click()
   const range = page.locator('.month-calendar__range').filter({ hasText: 'Купить продукты на неделю' })
   await expect(range).toHaveAttribute('data-importance', 'low')
-  const lowColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
+  await expect(range).toHaveAttribute('data-urgency', 'high')
+  await expect(range).toHaveAccessibleName(/Срочная задача/)
+  await expect(range).not.toHaveAccessibleName(/Важная задача/)
+  await expect(range.locator('.calendar-task-signal--urgency')).toBeVisible()
+  await expect(range.locator('.calendar-task-signal--importance')).toHaveCount(0)
+  const lowStyle = await range.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { background: style.backgroundColor, border: style.borderLeftColor }
+  })
+  expect(lowStyle).toEqual({ background: CALENDAR_GREEN_SOFT, border: CALENDAR_GREEN })
 
   await range.click()
   const details = page.getByRole('dialog', { name: 'Купить продукты на неделю' })
@@ -309,9 +423,16 @@ test('month deadline range updates its color when importance changes', async ({ 
   await page.getByRole('button', { name: 'Закрыть задачу' }).click()
 
   await expect(range).toHaveAttribute('data-importance', 'high')
-  const highColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
-  expect(highColor).not.toBe(lowColor)
-  await expect(range).toHaveClass(/is-important/)
+  await expect(range).toHaveAttribute('data-urgency', 'high')
+  await expect(range).toHaveAccessibleName(/Важная задача/)
+  await expect(range).toHaveAccessibleName(/Срочная задача/)
+  await expect(range.locator('.calendar-task-signal--importance')).toBeVisible()
+  await expect(range.locator('.calendar-task-signal--urgency')).toBeVisible()
+  const highStyle = await range.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { background: style.backgroundColor, border: style.borderLeftColor }
+  })
+  expect(highStyle).toEqual(lowStyle)
 })
 
 test('search exposes its own new-task action and archive omits the redundant bulk action', async ({ page }) => {
