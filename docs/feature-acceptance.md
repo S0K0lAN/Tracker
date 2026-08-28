@@ -55,7 +55,7 @@ Done браузерного MVP. Они честно вынесены в отд�
 | SEARCH-01 | Поиск задач, проектов, тегов и фильтров | **Готово** | `/search` регистронезависимо группирует четыре типа результатов; component/E2E подтверждают кириллический поиск, empty state, сохранение и повторное применение фильтра. |
 | TRASH-01 | Корзина удалённых задач | **Готово** | Soft delete → `/trash` → reload → restore проходит E2E; восстановленная неразобранная задача возвращается во Входящие, permanent delete требует и component-тестом проверяет явное второе подтверждение. |
 | POM-01 | Таймер фокуса для задачи | **Готово** | Действие явно подписано «Таймер фокуса · 25 минут»; desktop/mobile E2E проверяют task binding, pause и timestamp persistence после reload. |
-| CAL-01 | Дедлайны и навигация календаря | **Готово** | Deadline-only task отображается однодневным marker в week/month; отдельный deadlines mode удалён, а E2E проверяет смену периода горизонтальным drag. |
+| CAL-01 | Дедлайны и навигация календаря (#45) | **Готово** | Deadline-only task отображается зелёной полосой с иконкой и точным временем в секции «Весь день» week/3-day/day и однодневным marker в month; отдельный deadlines mode удалён, а E2E проверяет responsive overflow и смену периода горизонтальным drag. |
 | CAL-02 | Длительность задачи (#46) | **Готово** | Schema v7 хранит 1–1440 целых минут, редактор не даёт блоку перейти локальную полночь, week/3-day/day вычисляют высоту независимо от дедлайна; migration/unit/component/E2E проверяют persistence и projection. |
 | INB-01 | Сортировка входящих | **Готово** | Доступны created desc, nearest deadline, importance и title; component проверяет порядок, E2E — сохранение выбора после reload. |
 | ARC-01 | Архив выполненных задач | **Готово** | Individual/bulk archive, отдельный Archive tab, restore и reload реализованы; component/E2E проверяют полный цикл возврата в completed Inbox. |
@@ -98,7 +98,7 @@ Done браузерного MVP. Они честно вынесены в отд�
   сохранение эффективного порога задач при удалении проекта.
 - `src/NewFeatures.test.tsx` — Today, Projects, Search, soft delete/restore,
   permanent delete confirmation, archive/restore, сортировка, list/board
-  Входящих и отдельный календарь, Pomodoro, deadline-only week/month, `Escape` внутри `SelectMenu` и
+  Входящих и отдельный календарь, Pomodoro, deadline-only all-day/month, `Escape` внутри `SelectMenu` и
   keyboard navigation task action-menu, 42-cell calendar и focus trap/restore
   TaskEditor, AttachmentViewer и mobile Sidebar.
 - `src/pages/HabitsPage.test.tsx` — rhythm/streak, независимый toggle,

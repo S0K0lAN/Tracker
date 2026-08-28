@@ -65,7 +65,7 @@ function renderCalendarApp(tasks: Task[]) {
   )
 }
 
-describe('CalendarPage GitHub issues #33, #35 and #46', () => {
+describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
   it('marks the current local date in every calendar mode and keeps the frame on the full day surface', async () => {
     const user = userEvent.setup()
     const { container } = renderCalendar([])
@@ -186,7 +186,7 @@ describe('CalendarPage GitHub issues #33, #35 and #46', () => {
     const weekOverflow = screen.getByRole('button', { name: /Показать все задачи и дедлайны.+скрыто 3/i })
     expect(weekOverflow).toHaveTextContent('Ещё 3')
     expect(getComputedStyle(weekOverflow).minHeight).toBe('24px')
-    expect(container.querySelector<HTMLElement>('.week-calendar')?.style.getPropertyValue('--week-deadline-height')).toBe('105px')
+    expect(container.querySelector<HTMLElement>('.week-calendar')?.style.getPropertyValue('--week-all-day-height')).toBe('114px')
 
     weekOverflow.focus()
     await user.keyboard('{Enter}')
@@ -206,6 +206,42 @@ describe('CalendarPage GitHub issues #33, #35 and #46', () => {
     await user.click(dayOverflow)
     await user.click(within(screen.getByRole('dialog', { name: /Все задачи дня/i })).getByRole('button', { name: 'Закрыть список задач' }))
     await waitFor(() => expect(dayOverflow).toHaveFocus())
+  })
+
+  it('shows deadline tasks as strips in the all-day lane of every time view', async () => {
+    const user = userEvent.setup()
+    const today = startOfLocalDay(new Date())
+    const template = createSeedState().tasks.find((task) => task.status === 'active')!
+    const deadlineTask = taskFrom(template, 'all-day-deadline', 'Контрольный срок', {
+      deadline: at(today, 18, 45),
+    })
+    const earlierDeadline = taskFrom(template, 'earlier-deadline', 'Ранний срок', {
+      deadline: at(today, 9, 15),
+    })
+    const scheduledOnly = taskFrom(template, 'scheduled-only', 'Только план', {
+      startAt: at(today, 11),
+    })
+    const { container } = renderCalendar([deadlineTask, scheduledOnly, earlierDeadline])
+
+    await screen.findByRole('heading', { name: 'Календарь', level: 1 })
+
+    for (const mode of ['Неделя', '3 дня', 'День'] as const) {
+      if (mode !== 'Неделя') await user.click(screen.getByRole('button', { name: mode }))
+
+      expect(screen.getByText('Весь день')).toBeInTheDocument()
+      expect(screen.queryByText('Сроки')).not.toBeInTheDocument()
+      expect(container.querySelectorAll('.week-day__all-day')).toHaveLength(mode === 'Неделя' ? 7 : mode === '3 дня' ? 3 : 1)
+      const strip = screen.getByTitle('Дедлайн: Контрольный срок · до 18:45')
+      expect(strip).toHaveAccessibleName(/Дедлайн: Контрольный срок, до 18:45/)
+      expect(within(strip).getByText('до 18:45')).toBeInTheDocument()
+      expect(strip.querySelector('.calendar-deadline-strip__glyph')).toBeInTheDocument()
+      const allDayLane = strip.closest<HTMLElement>('.week-day__all-day')!
+      expect(within(allDayLane).queryByText('Только план')).not.toBeInTheDocument()
+      expect([...allDayLane.querySelectorAll('.calendar-deadline-strip__title')].map((item) => item.textContent)).toEqual([
+        'Ранний срок',
+        'Контрольный срок',
+      ])
+    }
   })
 
   it('renders timed blocks from planned duration instead of the deadline in every time view', async () => {

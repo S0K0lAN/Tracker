@@ -246,10 +246,14 @@ describe('calendar deadline projection', () => {
     })
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
 
-    const weekMarker = screen.getByTitle('Дедлайн: Только дедлайн')
+    const weekMarker = screen.getByTitle('Дедлайн: Только дедлайн · до 15:00')
     expect(weekMarker).toBeInTheDocument()
-    expect(container.querySelectorAll('.week-day__deadlines')).toHaveLength(7)
-    expect(container.querySelectorAll('.week-day__deadlines button')).toHaveLength(1)
+    expect(screen.getByText('Весь день')).toBeInTheDocument()
+    expect(screen.queryByText('Сроки')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.week-day__all-day')).toHaveLength(7)
+    expect(container.querySelectorAll('.week-day__all-day button')).toHaveLength(1)
+    expect(weekMarker).toHaveAccessibleName(/Дедлайн: Только дедлайн, до 15:00/)
+    expect(within(weekMarker).getByText('до 15:00')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Месяц' }))
     expect(container.querySelectorAll('.month-day')).toHaveLength(42)

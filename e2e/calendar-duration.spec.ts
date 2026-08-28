@@ -44,7 +44,7 @@ test('planned duration controls calendar blocks while the deadline remains indep
   const weekBlock = page.locator('.time-calendar--week .calendar-task').filter({ hasText: 'Фокус-блок 210 минут' })
   await expect(weekBlock).toHaveAttribute('data-duration-minutes', '210')
   await expect(weekBlock).toHaveAttribute('title', /· 11:30 — 15:00$/)
-  await expect(page.getByTitle('Дедлайн: Фокус-блок 210 минут')).toBeVisible()
+  await expect(page.getByTitle('Дедлайн: Фокус-блок 210 минут · до 18:00')).toBeVisible()
 
   await weekBlock.click()
   const details = page.getByRole('dialog', { name: 'Фокус-блок 210 минут' })
@@ -55,7 +55,7 @@ test('planned duration controls calendar blocks while the deadline remains indep
   await page.getByRole('button', { name: 'Закрыть задачу' }).click()
 
   await expect(page.locator('.time-calendar--week .calendar-task').filter({ hasText: 'Фокус-блок 210 минут' })).toHaveAttribute('data-duration-minutes', '210')
-  await expect(page.getByTitle('Дедлайн: Фокус-блок 210 минут')).toBeVisible()
+  await expect(page.getByTitle('Дедлайн: Фокус-блок 210 минут · до 08:00')).toBeVisible()
   await expect.poll(() => page.evaluate((storageKey) => {
     const raw = localStorage.getItem(storageKey)
     const task = raw

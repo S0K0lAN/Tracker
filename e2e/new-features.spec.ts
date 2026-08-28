@@ -75,7 +75,7 @@ test('new workspace routes support direct URLs and browser history', async ({ pa
   await expect(page.getByRole('heading', { name: 'Проекты', level: 1 })).toBeVisible()
 })
 
-test('manual date entry keeps the week aligned and deadlines stack as strips without calendar scrollbars', async ({ page }) => {
+test('manual date entry keeps the week aligned and deadlines stack in the all-day lane without calendar scrollbars', async ({ page }) => {
   await page.goto('/calendar')
   const localDate = await page.evaluate(() => {
     const date = new Date()
@@ -86,12 +86,17 @@ test('manual date entry keeps the week aligned and deadlines stack as strips wit
   await page.locator('.page-header').getByRole('button', { name: 'Запланировать' }).click()
   await page.getByLabel('Название').fill('Ручная дата E2E')
   await page.getByRole('textbox', { name: 'Начало', exact: true }).fill(`${localDate}, 11:30`)
-  await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill(`${localDate}, 18:45`)
+  await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill(`${localDate}, 13:45`)
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
 
   const week = page.locator('.week-calendar')
-  await expect(week.locator('.week-day__deadlines')).toHaveCount(7)
-  await expect(week.getByTitle('Дедлайн: Ручная дата E2E')).toBeVisible()
+  await expect(week.getByText('Весь день', { exact: true })).toBeVisible()
+  await expect(week.getByText('Сроки', { exact: true })).toHaveCount(0)
+  await expect(week.locator('.week-day__all-day')).toHaveCount(7)
+  const deadlineStrip = week.getByTitle('Дедлайн: Ручная дата E2E · до 13:45')
+  await expect(deadlineStrip).toBeVisible()
+  await expect(deadlineStrip).toHaveAccessibleName(/до 13:45/)
+  await expect(deadlineStrip.locator('time')).toBeVisible()
   await expect(week.getByText('Ручная дата E2E', { exact: true })).toHaveCount(2)
   const gridTops = await week.locator('.week-day__grid').evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)))
   expect(new Set(gridTops).size).toBe(1)
@@ -742,7 +747,20 @@ test('mobile task actions launch a Pomodoro without clipping or pointer intercep
 test('mobile calendar keeps deadline markers and compact controls usable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/calendar')
+  const allDayOverflow = page.locator('.week-day__all-day-more').first()
+  await expect(allDayOverflow).toBeVisible()
+  await expect(allDayOverflow).toContainText(/Ещё \d+/)
+  const overflowMetrics = await allDayOverflow.evaluate((node) => ({
+    fontSize: Number.parseFloat(getComputedStyle(node).fontSize),
+    height: node.getBoundingClientRect().height,
+  }))
+  expect(overflowMetrics.fontSize).toBeGreaterThan(0)
+  expect(overflowMetrics.height + 0.01).toBeGreaterThanOrEqual(24)
+  const mobileDeadlineStrip = page.locator('.calendar-deadline-strip').first()
+  await expect(mobileDeadlineStrip.locator('time')).toBeVisible()
+  expect((await mobileDeadlineStrip.boundingBox())!.height + 0.01).toBeGreaterThanOrEqual(24)
   await page.getByRole('button', { name: 'Месяц' }).click()
+  await expect(page.getByText('Весь день', { exact: true })).toHaveCount(0)
   await expect(page.locator('.month-day')).toHaveCount(42)
   await expect(page.getByRole('button', { name: 'Дедлайн: Подготовить план недели' })).toBeVisible()
 

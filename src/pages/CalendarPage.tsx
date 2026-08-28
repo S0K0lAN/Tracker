@@ -35,7 +35,7 @@ const THREE_DAY_HOUR_HEIGHT = 38
 const DAY_HOUR_HEIGHT = 44
 const MONTH_CELL_LIMIT = 3
 const MONTH_DEADLINE_LANE_LIMIT = 3
-const DEADLINE_OVERFLOW_LANE_HEIGHT = 26
+const ALL_DAY_OVERFLOW_LANE_HEIGHT = 26
 
 function plannedDate(day: Date, hours = 9, minutes = 0) {
   const date = new Date(day)
@@ -313,18 +313,20 @@ function TimeCalendar({
   urgentTaskIds: ReadonlySet<string>
 }) {
   const hourHeight = mode === 'day' ? DAY_HOUR_HEIGHT : mode === 'three-days' ? THREE_DAY_HOUR_HEIGHT : WEEK_HOUR_HEIGHT
-  const deadlinesByDay = days.map((day) => tasks.filter((task) => task.deadline && isSameLocalDay(task.deadline, day)))
-  const mostDeadlinesInDay = Math.max(0, ...deadlinesByDay.map((items) => items.length))
-  const visibleDeadlineLanes = Math.max(1, Math.min(mode === 'day' ? 5 : 3, mostDeadlinesInDay))
-  const deadlineLaneHeight = 10
-    + visibleDeadlineLanes * 23
-    + (mostDeadlinesInDay > visibleDeadlineLanes ? DEADLINE_OVERFLOW_LANE_HEIGHT : 0)
+  const allDayDeadlinesByDay = days.map((day) => tasks
+    .filter((task) => task.deadline && isSameLocalDay(task.deadline, day))
+    .sort((left, right) => new Date(left.deadline!).getTime() - new Date(right.deadline!).getTime()))
+  const mostAllDayItemsInDay = Math.max(0, ...allDayDeadlinesByDay.map((items) => items.length))
+  const visibleAllDayLanes = Math.max(1, Math.min(mode === 'day' ? 5 : 3, mostAllDayItemsInDay))
+  const allDayLaneHeight = 10
+    + visibleAllDayLanes * 26
+    + (mostAllDayItemsInDay > visibleAllDayLanes ? ALL_DAY_OVERFLOW_LANE_HEIGHT : 0)
   const gridHeight = (ALL_DAY_END_HOUR - ALL_DAY_START_HOUR) * hourHeight
   const calendarStyle = {
     '--calendar-day-count': days.length,
     '--calendar-hour-height': `${hourHeight}px`,
     '--calendar-grid-height': `${gridHeight}px`,
-    '--week-deadline-height': `${deadlineLaneHeight}px`,
+    '--week-all-day-height': `${allDayLaneHeight}px`,
   } as CSSProperties
 
   return (
@@ -335,7 +337,7 @@ function TimeCalendar({
     >
       <div className="week-calendar__times" aria-hidden="true">
         <span className="week-calendar__corner" />
-        <span className="week-calendar__deadline-label"><CalendarDays size={12} /> Сроки</span>
+        <span className="week-calendar__all-day-label"><CalendarDays size={12} /><span>Весь день</span></span>
         <div className="time-calendar__axis">
           {Array.from({ length: 12 }, (_, index) => index * 2).map((hour) => (
             <time key={hour} style={{ top: `${hour * hourHeight}px` }}>{String(hour).padStart(2, '0')}:00</time>
@@ -349,7 +351,7 @@ function TimeCalendar({
           endHour: ALL_DAY_END_HOUR,
           hourHeight,
         })
-        const dayDeadlines = deadlinesByDay[dayIndex]
+        const dayDeadlines = allDayDeadlinesByDay[dayIndex]
         const isToday = sameLocalDate(day, today)
         const deadlineLimit = mode === 'day' ? 5 : 3
         return (
@@ -357,35 +359,38 @@ function TimeCalendar({
             <button className={`week-day__header ${isToday ? 'is-today' : ''}`} onClick={() => onCreate(day)} aria-label={`Запланировать на ${dateForAria(day)}`} aria-current={isToday ? 'date' : undefined}>
               <span>{dayLabel.format(day)}</span><strong>{day.getDate()}</strong>
             </button>
-            <div className="week-day__deadlines" role="group" aria-label={`Дедлайны ${dateForAria(day)}`}>
+            <div className="week-day__all-day" role="group" aria-label={`Весь день, дедлайны на ${dateForAria(day)}`}>
               {dayDeadlines.slice(0, deadlineLimit).map((task) => {
                 const isUrgent = urgentTaskIds.has(task.id)
+                const deadlineTime = timeLabel.format(new Date(task.deadline!))
                 return (
                   <button
                     className="calendar-deadline-strip"
                     key={task.id}
                     onClick={() => onEdit(task)}
-                    title={`Дедлайн: ${task.title}`}
-                    aria-label={taskAccessibleName(`Дедлайн: ${task.title}`, task, isUrgent)}
+                    title={`Дедлайн: ${task.title} · до ${deadlineTime}`}
+                    aria-label={taskAccessibleName(`Дедлайн: ${task.title}, до ${deadlineTime}`, task, isUrgent)}
                     data-importance={task.importance}
                     data-urgency={isUrgent ? 'high' : 'low'}
                   >
-                    <CalendarDays className="calendar-deadline-strip__glyph" size={12} aria-hidden="true" />
-                    <TaskSignals task={task} isUrgent={isUrgent} /><span>{task.title}</span>
+                    <Clock3 className="calendar-deadline-strip__glyph" size={12} aria-hidden="true" />
+                    <TaskSignals task={task} isUrgent={isUrgent} />
+                    <span className="calendar-deadline-strip__title">{task.title}</span>
+                    <time className="calendar-deadline-strip__time" dateTime={task.deadline}>до {deadlineTime}</time>
                   </button>
                 )
               })}
               {dayDeadlines.length > deadlineLimit && (
                 <button
                   type="button"
-                  className="week-day__deadlines-more"
+                  className="week-day__all-day-more"
                   onClick={(event) => onOpenDay(day, event.currentTarget)}
                   aria-label={`Показать все задачи и дедлайны на ${dateForAria(day)}, скрыто ${dayDeadlines.length - deadlineLimit}`}
                 >
                   Ещё {dayDeadlines.length - deadlineLimit}
                 </button>
               )}
-              {dayDeadlines.length === 0 && <span className="week-day__deadlines-empty" aria-hidden="true" />}
+              {dayDeadlines.length === 0 && <span className="week-day__all-day-empty" aria-hidden="true" />}
             </div>
             <div className="week-day__grid">
               {Array.from({ length: 24 }, (_, index) => <i key={index} />)}
@@ -793,7 +798,7 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
         )}
       </CalendarSwipeSurface>
 
-      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Высота события соответствует длительности задачи, а дедлайн отмечается отдельно.</p>
+      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Высота события соответствует длительности задачи, а дедлайн отображается отдельно от временного блока.</p>
 
       {openDay && (
         <DayTasksDialog
