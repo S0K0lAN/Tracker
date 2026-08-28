@@ -149,6 +149,14 @@
   pointer-events: auto;
 }
 
+.month-calendar__deadline-glyph {
+  width: 11px;
+  height: 11px;
+  display: block;
+  flex: 0 0 11px;
+  color: var(--calendar-task-green-strong);
+}
+
 .month-day .month-day__deadline-more {
   min-height: 24px;
   color: var(--calendar-task-green-strong);

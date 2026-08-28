@@ -44,12 +44,31 @@ function createLegacyV1State() {
   return {
     ...current,
     schemaVersion: 1 as const,
-    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, ...task }) => ({
+    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, ...task }) => ({
       ...task,
       urgencyThresholdHours: urgencyThresholdOverrideHours ?? 72,
     })),
     projects: current.projects.map(({ urgencyThresholdHours: _threshold, ...project }) => project),
   }
+}
+
+function expectedLegacyDuration(startAt?: string, deadline?: string) {
+  if (!startAt) return 60
+  const start = new Date(startAt)
+  const nextMidnight = new Date(start)
+  nextMidnight.setHours(24, 0, 0, 0)
+  const fallback = Math.max(1, Math.min(60, Math.floor(
+    (nextMidnight.getTime() - start.getTime()) / 60_000,
+  )))
+  if (!deadline) return fallback
+  const end = new Date(deadline)
+  const duration = (end.getTime() - start.getTime()) / 60_000
+  return Number.isInteger(duration)
+    && duration >= 1
+    && duration <= 1_440
+    && end.getTime() <= nextMidnight.getTime()
+    ? duration
+    : fallback
 }
 
 function addDeepRemotePlugin(state: AppState) {
@@ -156,6 +175,7 @@ describe('remote snapshots', () => {
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, ...task }) => ({
       ...task,
+      plannedDurationMinutes: expectedLegacyDuration(task.startAt, task.deadline),
       urgencyThresholdOverrideHours: urgencyThresholdHours,
     })))
     expect(decoded.projects).toEqual(legacy.projects.map((project) => ({
@@ -178,6 +198,7 @@ describe('remote snapshots', () => {
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, ...task }) => ({
       ...task,
+      plannedDurationMinutes: expectedLegacyDuration(task.startAt, task.deadline),
       urgencyThresholdOverrideHours: urgencyThresholdHours,
     })))
     expect(decoded.projects).toEqual(legacy.projects.map((project) => ({

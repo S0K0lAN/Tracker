@@ -1,10 +1,14 @@
-import { DEFAULT_URGENCY_THRESHOLD_HOURS } from './models'
+import {
+  DEFAULT_PLANNED_DURATION_MINUTES,
+  DEFAULT_URGENCY_THRESHOLD_HOURS,
+  MAX_PLANNED_DURATION_MINUTES,
+} from './models'
 import type { AppState, Habit, Project, SavedFilter, Task, TaskStatus } from './models'
 import { createSeedState } from './seed'
 import { attachmentDataUrlMimeType, MAX_ATTACHMENT_BYTES, safeAttachmentDataUrl } from './attachments'
 import { safeCustomBackgroundDataUrl } from './backgrounds'
 
-export const CURRENT_SCHEMA_VERSION = 5
+export const CURRENT_SCHEMA_VERSION = 7
 
 const MAX_PAYLOAD_STRING_BYTES = 10 * 1024 * 1024
 // Per-field and known-user-text budgets must not pre-empt a historical v4
@@ -104,6 +108,7 @@ export function assertSnapshotStateShape(
     strict,
     strictSanitizableValues,
     schemaVersion >= 5,
+    schemaVersion >= 7,
     budget,
     `tasks[${index}]`,
   ))
@@ -149,6 +154,7 @@ function assertTaskShape(
   strict: boolean,
   strictSanitizableValues: boolean,
   useProjectUrgencyThresholds: boolean,
+  requirePlannedDuration: boolean,
   budget: SnapshotValidationBudget,
   path: string,
 ) {
@@ -163,6 +169,7 @@ function assertTaskShape(
     dateStringField(task, key, false, path, strictSanitizableValues)
   }
   if (strictSanitizableValues
+    && !requirePlannedDuration
     && typeof task.startAt === 'string'
     && typeof task.deadline === 'string'
     && Date.parse(task.deadline) < Date.parse(task.startAt)
@@ -173,6 +180,15 @@ function assertTaskShape(
     numberField(task, 'urgencyThresholdOverrideHours', false, path, (value) => value > 0)
   } else {
     numberField(task, 'urgencyThresholdHours', strict, path, (value) => !strictSanitizableValues || value > 0)
+  }
+  if (requirePlannedDuration) {
+    numberField(
+      task,
+      'plannedDurationMinutes',
+      true,
+      path,
+      (value) => Number.isInteger(value) && value >= 1 && value <= MAX_PLANNED_DURATION_MINUTES,
+    )
   }
   numberField(task, 'focusMinutes', strict, path, (value) => value >= 0)
   enumField(task, 'importance', ['low', 'high'], strict, path)
@@ -841,10 +857,12 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
   const allowedStatuses: TaskStatus[] = ['active', 'completed', 'archived', 'deleted']
   const status = value.status && allowedStatuses.includes(value.status) ? value.status : 'active'
   const startAt = normalizedDate(value.startAt)
-  const candidateDeadline = normalizedDate(value.deadline)
-  const deadline = candidateDeadline && (!startAt || Date.parse(candidateDeadline) >= Date.parse(startAt))
-    ? candidateDeadline
-    : undefined
+  const deadline = normalizedDate(value.deadline)
+  const plannedDurationMinutes = sourceSchemaVersion < 7
+    ? inferLegacyPlannedDuration(startAt, deadline)
+    : validPlannedDuration(value.plannedDurationMinutes)
+      ? value.plannedDurationMinutes
+      : DEFAULT_PLANNED_DURATION_MINUTES
   const {
     urgencyThresholdHours: legacyUrgencyThresholdHours,
     urgencyThresholdOverrideHours,
@@ -860,6 +878,7 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
     description: value.description ?? '',
     projectId: value.projectId ?? 'inbox',
     startAt,
+    plannedDurationMinutes,
     deadline,
     ...(normalizedThresholdOverride === undefined
       ? {}
@@ -882,6 +901,43 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
     deletedAt: normalizedDate(value.deletedAt),
     focusMinutes: Number(value.focusMinutes) || 0,
   }
+}
+
+function inferLegacyPlannedDuration(startAt?: string, deadline?: string): number {
+  const fallbackDuration = legacyFallbackDuration(startAt)
+  if (!startAt || !deadline) return fallbackDuration
+
+  const startTime = Date.parse(startAt)
+  const deadlineTime = Date.parse(deadline)
+  const durationMinutes = (deadlineTime - startTime) / 60_000
+  if (!Number.isInteger(durationMinutes)
+    || durationMinutes < 1
+    || durationMinutes > MAX_PLANNED_DURATION_MINUTES
+  ) {
+    return fallbackDuration
+  }
+
+  const nextLocalMidnight = new Date(startTime)
+  nextLocalMidnight.setHours(24, 0, 0, 0)
+  return deadlineTime <= nextLocalMidnight.getTime()
+    ? durationMinutes
+    : fallbackDuration
+}
+
+function legacyFallbackDuration(startAt?: string): number {
+  if (!startAt) return DEFAULT_PLANNED_DURATION_MINUTES
+  const startTime = Date.parse(startAt)
+  const nextLocalMidnight = new Date(startTime)
+  nextLocalMidnight.setHours(24, 0, 0, 0)
+  const wholeMinutesRemaining = Math.floor((nextLocalMidnight.getTime() - startTime) / 60_000)
+  return Math.max(1, Math.min(DEFAULT_PLANNED_DURATION_MINUTES, wholeMinutesRemaining))
+}
+
+function validPlannedDuration(value: unknown): value is number {
+  return typeof value === 'number'
+    && Number.isInteger(value)
+    && value >= 1
+    && value <= MAX_PLANNED_DURATION_MINUTES
 }
 
 function normalizeReminder(value: unknown): Task['reminders'][number] | undefined {

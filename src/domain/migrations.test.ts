@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeAppState, parseStoredAppState, SNAPSHOT_LIMITS } from './migrations'
+import { CURRENT_SCHEMA_VERSION, normalizeAppState, parseStoredAppState, SNAPSHOT_LIMITS } from './migrations'
 import type { AppState, SavedFilter, Task } from './models'
 import { createSeedState } from './seed'
 
@@ -32,10 +32,13 @@ const minimalTask = (index: number): Task => ({
   status: 'active',
   createdAt: '2026-08-21T00:00:00.000Z',
   updatedAt: '2026-08-21T00:00:00.000Z',
+  plannedDurationMinutes: 60,
   focusMinutes: 0,
 })
 
-type LegacyTask = Omit<Task, 'urgencyThresholdOverrideHours'> & {
+type PreDurationTask = Omit<Task, 'plannedDurationMinutes'> & { plannedDurationMinutes?: number }
+
+type LegacyTask = Omit<PreDurationTask, 'urgencyThresholdOverrideHours'> & {
   urgencyThresholdHours: number
 }
 
@@ -51,11 +54,20 @@ function createLegacyState(schemaVersion: 1 | 2 | 3 | 4 = 4): LegacyAppState {
   return {
     ...current,
     schemaVersion,
-    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, ...task }) => ({
+    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, ...task }) => ({
       ...task,
       urgencyThresholdHours: urgencyThresholdOverrideHours ?? current.settings.defaultUrgencyThresholdHours,
     })),
     projects: current.projects.map(({ urgencyThresholdHours: _urgencyThresholdHours, ...project }) => project),
+  }
+}
+
+function createLegacyV6State() {
+  const current = createSeedState()
+  return {
+    ...current,
+    schemaVersion: 6 as const,
+    tasks: current.tasks.map(({ plannedDurationMinutes: _duration, ...task }) => task as PreDurationTask),
   }
 }
 
@@ -154,7 +166,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(migrated.settings.syncProviderConfigs).toEqual({})
     expect(migrated.settings.fontFamily).toBe('system')
     expect(migrated.settings.fontScale).toBe(100)
-    expect(migrated.schemaVersion).toBe(5)
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(migrated.tasks.flatMap((task) => task.attachments)[0].type).toBe('image/svg+xml')
     expect(migrated.sync).toMatchObject({
       status: 'idle',
@@ -198,15 +210,86 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(() => parseStoredAppState(invalid)).toThrow(new RegExp(`tasks\\[0\\]\\.${field}`))
   })
 
-  it('rejects reminders with invalid timestamps and deadlines before their start', () => {
+  it('rejects reminders with invalid timestamps', () => {
     const invalidReminder = createSeedState()
     invalidReminder.tasks[0].reminders[0].at = 'not-a-date'
-    const reversedRange = createSeedState()
-    reversedRange.tasks[0].startAt = '2026-08-21T12:00:00.000Z'
-    reversedRange.tasks[0].deadline = '2026-08-21T11:59:59.999Z'
 
     expect(() => parseStoredAppState(invalidReminder)).toThrow(/tasks\[0\]\.reminders\[0\]\.at/)
-    expect(() => parseStoredAppState(reversedRange)).toThrow(/tasks\[0\]\.deadline/)
+  })
+
+  it('keeps the v7 deadline independent from the scheduled start', () => {
+    const current = createSeedState()
+    current.tasks[0].startAt = '2026-08-21T12:00:00.000Z'
+    current.tasks[0].deadline = '2026-08-21T11:59:59.999Z'
+
+    const parsed = parseStoredAppState(current)
+
+    expect(parsed.tasks[0]).toMatchObject({
+      startAt: '2026-08-21T12:00:00.000Z',
+      deadline: '2026-08-21T11:59:59.999Z',
+    })
+  })
+
+  it('keeps the historical start/deadline order validation through schema v6', () => {
+    const legacy = createLegacyV6State()
+    legacy.tasks[0].startAt = '2026-08-21T12:00:00.000Z'
+    legacy.tasks[0].deadline = '2026-08-21T11:59:59.999Z'
+
+    expect(() => parseStoredAppState(legacy)).toThrow(/tasks\[0\]\.deadline/)
+  })
+
+  it.each([0, 1.5, 1441])('rejects an invalid current planned duration of %s minutes', (duration) => {
+    const invalid = createSeedState()
+    invalid.tasks[0].plannedDurationMinutes = duration
+
+    expect(() => parseStoredAppState(invalid)).toThrow(/tasks\[0\]\.plannedDurationMinutes/)
+  })
+
+  it('requires a current planned duration and accepts both inclusive bounds', () => {
+    const missing = createSeedState()
+    delete (missing.tasks[0] as Partial<Task>).plannedDurationMinutes
+    const minimum = createSeedState()
+    minimum.tasks[0].plannedDurationMinutes = 1
+    const maximum = createSeedState()
+    maximum.tasks[0].plannedDurationMinutes = 1440
+
+    expect(() => parseStoredAppState(missing)).toThrow(/tasks\[0\]\.plannedDurationMinutes/)
+    expect(parseStoredAppState(minimum).tasks[0].plannedDurationMinutes).toBe(1)
+    expect(parseStoredAppState(maximum).tasks[0].plannedDurationMinutes).toBe(1440)
+  })
+
+  it('infers a same-day v6 duration from the legacy start/deadline interval', () => {
+    const legacy = createLegacyV6State()
+    const start = new Date(2026, 7, 21, 9, 15)
+    const deadline = new Date(2026, 7, 21, 11)
+    legacy.tasks[0].startAt = start.toISOString()
+    legacy.tasks[0].deadline = deadline.toISOString()
+
+    const migrated = parseStoredAppState(legacy)
+
+    expect(migrated.tasks[0].plannedDurationMinutes).toBe(105)
+    expect(migrated.tasks[0].deadline).toBe(deadline.toISOString())
+  })
+
+  it('uses a same-day fallback for legacy intervals over 24 hours, crossing midnight, or without a start', () => {
+    const legacy = createLegacyV6State()
+    const longStart = new Date(2026, 7, 21, 9)
+    const longDeadline = new Date(2026, 7, 22, 10)
+    legacy.tasks[0].startAt = longStart.toISOString()
+    legacy.tasks[0].deadline = longDeadline.toISOString()
+    const lateStart = new Date(2026, 7, 21, 23, 30)
+    const nextDayDeadline = new Date(2026, 7, 22, 0, 30)
+    legacy.tasks[1].startAt = lateStart.toISOString()
+    legacy.tasks[1].deadline = nextDayDeadline.toISOString()
+    legacy.tasks[2].startAt = undefined
+
+    const migrated = parseStoredAppState(legacy)
+
+    expect(migrated.tasks[0].plannedDurationMinutes).toBe(60)
+    expect(migrated.tasks[0].deadline).toBe(longDeadline.toISOString())
+    expect(migrated.tasks[1].plannedDurationMinutes).toBe(30)
+    expect(migrated.tasks[1].deadline).toBe(nextDayDeadline.toISOString())
+    expect(migrated.tasks[2].plannedDurationMinutes).toBe(60)
   })
 
   it('requires positive project, task override, and default urgency thresholds in schema v5', () => {
@@ -230,13 +313,16 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(() => parseStoredAppState(invalidLegacyTaskThreshold)).toThrow(/tasks\[0\]\.urgencyThresholdHours/)
   })
 
-  it('validates the schema v5 seed with project thresholds and inherited task thresholds', () => {
+  it('validates the current seed with project thresholds and planned durations', () => {
     const current = parseStoredAppState(createSeedState())
 
-    expect(current.schemaVersion).toBe(5)
+    expect(current.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(current.projects.every((project) => project.urgencyThresholdHours === 72)).toBe(true)
     expect(current.tasks.every((task) => !('urgencyThresholdHours' in task))).toBe(true)
     expect(current.tasks.every((task) => task.urgencyThresholdOverrideHours === undefined)).toBe(true)
+    expect(current.tasks.every((task) => Number.isInteger(task.plannedDurationMinutes)
+      && task.plannedDurationMinutes >= 1
+      && task.plannedDurationMinutes <= 1440)).toBe(true)
   })
 
   it.each([1, 2, 3, 4] as const)(
@@ -249,7 +335,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
 
       const migrated = parseStoredAppState(legacy)
 
-      expect(migrated.schemaVersion).toBe(5)
+      expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
       expect(migrated.projects.every((project) => project.urgencyThresholdHours === 96)).toBe(true)
       expect(migrated.tasks[0].urgencyThresholdOverrideHours).toBe(24)
       expect(migrated.tasks[1].urgencyThresholdOverrideHours).toBe(120)
@@ -295,7 +381,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
 
     const migrated = parseStoredAppState(legacy)
 
-    expect(migrated.schemaVersion).toBe(5)
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(migrated.tasks).toHaveLength(legacy.tasks.length)
     expect(migrated.tasks[0]).toMatchObject({
       title: 'Сохранить эту задачу',
@@ -310,7 +396,8 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(Number.isFinite(Date.parse(migrated.tasks[0].updatedAt))).toBe(true)
     expect(migrated.tasks[1]).toMatchObject({
       startAt: '2026-08-21T12:00:00.000Z',
-      deadline: undefined,
+      deadline: '2026-08-21T11:00:00.000Z',
+      plannedDurationMinutes: 60,
     })
     expect(migrated.projects[0].color).toBe('#778c70')
     expect(migrated.projects[0].urgencyThresholdHours).toBe(72)
@@ -322,7 +409,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     })
   })
 
-  it('rejects an unparseable Pomodoro start in current schema v5 snapshots', () => {
+  it('rejects an unparseable Pomodoro start in current snapshots', () => {
     const invalid = createSeedState()
     invalid.pomodoro.runningSince = 'invalid-running-since'
 
@@ -355,7 +442,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(Number.isFinite(Date.parse(normalized.tasks[0].updatedAt))).toBe(true)
     expect(normalized.tasks[0]).toMatchObject({
       startAt: '2026-08-21T12:00:00.000Z',
-      deadline: undefined,
+      deadline: '2026-08-21T11:00:00.000Z',
       completedAt: undefined,
       reminders: [],
     })

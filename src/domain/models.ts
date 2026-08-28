@@ -8,6 +8,8 @@ export type AppFontFamily = 'system' | 'humanist' | 'readable'
 export type AppFontScale = 90 | 100 | 110 | 120
 
 export const DEFAULT_URGENCY_THRESHOLD_HOURS = 72
+export const DEFAULT_PLANNED_DURATION_MINUTES = 60
+export const MAX_PLANNED_DURATION_MINUTES = 24 * 60
 
 export interface Subtask {
   id: string
@@ -34,6 +36,7 @@ export interface Task {
   description: string
   projectId: string
   startAt?: string
+  plannedDurationMinutes: number
   deadline?: string
   urgencyThresholdOverrideHours?: number
   urgencyOverride?: Urgency

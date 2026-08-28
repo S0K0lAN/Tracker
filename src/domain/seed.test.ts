@@ -6,7 +6,7 @@ describe('demo seed data', () => {
     const state = createSeedState()
     const active = state.tasks.filter((task) => task.status === 'active')
     const completed = state.tasks.filter((task) => task.status === 'completed')
-    const ranges = active.filter((task) => task.startAt && task.deadline
+    const tasksWithLaterDeadline = active.filter((task) => task.startAt && task.deadline
       && new Date(task.startAt).toDateString() !== new Date(task.deadline).toDateString())
 
     expect(DEMO_DATA_VERSION).toBe('2026-08-01')
@@ -16,7 +16,11 @@ describe('demo seed data', () => {
     expect(state.tasks.some((task) => task.status === 'archived' || task.status === 'deleted')).toBe(false)
     expect(new Set(state.tasks.map((task) => task.id)).size).toBe(state.tasks.length)
     expect(new Set(state.projects.map((project) => project.id)).size).toBe(state.projects.length)
-    expect(ranges.length).toBeGreaterThanOrEqual(2)
+    expect(state.tasks.every((task) => Number.isInteger(task.plannedDurationMinutes)
+      && task.plannedDurationMinutes >= 1
+      && task.plannedDurationMinutes <= 1440)).toBe(true)
+    expect(active.some((task) => task.plannedDurationMinutes !== 60)).toBe(true)
+    expect(tasksWithLaterDeadline.length).toBeGreaterThanOrEqual(2)
     expect(active.some((task) => task.deadline && !task.startAt)).toBe(true)
     expect(active.some((task) => !task.deadline && !task.startAt)).toBe(true)
     expect(new Set(active.map((task) => task.importance)).size).toBe(2)

@@ -196,20 +196,22 @@ test('calendar changes period by horizontal mouse drag', async ({ page }) => {
   await expect(period).not.toHaveText(previousPeriod)
 })
 
-test('calendar views, full month cell list and deadline ranges stay connected', async ({ page }) => {
+test('calendar views, full month cell list and deadline points stay connected', async ({ page }) => {
   await page.goto('/calendar')
-  const localDate = await page.evaluate((storageKey) => {
+  const localDates = await page.evaluate((storageKey) => {
     const state = JSON.parse(localStorage.getItem(storageKey))
     const template = state.tasks.find((task: { status: string }) => task.status === 'active')
     const now = new Date()
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0)
     const pad = (value: number) => String(value).padStart(2, '0')
+    const localDate = (date: Date) => `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`
     state.tasks = state.tasks.filter((task: { id: string }) => task.id === 'task-plan')
     state.tasks.push({
       ...template,
       id: 'long-day-slot',
       title: 'Длинный дневной слот',
       startAt: dayStart.toISOString(),
+      plannedDurationMinutes: 210,
       deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 30).toISOString(),
     })
     state.tasks.push({
@@ -217,6 +219,7 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
       id: 'wrapping-week-slot',
       title: 'Подготовить подробный план презентации для общей встречи',
       startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0).toISOString(),
+      plannedDurationMinutes: 180,
       deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0).toISOString(),
     })
     state.tasks.push({
@@ -224,6 +227,7 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
       id: 'project-range',
       title: 'Диапазон проекта',
       startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 14, 0).toISOString(),
+      plannedDurationMinutes: 60,
       deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 3, 16, 0).toISOString(),
     })
     for (let index = 0; index < 5; index++) {
@@ -232,11 +236,15 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
         id: `full-list-${index}`,
         title: `Полный список ${index + 1}`,
         startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15 + index, 0).toISOString(),
+        plannedDurationMinutes: 30,
         deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15 + index, 30).toISOString(),
       })
     }
     localStorage.setItem(storageKey, JSON.stringify(state))
-    return `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()}`
+    return {
+      today: localDate(now),
+      intermediate: localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2)),
+    }
   }, STORAGE_KEY)
   await page.reload()
 
@@ -281,18 +289,23 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
   await expect(page.locator('.year-month')).toHaveCount(12)
 
   await page.getByRole('button', { name: 'Месяц', exact: true }).click()
-  await page.getByRole('button', { name: `Показать задачи на ${localDate}` }).click()
+  await page.getByRole('button', { name: `Показать задачи на ${localDates.today}` }).click()
   const dialog = page.getByRole('dialog', { name: /Все задачи дня/ })
   await expect(dialog).toBeVisible()
   for (let index = 1; index <= 5; index++) await expect(dialog.getByText(`Полный список ${index}`, { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Закрыть список задач' }).click()
 
-  const monthRange = page.locator('.month-calendar__range').filter({ hasText: 'Диапазон проекта' })
-  await expect(monthRange.first()).toBeVisible()
-  const monthSpans = await monthRange.evaluateAll((nodes) =>
+  const scheduledRow = page.locator('.month-day__task').filter({ hasText: 'Диапазон проекта' })
+  await expect(scheduledRow).toBeVisible()
+  const deadlinePoint = page.locator('.month-calendar__range').filter({ hasText: 'Диапазон проекта' })
+  await expect(deadlinePoint).toBeVisible()
+  const monthSpans = await deadlinePoint.evaluateAll((nodes) =>
     nodes.map((node) => Number(node.getAttribute('data-range-span'))),
   )
-  expect(monthSpans.reduce((total, span) => total + span, 0)).toBe(3)
+  expect(monthSpans).toEqual([1])
+
+  await page.getByRole('button', { name: `Показать задачи на ${localDates.intermediate}` }).click()
+  await expect(page.getByRole('dialog', { name: /Все задачи дня/ })).not.toContainText('Диапазон проекта')
 })
 
 test('calendar uses a fixed green task palette and a white today frame in every view', async ({ page }) => {
@@ -308,7 +321,7 @@ test('calendar uses a fixed green task palette and a white today frame in every 
 
     state.settings.accent = 'violet'
     workProject.urgencyThresholdHours = 48
-    state.tasks.unshift(
+    state.tasks = [
       {
         ...template,
         id: 'calendar-green-important',
@@ -331,7 +344,7 @@ test('calendar uses a fixed green task palette and a white today frame in every 
         urgencyOverride: undefined,
         urgencyThresholdOverrideHours: undefined,
       },
-    )
+    ]
     localStorage.setItem(storageKey, JSON.stringify(state))
   }, STORAGE_KEY)
   await page.reload()
@@ -398,7 +411,7 @@ test('calendar uses a fixed green task palette and a white today frame in every 
   expect(await yearCurrentDate.locator('i').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN)
 })
 
-test('month deadline range stays green and adds an importance icon when importance changes', async ({ page }) => {
+test('month deadline point stays green and adds an importance icon when importance changes', async ({ page }) => {
   await page.goto('/calendar')
   await page.getByRole('button', { name: 'Месяц', exact: true }).click()
   const range = page.locator('.month-calendar__range').filter({ hasText: 'Купить продукты на неделю' })

@@ -8,6 +8,7 @@ import { PageHeader } from '../components/PageHeader'
 import { trapTabKey } from '../components/focusTrap'
 import {
   addLocalDays,
+  getTaskPlannedDurationMinutes,
   layoutDeadlineRanges,
   layoutTimedDayTasks,
   sameLocalDate,
@@ -109,25 +110,27 @@ function taskTimeRange(task: Task) {
   if (!task.startAt) return ''
   const start = new Date(task.startAt)
   if (Number.isNaN(start.getTime())) return ''
-  const deadline = task.deadline ? new Date(task.deadline) : null
-  if (deadline && !Number.isNaN(deadline.getTime()) && deadline.getTime() > start.getTime()) {
-    const end = sameLocalDate(start, deadline)
-      ? timeLabel.format(deadline)
-      : `${shortDate.format(deadline)}, ${timeLabel.format(deadline)}`
-    return `${timeLabel.format(start)} — ${end}`
-  }
-  const defaultEnd = new Date(start.getTime() + 60 * 60_000)
-  return `${timeLabel.format(start)} — ${timeLabel.format(defaultEnd)}`
+  const end = new Date(start)
+  end.setMinutes(end.getMinutes() + getTaskPlannedDurationMinutes(task))
+  const nextDay = addLocalDays(startOfLocalDay(start), 1)
+  return `${timeLabel.format(start)} — ${timeLabel.format(end > nextDay ? nextDay : end)}`
 }
 
 function taskDateRangeLabel(task: Task) {
-  const start = task.startAt ? new Date(task.startAt) : null
   const deadline = task.deadline ? new Date(task.deadline) : null
-  if (start && !Number.isNaN(start.getTime()) && deadline && !Number.isNaN(deadline.getTime()) && deadline.getTime() >= start.getTime()) {
-    return `${shortDate.format(start)} — ${shortDate.format(deadline)}`
-  }
-  const point = deadline ?? start
+  const start = task.startAt ? new Date(task.startAt) : null
+  const point = deadline && !Number.isNaN(deadline.getTime()) ? deadline : start
   return point && !Number.isNaN(point.getTime()) ? shortDate.format(point) : ''
+}
+
+function taskTimingForDay(task: Task, date: Date) {
+  const labels: string[] = []
+  if (task.startAt && isSameLocalDay(task.startAt, date)) labels.push(taskTimeRange(task))
+  if (task.deadline && isSameLocalDay(task.deadline, date)) {
+    const deadline = new Date(task.deadline)
+    if (!Number.isNaN(deadline.getTime())) labels.push(`Дедлайн ${timeLabel.format(deadline)}`)
+  }
+  return labels.filter(Boolean).join(' · ') || taskDateRangeLabel(task) || 'Без времени'
 }
 
 function taskSignalLabels(task: Task, isUrgent: boolean) {
@@ -257,7 +260,7 @@ function DayTasksDialog({
         <div className="calendar-day-dialog__list">
           {tasks.map((task) => {
             const isUrgent = urgentTaskIds.has(task.id)
-            const timingLabel = taskTimeRange(task) || taskDateRangeLabel(task) || 'Без времени'
+            const timingLabel = taskTimingForDay(task, date)
             return (
               <button
                 className="calendar-day-dialog__task"
@@ -521,7 +524,7 @@ function MonthCalendar({
         >
           {weekDays.map((date, dayIndex) => {
             const dayTasks = sortTasksForDay(tasksForLocalDate(tasks, date), date)
-            const scheduledTasks = dayTasks.filter((task) => task.startAt && !task.deadline && isSameLocalDay(task.startAt, date))
+            const scheduledTasks = dayTasks.filter((task) => task.startAt && isSameLocalDay(task.startAt, date))
             const visibleTasks = scheduledTasks.slice(0, MONTH_CELL_LIMIT)
             const hiddenScheduledCount = scheduledTasks.length - visibleTasks.length
             const hiddenDeadlineCount = hiddenDeadlineCounts[dayIndex]
@@ -608,6 +611,7 @@ function MonthCalendar({
                     data-importance={task.importance}
                     data-urgency={isUrgent ? 'high' : 'low'}
                   >
+                    <CalendarDays className="month-calendar__deadline-glyph" size={11} aria-hidden="true" />
                     <TaskSignals task={task} isUrgent={isUrgent} /><span>{task.title}</span>
                   </button>
                 )
@@ -789,7 +793,7 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
         )}
       </CalendarSwipeSurface>
 
-      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Высота события соответствует времени от начала до дедлайна.</p>
+      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Высота события соответствует длительности задачи, а дедлайн отмечается отдельно.</p>
 
       {openDay && (
         <DayTasksDialog

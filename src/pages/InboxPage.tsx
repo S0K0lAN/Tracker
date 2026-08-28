@@ -23,7 +23,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
   const [tagMode, setTagMode] = useState<'any' | 'all'>('any')
   const [filtersOpen, setFiltersOpen] = useState(false)
 
-  const tags = useMemo(() => [...new Set(state.tasks.flatMap((task) => task.tags))].sort(), [state.tasks])
   const projectUrgencyThresholds = useMemo(
     () => new Map(state.projects.map((project) => [project.id, project.urgencyThresholdHours])),
     [state.projects],
@@ -40,8 +39,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         if (filter === 'today' && !isSameLocalDay(task.startAt, now) && !isSameLocalDay(task.deadline, now)) return false
         if (filter === 'important' && task.importance !== 'high') return false
         if (filter === 'urgent' && getTaskUrgency(task, now, projectUrgencyThresholds.get(task.projectId)) !== 'high') return false
-        if (projectId && task.projectId !== projectId) return false
-        if (filter === 'urgent' && getTaskUrgency(task, now) !== 'high') return false
         if (selectedTags.length > 0) {
           const tagMatch = tagMode === 'all'
             ? selectedTags.every((tag) => task.tags.includes(tag))
@@ -50,31 +47,11 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         }
         return true
       }), state.settings.inboxSort),
-    [filter, now, projectId, projectUrgencyThresholds, query, selectedTags, showCompleted, state.settings.inboxSort, state.tasks, tagMode],
-  )
-
-  const summary = useMemo(() => {
-    const result = { active: 0, completed: 0, today: 0, urgent: 0, important: 0 }
-    for (const task of state.tasks) {
-      if (task.status === 'completed') {
-        result.completed += 1
-        continue
-      }
-      if (task.status !== 'active') continue
-      result.active += 1
-      if (isSameLocalDay(task.startAt, now) || isSameLocalDay(task.deadline, now)) result.today += 1
-      if (getTaskUrgency(task, now, projectUrgencyThresholds.get(task.projectId)) === 'high') result.urgent += 1
-      if (task.importance === 'high') result.important += 1
-    }
-    return result
-  }, [now, projectUrgencyThresholds, state.tasks])
-  const activeCount = summary.active
-  const completedCount = summary.completed
-    [filter, now, query, scopeTasks, selectedTags, showCompleted, state.settings.inboxSort, tagMode],
+    [filter, now, projectUrgencyThresholds, query, scopeTasks, selectedTags, showCompleted, state.settings.inboxSort, tagMode],
   )
 
   const activeCount = scopeTasks.filter((task) => task.status === 'active').length
-  const completedTasks = scopeTasks.filter((task) => task.status === 'completed')
+  const completedTasks = visibleTasks.filter((task) => task.status === 'completed')
   const completedCount = completedTasks.length
   const view = state.settings.inboxView
 

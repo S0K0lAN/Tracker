@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Bell, Clock3, FileImage, Flag, Folder, Paperclip, Plus, Trash2, X } from 'lucide-react'
 import type { Attachment, Importance, Task, Urgency } from '../domain/models'
-import { DEFAULT_URGENCY_THRESHOLD_HOURS } from '../domain/models'
+import {
+  DEFAULT_PLANNED_DURATION_MINUTES,
+  DEFAULT_URGENCY_THRESHOLD_HOURS,
+  MAX_PLANNED_DURATION_MINUTES,
+} from '../domain/models'
 import { INPUT_LIMITS } from '../domain/inputLimits'
 import { parseVoiceTask, type ParsedVoiceTask } from '../domain/voiceParser'
 import { useApp } from '../state/AppContext'
@@ -31,7 +35,44 @@ const localInput = (value?: string) => {
   return local.toISOString().slice(0, 16)
 }
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined)
-const DATE_ORDER_ERROR = 'Дедлайн не может быть раньше начала'
+const DURATION_RANGE_ERROR = 'Укажите длительность от 1 минуты до 24 часов'
+const DURATION_DAY_ERROR_PREFIX = 'Длительность выходит за пределы дня.'
+type DurationUnit = 'minutes' | 'hours'
+
+const parseDurationMinutes = (value: string, unit: DurationUnit): number | '' => {
+  if (!value.trim()) return ''
+  const amount = Number(value.replace(',', '.'))
+  if (!Number.isFinite(amount)) return ''
+  return unit === 'hours' ? Math.round(amount * 60) : amount
+}
+
+const formatDurationInput = (minutes: number, unit: DurationUnit) => (
+  unit === 'hours' ? String(Number((minutes / 60).toFixed(4))) : String(minutes)
+)
+
+const formatDuration = (minutes: number) => {
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  if (hours && remainder) return `${hours} ч ${remainder} мин`
+  if (hours) return `${hours} ч`
+  return `${remainder} мин`
+}
+
+const maxDurationUntilLocalMidnight = (startAt: string) => {
+  if (!startAt) return MAX_PLANNED_DURATION_MINUTES
+  const start = new Date(startAt)
+  if (!Number.isFinite(start.getTime())) return MAX_PLANNED_DURATION_MINUTES
+  const nextMidnight = new Date(start)
+  nextMidnight.setHours(24, 0, 0, 0)
+  return Math.min(
+    MAX_PLANNED_DURATION_MINUTES,
+    Math.max(0, Math.floor((nextMidnight.getTime() - start.getTime()) / 60_000)),
+  )
+}
+
+const isDurationError = (value: string) => (
+  value === DURATION_RANGE_ERROR || value.startsWith(DURATION_DAY_ERROR_PREFIX)
+)
 const urgencyThresholdPresets = [
   { value: 1, label: '1 час', description: 'Только перед самым сроком' },
   { value: 24, label: '1 день' },
@@ -46,7 +87,7 @@ const formatUrgencyThreshold = (hours: number) => (
 
 function createInitialDraft(
   task: Task | undefined,
-  defaults: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>> | undefined,
+  defaults: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>> | undefined,
 ): TaskDraftData {
   return {
     title: task?.title ?? '',
@@ -54,6 +95,7 @@ function createInitialDraft(
     projectId: task?.projectId ?? defaults?.projectId ?? 'inbox',
     startAt: localInput(task?.startAt ?? defaults?.startAt),
     deadline: localInput(task?.deadline ?? defaults?.deadline),
+    plannedDurationMinutes: task?.plannedDurationMinutes ?? defaults?.plannedDurationMinutes ?? DEFAULT_PLANNED_DURATION_MINUTES,
     importance: task?.importance ?? 'low',
     urgencyThresholdOverrideHours: task?.urgencyThresholdOverrideHours ?? '',
     urgencyOverride: task?.urgencyOverride ?? '',
@@ -70,7 +112,7 @@ export function TaskEditor({
   onClose,
 }: {
   task?: Task
-  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>
+  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>
   onClose: () => void
 }) {
   const { state, saveTaskDurably, trashTaskDurably } = useApp()
@@ -80,6 +122,8 @@ export function TaskEditor({
   const [projectId, setProjectId] = useState(initialDraft.projectId)
   const [startAt, setStartAt] = useState(initialDraft.startAt)
   const [deadline, setDeadline] = useState(initialDraft.deadline)
+  const [durationUnit, setDurationUnit] = useState<DurationUnit>('minutes')
+  const [durationInput, setDurationInput] = useState(formatDurationInput(initialDraft.plannedDurationMinutes || DEFAULT_PLANNED_DURATION_MINUTES, 'minutes'))
   const [startAtValid, setStartAtValid] = useState(true)
   const [deadlineValid, setDeadlineValid] = useState(true)
   const [dateInputResetToken, setDateInputResetToken] = useState(0)
@@ -109,6 +153,7 @@ export function TaskEditor({
   const [journalPresent, setJournalPresent] = useState(Boolean(recoveryDraft))
   const fileRef = useRef<HTMLInputElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
+  const durationRef = useRef<HTMLInputElement>(null)
   const restoreDraftRef = useRef<HTMLButtonElement>(null)
   const editorRef = useRef<HTMLElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -206,12 +251,22 @@ export function TaskEditor({
     })),
   ]
 
+  const plannedDurationMinutes = useMemo(
+    () => parseDurationMinutes(durationInput, durationUnit),
+    [durationInput, durationUnit],
+  )
+  const maxPlannedDurationMinutes = startAtValid
+    ? maxDurationUntilLocalMidnight(startAt)
+    : MAX_PLANNED_DURATION_MINUTES
+  const durationHasError = isDurationError(error)
+
   const draftData = useMemo<TaskDraftData>(() => ({
     title,
     description,
     projectId,
     startAt,
     deadline,
+    plannedDurationMinutes,
     importance,
     urgencyThresholdOverrideHours: thresholdOverride,
     urgencyOverride,
@@ -219,7 +274,7 @@ export function TaskEditor({
     subtasks,
     pendingSubtaskTitle: subtaskTitle,
     reminders,
-  }), [deadline, description, importance, projectId, reminders, startAt, subtasks, subtaskTitle, tags, thresholdOverride, title, urgencyOverride])
+  }), [deadline, description, importance, plannedDurationMinutes, projectId, reminders, startAt, subtasks, subtaskTitle, tags, thresholdOverride, title, urgencyOverride])
   const draftDataRef = useRef(draftData)
   const recoveryDraftRef = useRef(recoveryDraft)
   const hasUnsavedChanges = !taskDraftsEqual(draftData, initialDraft)
@@ -283,12 +338,23 @@ export function TaskEditor({
 
   const updateStartAt = (value: string) => {
     setStartAt(value)
-    setError((current) => current === DATE_ORDER_ERROR ? '' : current)
+    setError((current) => isDurationError(current) ? '' : current)
   }
 
   const updateDeadline = (value: string) => {
     setDeadline(value)
-    setError((current) => current === DATE_ORDER_ERROR ? '' : current)
+  }
+
+  const updateDurationInput = (value: string) => {
+    setDurationInput(value)
+    setError((current) => isDurationError(current) ? '' : current)
+  }
+
+  const updateDurationUnit = (unit: DurationUnit) => {
+    const currentMinutes = parseDurationMinutes(durationInput, durationUnit)
+    setDurationUnit(unit)
+    if (currentMinutes !== '') setDurationInput(formatDurationInput(currentMinutes, unit))
+    setError((current) => isDurationError(current) ? '' : current)
   }
 
   const closePreservingDraft = () => {
@@ -335,6 +401,10 @@ export function TaskEditor({
     setProjectId(state.projects.some((project) => project.id === recovered.projectId) ? recovered.projectId : 'inbox')
     setStartAt(recovered.startAt)
     setDeadline(recovered.deadline)
+    setDurationUnit('minutes')
+    setDurationInput(recovered.plannedDurationMinutes === ''
+      ? ''
+      : formatDurationInput(recovered.plannedDurationMinutes, 'minutes'))
     setImportance(recovered.importance)
     setUrgencyOverride(recovered.urgencyOverride)
     setThresholdOverride(recovered.urgencyThresholdOverrideHours)
@@ -388,9 +458,18 @@ export function TaskEditor({
       editorRef.current?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus()
       return
     }
-    if (startAt && deadline && new Date(deadline).getTime() < new Date(startAt).getTime()) {
-      setError(DATE_ORDER_ERROR)
-      editorRef.current?.querySelectorAll<HTMLInputElement>('.date-time-field input')[1]?.focus()
+    if (plannedDurationMinutes === ''
+      || !Number.isInteger(plannedDurationMinutes)
+      || plannedDurationMinutes < 1
+      || plannedDurationMinutes > MAX_PLANNED_DURATION_MINUTES) {
+      setError(DURATION_RANGE_ERROR)
+      durationRef.current?.focus()
+      return
+    }
+    const maxDuration = maxDurationUntilLocalMidnight(startAt)
+    if (startAt && plannedDurationMinutes > maxDuration) {
+      setError(`${DURATION_DAY_ERROR_PREFIX} Для выбранного начала максимум ${formatDuration(maxDuration)}.`)
+      durationRef.current?.focus()
       return
     }
     const now = new Date().toISOString()
@@ -401,6 +480,7 @@ export function TaskEditor({
       projectId,
       startAt: toIso(startAt),
       deadline: toIso(deadline),
+      plannedDurationMinutes,
       importance,
       ...(thresholdOverride === '' ? {} : { urgencyThresholdOverrideHours: thresholdOverride }),
       urgencyOverride: urgencyOverride || undefined,
@@ -668,6 +748,54 @@ export function TaskEditor({
             />
           </div>
           <DateTimePicker label="Начало" value={startAt} onChange={updateStartAt} onValidityChange={setStartAtValid} defaultTime="09:00" resetToken={dateInputResetToken} />
+          <div className="field">
+            <label htmlFor="task-duration">Длительность</label>
+            <div className="inline-add">
+              <input
+                id="task-duration"
+                ref={durationRef}
+                type="number"
+                inputMode="decimal"
+                min={durationUnit === 'minutes' ? 1 : formatDurationInput(1, 'hours')}
+                max={durationUnit === 'minutes'
+                  ? maxPlannedDurationMinutes
+                  : formatDurationInput(maxPlannedDurationMinutes, 'hours')}
+                step={durationUnit === 'minutes' ? 1 : 'any'}
+                list={`task-duration-${durationUnit}`}
+                value={durationInput}
+                onChange={(event) => updateDurationInput(event.target.value)}
+                aria-invalid={durationHasError}
+                aria-describedby="task-duration-hint"
+                aria-errormessage={durationHasError ? 'task-editor-error' : undefined}
+              />
+              <select
+                aria-label="Единица длительности"
+                value={durationUnit}
+                onChange={(event) => updateDurationUnit(event.target.value as DurationUnit)}
+              >
+                <option value="minutes">минуты</option>
+                <option value="hours">часы</option>
+              </select>
+              <datalist id={`task-duration-${durationUnit}`}>
+                {[15, 30, 45, 60, 90, 120, 240, 480, 720, MAX_PLANNED_DURATION_MINUTES]
+                  .filter((minutes) => minutes <= maxPlannedDurationMinutes)
+                  .map((minutes) => (
+                    <option key={minutes} value={formatDurationInput(minutes, durationUnit)}>{formatDuration(minutes)}</option>
+                  ))}
+              </datalist>
+            </div>
+            <small id="task-duration-hint">
+              {plannedDurationMinutes !== ''
+                && Number.isInteger(plannedDurationMinutes)
+                && plannedDurationMinutes >= 1
+                && plannedDurationMinutes <= MAX_PLANNED_DURATION_MINUTES
+                ? `${formatDuration(plannedDurationMinutes)}. `
+                : ''}
+              {startAt
+                ? `Максимум до полуночи: ${formatDuration(maxPlannedDurationMinutes)}.`
+                : 'От 1 минуты до 24 часов; начало задаёт положение блока в календаре.'}
+            </small>
+          </div>
           <DateTimePicker label="Дедлайн" value={deadline} onChange={updateDeadline} onValidityChange={setDeadlineValid} defaultTime="18:00" resetToken={dateInputResetToken} />
           <div className="field">
             <span>Становится срочной за</span>
@@ -778,7 +906,7 @@ export function TaskEditor({
               {draftStorageMessage.text}
             </p>
           )}
-          {error && <p className="form-error" role="alert">{error}</p>}
+          {error && <p id="task-editor-error" className="form-error" role="alert">{error}</p>}
         </div>
 
         <footer className="task-editor__footer">

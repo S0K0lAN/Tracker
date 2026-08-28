@@ -1,6 +1,3 @@
-import { act, render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -25,14 +22,7 @@ describe('Inbox header', () => {
       urgencyOverride: undefined,
       ...task,
     })
-    state.projects = state.projects.map((project) => ({
-      ...project,
-      urgencyThresholdHours: project.id === 'work' ? 0.5 : project.id === 'personal' ? 1 : project.urgencyThresholdHours,
-    }))
     state.tasks = [
-      makeTask({ id: 'start-only', title: 'Только начало', startAt: '2026-08-21T09:00:00.000+03:00' }),
-      makeTask({ id: 'deadline-only', title: 'Только дедлайн', projectId: 'work', deadline: '2026-08-21T12:31:00.000+03:00' }),
-      makeTask({ id: 'both', title: 'Начало и дедлайн', projectId: 'personal', startAt: '2026-08-21T10:00:00.000+03:00', deadline: '2026-08-21T18:00:00.000+03:00' }),
       makeTask({ id: 'inbox', title: 'Неразобранная', projectId: 'inbox' }),
       makeTask({ id: 'project', title: 'В проекте', projectId: 'work' }),
       makeTask({ id: 'start-only', title: 'С началом', projectId: 'inbox', startAt: '2026-08-21T09:00:00.000+03:00' }),
@@ -65,7 +55,7 @@ describe('Inbox header', () => {
     expect(screen.queryByRole('combobox', { name: 'Фильтр по проекту во входящих' })).not.toBeInTheDocument()
   })
 
-  it('uses each task project threshold in the summary and urgent filter', async () => {
+  it('uses each task project threshold in the urgent filter', async () => {
     const user = userEvent.setup()
     const state = createSeedState()
     const base = state.tasks[0]
@@ -82,9 +72,6 @@ describe('Inbox header', () => {
 
     render(<AppProvider><InboxPage onEditTask={vi.fn()} /></AppProvider>)
     await act(async () => { await Promise.resolve() })
-
-    const summary = screen.getByRole('region', { name: 'Сводка' })
-    expect(within(summary).getByText('Срочные').nextElementSibling).toHaveTextContent('1')
 
     await user.click(screen.getByRole('button', { name: /Фильтры/ }))
     await user.click(screen.getByRole('button', { name: 'Срочные' }))

@@ -7,6 +7,7 @@ const baseTask: Task = {
   title: 'Проверить срочность',
   description: '',
   projectId: 'inbox',
+  plannedDurationMinutes: 60,
   importance: 'low',
   tags: [],
   subtasks: [],

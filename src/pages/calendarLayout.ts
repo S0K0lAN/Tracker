@@ -1,7 +1,11 @@
-import type { Task } from '../domain/models'
+import {
+  DEFAULT_PLANNED_DURATION_MINUTES,
+  MAX_PLANNED_DURATION_MINUTES,
+  type Task,
+} from '../domain/models'
 
 export const MINUTES_IN_DAY = 24 * 60
-export const DEFAULT_EVENT_DURATION_MINUTES = 60
+export const DEFAULT_EVENT_DURATION_MINUTES = DEFAULT_PLANNED_DURATION_MINUTES
 const EVENT_GAP_PX = 4
 const MIN_EVENT_HEIGHT_PX = 24
 
@@ -41,31 +45,33 @@ function validDate(value?: string) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+export function getTaskPlannedDurationMinutes(task: Task) {
+  const duration = task.plannedDurationMinutes
+  return Number.isInteger(duration) && duration >= 1 && duration <= MAX_PLANNED_DURATION_MINUTES
+    ? duration
+    : DEFAULT_EVENT_DURATION_MINUTES
+}
+
 export interface TaskDateRange {
   start: Date
   end: Date
 }
 
 export function getTaskDateRange(task: Task): TaskDateRange | null {
-  const plannedStart = validDate(task.startAt)
-  const deadline = validDate(task.deadline)
-  if (!plannedStart && !deadline) return null
-
-  const end = startOfLocalDay(deadline ?? plannedStart!)
-  const proposedStart = startOfLocalDay(plannedStart ?? deadline!)
-  return {
-    start: proposedStart.getTime() <= end.getTime() ? proposedStart : end,
-    end,
-  }
+  const point = validDate(task.deadline) ?? validDate(task.startAt)
+  if (!point) return null
+  const day = startOfLocalDay(point)
+  return { start: day, end: day }
 }
 
 export function tasksForLocalDate(tasks: Task[], date: Date) {
-  const day = localDayNumber(date)
   return tasks.filter((task) => {
-    const range = getTaskDateRange(task)
-    return range
-      ? localDayNumber(range.start) <= day && localDayNumber(range.end) >= day
-      : false
+    const plannedStart = validDate(task.startAt)
+    const deadline = validDate(task.deadline)
+    return Boolean(
+      (plannedStart && sameLocalDate(plannedStart, date))
+      || (deadline && sameLocalDate(deadline, date)),
+    )
   })
 }
 
@@ -99,11 +105,10 @@ export function layoutTimedDayTasks(
       const startAt = validDate(task.startAt)
       if (!startAt) return null
       const rawStart = startAt.getHours() * 60 + startAt.getMinutes()
-      const deadline = validDate(task.deadline)
-      const deadlineMinutes = deadline && deadline.getTime() > startAt.getTime()
-        ? differenceInLocalDays(deadline, startAt) * MINUTES_IN_DAY + deadline.getHours() * 60 + deadline.getMinutes()
-        : rawStart + DEFAULT_EVENT_DURATION_MINUTES
-      const rawEnd = Math.max(rawStart + 1, deadlineMinutes)
+      const rawEnd = Math.min(
+        MINUTES_IN_DAY,
+        rawStart + getTaskPlannedDurationMinutes(task),
+      )
       if (rawStart >= visibleEnd || rawEnd <= visibleStart) return null
       const start = Math.max(visibleStart, rawStart)
       const end = Math.min(visibleEnd, rawEnd)
@@ -173,7 +178,10 @@ export function layoutDeadlineRanges(tasks: Task[], visibleStartValue: Date, vis
   const visibleDayCount = differenceInLocalDays(visibleEnd, visibleStart) + 1
   const candidates = tasks
     .map((task, index) => {
-      const range = getTaskDateRange(task)
+      const deadline = validDate(task.deadline)
+      const range = deadline
+        ? { start: startOfLocalDay(deadline), end: startOfLocalDay(deadline) }
+        : null
       if (!range || differenceInLocalDays(range.end, visibleStart) < 0 || differenceInLocalDays(range.start, visibleEnd) > 0) return null
       const columnStart = Math.max(0, differenceInLocalDays(range.start, visibleStart))
       const columnEnd = Math.min(visibleDayCount - 1, differenceInLocalDays(range.end, visibleStart))

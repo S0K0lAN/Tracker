@@ -19,7 +19,7 @@ const STORAGE_KEY = 'focus-flow.state.v1'
 
 async function mountEditor(
   task?: Task,
-  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>,
+  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
   storageAdapter?: StorageAdapter,
 ) {
   const onClose = vi.fn()
@@ -79,7 +79,7 @@ class ControlledTaskStorage implements StorageAdapter {
 
 async function renderEditor(
   task?: Task,
-  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>,
+  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
 ) {
   const { onClose } = await mountEditor(task, defaults)
   return onClose
@@ -222,10 +222,10 @@ describe('TaskEditor defaults and date validation', () => {
     })
   })
 
-  it('blocks a deadline earlier than the start, announces the error and focuses the deadline', async () => {
+  it('keeps the deadline independent from the planned start', async () => {
     const user = userEvent.setup()
     const onClose = await renderEditor()
-    await user.type(screen.getByLabelText('Название'), 'Задача с неверным сроком')
+    await user.type(screen.getByLabelText('Название'), 'Задача с независимым дедлайном')
     await user.type(screen.getByLabelText('Начало'), '21.08.2026, 12:00')
     await user.tab()
     await user.type(screen.getByLabelText('Дедлайн'), '21.08.2026, 11:00')
@@ -233,8 +233,91 @@ describe('TaskEditor defaults and date validation', () => {
 
     await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Дедлайн не может быть раньше начала')
-    expect(screen.getByLabelText('Дедлайн')).toHaveFocus()
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const task = saved.tasks.find((item: Task) => item.title === 'Задача с независимым дедлайном')
+      expect(task.startAt).toBe(new Date(2026, 7, 21, 12, 0).toISOString())
+      expect(task.deadline).toBe(new Date(2026, 7, 21, 11, 0).toISOString())
+    })
+  })
+
+  it('saves duration in hours and reloads it as minutes', async () => {
+    const user = userEvent.setup()
+    const { onClose, view } = await mountEditor()
+    await user.type(screen.getByLabelText('Название'), 'Полуторачасовой блок')
+    await user.selectOptions(screen.getByLabelText('Единица длительности'), 'hours')
+    const duration = screen.getByLabelText('Длительность')
+    await user.clear(duration)
+    await user.type(duration, '1.5')
+
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    const saved = await waitFor(() => {
+      const state = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const task = state.tasks.find((item: Task) => item.title === 'Полуторачасовой блок') as Task | undefined
+      expect(task?.plannedDurationMinutes).toBe(90)
+      return task!
+    })
+    view.unmount()
+
+    await mountEditor(saved)
+    expect(screen.getByLabelText('Длительность')).toHaveValue(90)
+    expect(screen.getByText(/^1 ч 30 мин\./)).toBeInTheDocument()
+  })
+
+  it.each([1, 1_439])('keeps %s canonical minutes when switching duration units', async (minutes) => {
+    const user = userEvent.setup()
+    await renderEditor(undefined, { plannedDurationMinutes: minutes })
+
+    await user.selectOptions(screen.getByLabelText('Единица длительности'), 'hours')
+    await user.selectOptions(screen.getByLabelText('Единица длительности'), 'minutes')
+
+    expect(screen.getByLabelText('Длительность')).toHaveValue(minutes)
+  })
+
+  it('keeps a timed block within its local day and allows it to end exactly at midnight', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor()
+    await user.type(screen.getByLabelText('Название'), 'Вечерний блок')
+    await user.type(screen.getByLabelText('Начало'), '21.08.2026, 23:30')
+    await user.tab()
+    const duration = screen.getByLabelText('Длительность')
+    await user.clear(duration)
+    await user.type(duration, '31')
+
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Длительность выходит за пределы дня')
+    expect(screen.getByRole('alert')).toHaveTextContent('максимум 30 мин')
+    expect(duration).toHaveFocus()
+    expect(duration).toHaveAttribute('aria-invalid', 'true')
+    expect(onClose).not.toHaveBeenCalled()
+
+    await user.clear(duration)
+    await user.type(duration, '30')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      expect(saved.tasks.find((item: Task) => item.title === 'Вечерний блок')?.plannedDurationMinutes).toBe(30)
+    })
+  })
+
+  it('rejects duration outside the one-day storage range even without a start', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor()
+    await user.type(screen.getByLabelText('Название'), 'Слишком длинная задача')
+    const duration = screen.getByLabelText('Длительность')
+    await user.clear(duration)
+    await user.type(duration, '1441')
+
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('от 1 минуты до 24 часов')
+    expect(duration).toHaveFocus()
     expect(onClose).not.toHaveBeenCalled()
   })
 })
@@ -245,6 +328,7 @@ const recoveryData: TaskDraftData = {
   projectId: 'work',
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
+  plannedDurationMinutes: 90,
   importance: 'high',
   urgencyThresholdOverrideHours: 24,
   urgencyOverride: 'high',
@@ -292,6 +376,8 @@ describe('TaskEditor recovery journal', () => {
     expect(screen.getByRole('combobox', { name: 'Срочность вручную' })).toHaveTextContent('Срочно')
     expect(screen.getByLabelText('Начало')).toHaveValue('21.08.2026, 09:00')
     expect(screen.getByLabelText('Дедлайн')).toHaveValue('21.08.2026, 18:00')
+    expect(screen.getByLabelText('Длительность')).toHaveValue(90)
+    expect(screen.getByText(/^1 ч 30 мин\./)).toBeInTheDocument()
     expect(screen.getByLabelText('Теги через запятую')).toHaveValue(recoveryData.tags)
     expect(screen.getByText('Проверить цифры')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Добавить подзадачу')).toHaveValue('Отправить письмо')
@@ -505,6 +591,7 @@ describe('TaskEditor recovery journal', () => {
       projectId: 'inbox',
       startAt: '',
       deadline: '',
+      plannedDurationMinutes: 60,
       importance: 'low',
       urgencyThresholdOverrideHours: '',
       urgencyOverride: '',
@@ -531,6 +618,7 @@ describe('TaskEditor recovery journal', () => {
       projectId: 'inbox',
       startAt: '',
       deadline: '',
+      plannedDurationMinutes: 60,
       importance: 'low',
       urgencyThresholdOverrideHours: '',
       urgencyOverride: '',

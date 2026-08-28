@@ -28,6 +28,7 @@ const portableMinimalTask = (index: number): Task => ({
   title: 't',
   description: '',
   projectId: 'inbox',
+  plannedDurationMinutes: 60,
   importance: 'low',
   tags: [],
   subtasks: [],

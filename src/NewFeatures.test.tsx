@@ -146,25 +146,43 @@ describe('calendar deadline projection', () => {
     expect(layout[0].height).toBeGreaterThan(0)
   })
 
-  it('uses the deadline as the event end and lays multi-day ranges into lanes', () => {
+  it('uses planned duration for event height and projects deadlines as independent points', () => {
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
     const start = new Date(2026, 7, 3, 9, 0)
-    const end = new Date(2026, 7, 3, 12, 30)
-    const timedTask = { ...template, id: 'timed', startAt: start.toISOString(), deadline: end.toISOString() }
+    const timedTask = {
+      ...template,
+      id: 'timed',
+      startAt: start.toISOString(),
+      plannedDurationMinutes: 210,
+      deadline: new Date(2026, 7, 3, 8, 0).toISOString(),
+    }
     const timedLayout = layoutTimedDayTasks([timedTask], { hourHeight: 40 })
     expect(timedLayout[0].durationMinutes).toBe(210)
     expect(timedLayout[0].height).toBe(136)
 
-    const longTask = { ...template, id: 'long', startAt: start.toISOString(), deadline: new Date(2026, 7, 6, 18).toISOString() }
-    const crossingTask = { ...template, id: 'crossing', startAt: new Date(2026, 7, 5, 10).toISOString(), deadline: new Date(2026, 7, 12, 18).toISOString() }
-    const ranges = layoutDeadlineRanges([longTask, crossingTask], new Date(2026, 7, 4), new Date(2026, 7, 9))
+    const taskWithLaterDeadline = {
+      ...template,
+      id: 'later-deadline',
+      startAt: start.toISOString(),
+      plannedDurationMinutes: 60,
+      deadline: new Date(2026, 7, 6, 18).toISOString(),
+    }
+    const outsideView = {
+      ...template,
+      id: 'outside-view',
+      startAt: new Date(2026, 7, 5, 10).toISOString(),
+      deadline: new Date(2026, 7, 12, 18).toISOString(),
+    }
+    const ranges = layoutDeadlineRanges([taskWithLaterDeadline, outsideView], new Date(2026, 7, 4), new Date(2026, 7, 9))
     expect(ranges.map(({ task, columnStart, columnSpan, lane }) => ({ id: task.id, columnStart, columnSpan, lane }))).toEqual([
-      { id: 'long', columnStart: 0, columnSpan: 3, lane: 0 },
-      { id: 'crossing', columnStart: 1, columnSpan: 5, lane: 1 },
+      { id: 'later-deadline', columnStart: 2, columnSpan: 1, lane: 0 },
     ])
-    expect(ranges[0].startsBeforeView).toBe(true)
-    expect(ranges[1].endsAfterView).toBe(true)
-    expect(tasksForLocalDate([longTask], new Date(2026, 7, 5))).toEqual([longTask])
+    expect(ranges[0].startsBeforeView).toBe(false)
+    expect(ranges[0].endsAfterView).toBe(false)
+    expect(tasksForLocalDate([taskWithLaterDeadline], start)).toEqual([taskWithLaterDeadline])
+    expect(tasksForLocalDate([taskWithLaterDeadline], new Date(2026, 7, 4))).toEqual([])
+    expect(tasksForLocalDate([taskWithLaterDeadline], new Date(2026, 7, 5))).toEqual([])
+    expect(tasksForLocalDate([taskWithLaterDeadline], new Date(2026, 7, 6))).toEqual([taskWithLaterDeadline])
   })
 
   it('offers every calendar view and opens the complete task list from a month cell', async () => {
@@ -177,6 +195,7 @@ describe('calendar deadline projection', () => {
         id: `month-${index}`,
         title: `Задача месяца ${index + 1}`,
         startAt: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9 + index).toISOString(),
+        plannedDurationMinutes: 60,
         deadline: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 10 + index).toISOString(),
       }))
     })
@@ -188,6 +207,8 @@ describe('calendar deadline projection', () => {
 
     await user.click(screen.getByRole('button', { name: 'Месяц' }))
     expect(container.querySelectorAll('.month-day')).toHaveLength(42)
+    expect(container.querySelector('.month-day__task')).toHaveTextContent('Задача месяца 1')
+    expect(container.querySelector('[data-task-id="month-0"]')).toHaveAttribute('data-range-span', '1')
     await user.click(screen.getByRole('button', { name: `Показать задачи на ${today.toLocaleDateString('ru-RU')}` }))
     const dialog = screen.getByRole('dialog', { name: /Все задачи дня/i })
     expect(within(dialog).getAllByRole('button', { name: /Задача месяца/ })).toHaveLength(5)

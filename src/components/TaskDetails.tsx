@@ -42,6 +42,14 @@ const formatFileSize = (bytes: number) => {
   return `${Math.max(0.1, bytes / 1024).toFixed(1)} КБ`
 }
 
+const formatDuration = (minutes: number) => {
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  if (hours && remainder) return `${hours} ч ${remainder} мин`
+  if (hours) return `${hours} ч`
+  return `${remainder} мин`
+}
+
 export function TaskDetails({
   task,
   onClose,
@@ -203,6 +211,10 @@ export function TaskDetails({
             <div>
               <dt><CalendarClock size={16} /> Начало</dt>
               <dd>{startAt ?? 'Не задано'}</dd>
+            </div>
+            <div>
+              <dt><Clock3 size={16} /> Длительность</dt>
+              <dd>{formatDuration(task.plannedDurationMinutes)}</dd>
             </div>
             <div>
               <dt><CalendarClock size={16} /> Дедлайн</dt>
