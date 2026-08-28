@@ -266,76 +266,82 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     }
   })
 
-  it('renders starts as ordinary month rows and deadlines as independent one-day points', async () => {
+  it('renders one continuous month deadline band without a duplicate scheduled row', async () => {
     const user = userEvent.setup()
     const now = new Date()
     const gridStart = startOfWeek(new Date(now.getFullYear(), now.getMonth(), 1))
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
-    const startDay = addLocalDays(gridStart, 5)
-    const secondStartDay = addLocalDays(gridStart, 6)
-    const deadlineDay = addLocalDays(gridStart, 9)
-    const plannedAndDue = taskFrom(template, 'planned-and-due', 'План и отдельный дедлайн', {
-      startAt: at(startDay, 9),
-      deadline: at(deadlineDay, 18),
+    const crossing = taskFrom(template, 'crossing', 'Через границу недели', {
+      startAt: at(addLocalDays(gridStart, 5), 9),
+      deadline: at(addLocalDays(gridStart, 9), 18),
       plannedDurationMinutes: 90,
     })
-    const sameDeadline = taskFrom(template, 'same-deadline', 'Вторая точка срока', {
-      startAt: at(secondStartDay, 10),
-      deadline: at(deadlineDay, 17),
+    const overlapping = taskFrom(template, 'overlapping', 'Соседняя полоса', {
+      startAt: at(addLocalDays(gridStart, 6), 10),
+      deadline: at(addLocalDays(gridStart, 8), 17),
     })
-    const deadlineOnly = taskFrom(template, 'deadline-only', 'Только дедлайн', {
-      deadline: at(deadlineDay, 15),
+    const sameDay = taskFrom(template, 'same-day', 'Один день', {
+      startAt: at(addLocalDays(gridStart, 8), 12),
+      deadline: at(addLocalDays(gridStart, 8), 15),
     })
-    deadlineOnly.importance = 'low'
-    deadlineOnly.urgencyOverride = 'low'
-    const { container, onEditTask } = renderCalendar([plannedAndDue, sameDeadline, deadlineOnly])
+    sameDay.importance = 'low'
+    sameDay.urgencyOverride = 'low'
+    const startOnly = taskFrom(template, 'start-only', 'Только начало', {
+      startAt: at(addLocalDays(gridStart, 4), 11),
+    })
+    const { container, onEditTask } = renderCalendar([crossing, overlapping, sameDay, startOnly])
 
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
     await user.click(screen.getByRole('button', { name: 'Месяц' }))
 
     expect(container.querySelectorAll('.month-calendar__week')).toHaveLength(6)
-    expect(screen.getByRole('button', { name: /Запланировано: План и отдельный дедлайн/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Запланировано: Вторая точка срока/ })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Запланировано: Только дедлайн/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Запланировано: Через границу недели/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Запланировано: Соседняя полоса/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Запланировано: Один день/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Запланировано: Только начало/ })).toBeInTheDocument()
 
-    const deadlinePoints = [...container.querySelectorAll<HTMLElement>('[data-task-id]')]
-    expect(deadlinePoints).toHaveLength(3)
-    expect(deadlinePoints.map((point) => point.dataset.rangeSpan)).toEqual(['1', '1', '1'])
-    expect(deadlinePoints.map((point) => point.dataset.rangeLane)).toEqual(['0', '1', '2'])
-    expect(deadlinePoints.every((point) => !point.classList.contains('continues-before') && !point.classList.contains('continues-after'))).toBe(true)
+    const crossingSegments = [...container.querySelectorAll<HTMLElement>('[data-task-id="crossing"]')]
+    expect(crossingSegments).toHaveLength(2)
+    expect(crossingSegments.map((segment) => segment.dataset.rangeSpan)).toEqual(['2', '3'])
+    expect(crossingSegments.map((segment) => segment.dataset.rangeLane)).toEqual(['0', '0'])
+    expect(crossingSegments[0]).toHaveClass('continues-after')
+    expect(crossingSegments[1]).toHaveClass('continues-before')
 
-    const deadlineOnlyPoint = container.querySelector<HTMLElement>('[data-task-id="deadline-only"]')!
-    expect(deadlineOnlyPoint).toHaveClass('month-day__deadline')
-    expect(deadlineOnlyPoint.querySelector('.month-calendar__deadline-glyph')).toBeInTheDocument()
+    const overlappingSegments = [...container.querySelectorAll<HTMLElement>('[data-task-id="overlapping"]')]
+    expect(overlappingSegments).toHaveLength(2)
+    expect(overlappingSegments.map((segment) => segment.dataset.rangeLane)).toEqual(['1', '1'])
+
+    const sameDayBand = container.querySelector<HTMLElement>('[data-task-id="same-day"]')!
+    expect(sameDayBand).toHaveClass('month-day__deadline')
+    expect(sameDayBand).toHaveAttribute('data-range-span', '1')
+    expect(sameDayBand.querySelector('.month-calendar__deadline-glyph')).toBeInTheDocument()
     const deadlineDateLabel = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' })
-      .format(new Date(deadlineOnly.deadline!))
-    expect(deadlineOnlyPoint).toHaveAccessibleName(`Дедлайн: Только дедлайн, ${deadlineDateLabel}`)
+      .format(new Date(sameDay.deadline!))
+    expect(sameDayBand).toHaveAccessibleName(`Дедлайн: Один день, ${deadlineDateLabel}`)
 
-    await user.click(screen.getByRole('button', { name: `Показать задачи на ${startDay.toLocaleDateString('ru-RU')}` }))
-    expect(within(screen.getByRole('dialog', { name: /Все задачи дня/i })).getAllByRole('button', { name: /План и отдельный дедлайн/ })).toHaveLength(1)
-    await user.click(within(screen.getByRole('dialog', { name: /Все задачи дня/i })).getByRole('button', { name: 'Закрыть список задач' }))
+    await user.click(crossingSegments[1])
+    expect(onEditTask).toHaveBeenCalledWith(crossing)
 
-    await user.click(screen.getByRole('button', { name: `Показать задачи на ${deadlineDay.toLocaleDateString('ru-RU')}` }))
-    const deadlineDialog = screen.getByRole('dialog', { name: /Все задачи дня/i })
-    expect(deadlineDialog.querySelectorAll('.calendar-day-dialog__task')).toHaveLength(3)
-    expect(within(deadlineDialog).getByRole('button', { name: /План и отдельный дедлайн, Дедлайн/ })).toBeInTheDocument()
-
-    await user.click(within(deadlineDialog).getByRole('button', { name: /План и отдельный дедлайн, Дедлайн/ }))
-    expect(onEditTask).toHaveBeenCalledWith(plannedAndDue)
+    const intermediateDay = addLocalDays(gridStart, 7)
+    await user.click(screen.getByRole('button', { name: `Показать задачи на ${intermediateDay.toLocaleDateString('ru-RU')}` }))
+    const rangeDialog = screen.getByRole('dialog', { name: /Все задачи дня/i })
+    expect(rangeDialog.querySelectorAll('.calendar-day-dialog__task')).toHaveLength(2)
+    expect(within(rangeDialog).getByText('Через границу недели')).toBeInTheDocument()
+    expect(within(rangeDialog).getByText('Соседняя полоса')).toBeInTheDocument()
   })
 
   it('caps month deadline lanes and exposes all 500 hidden tasks on demand', async () => {
     const user = userEvent.setup()
     const now = new Date()
     const gridStart = startOfWeek(new Date(now.getFullYear(), now.getMonth(), 1))
-    const deadlineDay = addLocalDays(gridStart, 10)
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
     const tasks = Array.from({ length: 500 }, (_, index) => taskFrom(
       template,
       `large-range-${index}`,
       `Большой срок ${index + 1}`,
       {
-        deadline: at(deadlineDay, 18),
+        startAt: at(addLocalDays(gridStart, -1), 9),
+        deadline: at(addLocalDays(gridStart, 42), 18),
       },
     ))
     const { container } = renderCalendar(tasks)
@@ -345,12 +351,11 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
 
     const weeks = [...container.querySelectorAll<HTMLElement>('.month-calendar__week')]
     expect(weeks).toHaveLength(6)
-    expect(weeks.filter((week) => week.dataset.rangeLanes === '3')).toHaveLength(1)
-    expect(weeks.filter((week) => week.dataset.rangeLanes === '0')).toHaveLength(5)
-    expect(container.querySelectorAll('.month-calendar__range')).toHaveLength(3)
+    expect(weeks.every((week) => week.dataset.rangeLanes === '3')).toBe(true)
+    expect(container.querySelectorAll('.month-calendar__range')).toHaveLength(18)
 
     const hiddenDeadlineButtons = screen.getAllByRole('button', { name: /скрытых сроков 497/i })
-    expect(hiddenDeadlineButtons).toHaveLength(1)
+    expect(hiddenDeadlineButtons).toHaveLength(42)
     await user.click(hiddenDeadlineButtons[0])
     expect(screen.getByRole('dialog', { name: /Все задачи дня/i }).querySelectorAll('.calendar-day-dialog__task')).toHaveLength(500)
   })

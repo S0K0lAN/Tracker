@@ -210,7 +210,7 @@ test('calendar changes period by horizontal mouse drag', async ({ page }) => {
   await expect(period).not.toHaveText(previousPeriod)
 })
 
-test('calendar views, full month cell list and deadline points stay connected', async ({ page }) => {
+test('calendar views, full month cell list and continuous deadline bands stay connected', async ({ page }) => {
   await page.goto('/calendar')
   const localDates = await page.evaluate((storageKey) => {
     const state = JSON.parse(localStorage.getItem(storageKey))
@@ -310,16 +310,16 @@ test('calendar views, full month cell list and deadline points stay connected', 
   await dialog.getByRole('button', { name: 'Закрыть список задач' }).click()
 
   const scheduledRow = page.locator('.month-day__task').filter({ hasText: 'Диапазон проекта' })
-  await expect(scheduledRow).toBeVisible()
-  const deadlinePoint = page.locator('.month-calendar__range').filter({ hasText: 'Диапазон проекта' })
-  await expect(deadlinePoint).toBeVisible()
-  const monthSpans = await deadlinePoint.evaluateAll((nodes) =>
+  await expect(scheduledRow).toHaveCount(0)
+  const deadlineBand = page.locator('.month-calendar__range').filter({ hasText: 'Диапазон проекта' })
+  await expect(deadlineBand.first()).toBeVisible()
+  const monthSpans = await deadlineBand.evaluateAll((nodes) =>
     nodes.map((node) => Number(node.getAttribute('data-range-span'))),
   )
-  expect(monthSpans).toEqual([1])
+  expect(monthSpans.reduce((total, span) => total + span, 0)).toBe(3)
 
   await page.getByRole('button', { name: `Показать задачи на ${localDates.intermediate}` }).click()
-  await expect(page.getByRole('dialog', { name: /Все задачи дня/ })).not.toContainText('Диапазон проекта')
+  await expect(page.getByRole('dialog', { name: /Все задачи дня/ })).toContainText('Диапазон проекта')
 })
 
 test('calendar uses a fixed green task palette and a white today frame in every view', async ({ page }) => {

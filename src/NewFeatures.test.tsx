@@ -5,7 +5,7 @@ import { App } from './App'
 import { RouterProvider } from './core/router/Router'
 import type { AppState, Task } from './domain/models'
 import { createSeedState } from './domain/seed'
-import { layoutDeadlineRanges, layoutTimedDayTasks, tasksForLocalDate } from './pages/calendarLayout'
+import { layoutDeadlineRanges, layoutTimedDayTasks, tasksForLocalDate, tasksForMonthDate } from './pages/calendarLayout'
 import { calendarTaskLineLimit, layoutWeekDayTasks } from './pages/CalendarPage'
 import { AppProvider } from './state/AppContext'
 
@@ -146,7 +146,7 @@ describe('calendar deadline projection', () => {
     expect(layout[0].height).toBeGreaterThan(0)
   })
 
-  it('uses planned duration for event height and projects deadlines as independent points', () => {
+  it('uses planned duration for event height and keeps a separate monthly deadline range', () => {
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
     const start = new Date(2026, 7, 3, 9, 0)
     const timedTask = {
@@ -175,13 +175,14 @@ describe('calendar deadline projection', () => {
     }
     const ranges = layoutDeadlineRanges([taskWithLaterDeadline, outsideView], new Date(2026, 7, 4), new Date(2026, 7, 9))
     expect(ranges.map(({ task, columnStart, columnSpan, lane }) => ({ id: task.id, columnStart, columnSpan, lane }))).toEqual([
-      { id: 'later-deadline', columnStart: 2, columnSpan: 1, lane: 0 },
+      { id: 'later-deadline', columnStart: 0, columnSpan: 3, lane: 0 },
+      { id: 'outside-view', columnStart: 1, columnSpan: 5, lane: 1 },
     ])
-    expect(ranges[0].startsBeforeView).toBe(false)
-    expect(ranges[0].endsAfterView).toBe(false)
+    expect(ranges[0].startsBeforeView).toBe(true)
+    expect(ranges[1].endsAfterView).toBe(true)
     expect(tasksForLocalDate([taskWithLaterDeadline], start)).toEqual([taskWithLaterDeadline])
     expect(tasksForLocalDate([taskWithLaterDeadline], new Date(2026, 7, 4))).toEqual([])
-    expect(tasksForLocalDate([taskWithLaterDeadline], new Date(2026, 7, 5))).toEqual([])
+    expect(tasksForMonthDate([taskWithLaterDeadline], new Date(2026, 7, 5))).toEqual([taskWithLaterDeadline])
     expect(tasksForLocalDate([taskWithLaterDeadline], new Date(2026, 7, 6))).toEqual([taskWithLaterDeadline])
   })
 
@@ -207,7 +208,7 @@ describe('calendar deadline projection', () => {
 
     await user.click(screen.getByRole('button', { name: 'Месяц' }))
     expect(container.querySelectorAll('.month-day')).toHaveLength(42)
-    expect(container.querySelector('.month-day__task')).toHaveTextContent('Задача месяца 1')
+    expect(container.querySelector('.month-day__task')).not.toBeInTheDocument()
     expect(container.querySelector('[data-task-id="month-0"]')).toHaveAttribute('data-range-span', '1')
     await user.click(screen.getByRole('button', { name: `Показать задачи на ${today.toLocaleDateString('ru-RU')}` }))
     const dialog = screen.getByRole('dialog', { name: /Все задачи дня/i })

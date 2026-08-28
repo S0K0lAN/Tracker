@@ -5,6 +5,7 @@ import {
   layoutDeadlineRanges,
   layoutTimedDayTasks,
   tasksForLocalDate,
+  tasksForMonthDate,
 } from './calendarLayout'
 
 function at(day: Date, hours: number, minutes = 0) {
@@ -86,22 +87,28 @@ describe('calendar planned duration projection', () => {
     expect(tasksForLocalDate([task], new Date(2026, 7, 4))).toEqual([])
   })
 
-  it('projects start and deadline as two deduplicated points without filling intervening days', () => {
+  it('keeps point lookups while projecting a continuous deadline range in month view', () => {
     const startDay = new Date(2026, 7, 3)
     const deadlineDay = new Date(2026, 7, 6)
-    const task = timedTask('separate-points', startDay, 9, 0, 60, at(deadlineDay, 18))
+    const task = timedTask('deadline-range', startDay, 9, 0, 60, at(deadlineDay, 18))
 
-    const [deadlinePoint] = layoutDeadlineRanges(
+    const [deadlineRange] = layoutDeadlineRanges(
       [task],
       new Date(2026, 7, 1),
       new Date(2026, 7, 10),
     )
-    expect(deadlinePoint).toMatchObject({ columnStart: 5, columnSpan: 1, lane: 0 })
+    expect(deadlineRange).toMatchObject({ columnStart: 2, columnSpan: 4, lane: 0 })
     expect(tasksForLocalDate([task], startDay)).toEqual([task])
     expect(tasksForLocalDate([task], deadlineDay)).toEqual([task])
     expect(tasksForLocalDate([task], new Date(2026, 7, 4))).toEqual([])
+    expect(tasksForMonthDate([task], new Date(2026, 7, 4))).toEqual([task])
 
     const sameDayDeadline = { ...task, deadline: at(startDay, 18) } as Task
     expect(tasksForLocalDate([sameDayDeadline], startDay)).toEqual([sameDayDeadline])
+    expect(layoutDeadlineRanges(
+      [sameDayDeadline],
+      new Date(2026, 7, 1),
+      new Date(2026, 7, 10),
+    )[0]).toMatchObject({ columnStart: 2, columnSpan: 1, lane: 0 })
   })
 })

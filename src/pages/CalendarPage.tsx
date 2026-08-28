@@ -15,6 +15,7 @@ import {
   startOfLocalDay,
   startOfWeek,
   tasksForLocalDate,
+  tasksForMonthDate,
   type PositionedTimedTask,
 } from './calendarLayout'
 import './calendar-deadlines.css'
@@ -117,8 +118,13 @@ function taskTimeRange(task: Task) {
 }
 
 function taskDateRangeLabel(task: Task) {
-  const deadline = task.deadline ? new Date(task.deadline) : null
   const start = task.startAt ? new Date(task.startAt) : null
+  const deadline = task.deadline ? new Date(task.deadline) : null
+  if (start && !Number.isNaN(start.getTime()) && deadline && !Number.isNaN(deadline.getTime()) && deadline.getTime() >= start.getTime()) {
+    return sameLocalDate(start, deadline)
+      ? shortDate.format(deadline)
+      : `${shortDate.format(start)} — ${shortDate.format(deadline)}`
+  }
   const point = deadline && !Number.isNaN(deadline.getTime()) ? deadline : start
   return point && !Number.isNaN(point.getTime()) ? shortDate.format(point) : ''
 }
@@ -528,8 +534,8 @@ function MonthCalendar({
           data-range-lanes={laneCount}
         >
           {weekDays.map((date, dayIndex) => {
-            const dayTasks = sortTasksForDay(tasksForLocalDate(tasks, date), date)
-            const scheduledTasks = dayTasks.filter((task) => task.startAt && isSameLocalDay(task.startAt, date))
+            const dayTasks = sortTasksForDay(tasksForMonthDate(tasks, date), date)
+            const scheduledTasks = dayTasks.filter((task) => task.startAt && !task.deadline && isSameLocalDay(task.startAt, date))
             const visibleTasks = scheduledTasks.slice(0, MONTH_CELL_LIMIT)
             const hiddenScheduledCount = scheduledTasks.length - visibleTasks.length
             const hiddenDeadlineCount = hiddenDeadlineCounts[dayIndex]
@@ -803,7 +809,12 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
       {openDay && (
         <DayTasksDialog
           date={openDay}
-          tasks={sortTasksForDay(tasksForLocalDate(activeTasks, openDay), openDay)}
+          tasks={sortTasksForDay(
+            mode === 'month'
+              ? tasksForMonthDate(activeTasks, openDay)
+              : tasksForLocalDate(activeTasks, openDay),
+            openDay,
+          )}
           onClose={closeDay}
           onCreate={() => createForDay(openDay)}
           onEdit={editFromDialog}

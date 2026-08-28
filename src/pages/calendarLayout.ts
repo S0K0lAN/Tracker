@@ -58,10 +58,16 @@ export interface TaskDateRange {
 }
 
 export function getTaskDateRange(task: Task): TaskDateRange | null {
-  const point = validDate(task.deadline) ?? validDate(task.startAt)
-  if (!point) return null
-  const day = startOfLocalDay(point)
-  return { start: day, end: day }
+  const plannedStart = validDate(task.startAt)
+  const deadline = validDate(task.deadline)
+  if (!plannedStart && !deadline) return null
+
+  const end = startOfLocalDay(deadline ?? plannedStart!)
+  const proposedStart = startOfLocalDay(plannedStart ?? deadline!)
+  return {
+    start: proposedStart.getTime() <= end.getTime() ? proposedStart : end,
+    end,
+  }
 }
 
 export function tasksForLocalDate(tasks: Task[], date: Date) {
@@ -72,6 +78,16 @@ export function tasksForLocalDate(tasks: Task[], date: Date) {
       (plannedStart && sameLocalDate(plannedStart, date))
       || (deadline && sameLocalDate(deadline, date)),
     )
+  })
+}
+
+export function tasksForMonthDate(tasks: Task[], date: Date) {
+  const day = localDayNumber(date)
+  return tasks.filter((task) => {
+    const range = getTaskDateRange(task)
+    return range
+      ? localDayNumber(range.start) <= day && day <= localDayNumber(range.end)
+      : false
   })
 }
 
@@ -178,10 +194,7 @@ export function layoutDeadlineRanges(tasks: Task[], visibleStartValue: Date, vis
   const visibleDayCount = differenceInLocalDays(visibleEnd, visibleStart) + 1
   const candidates = tasks
     .map((task, index) => {
-      const deadline = validDate(task.deadline)
-      const range = deadline
-        ? { start: startOfLocalDay(deadline), end: startOfLocalDay(deadline) }
-        : null
+      const range = validDate(task.deadline) ? getTaskDateRange(task) : null
       if (!range || differenceInLocalDays(range.end, visibleStart) < 0 || differenceInLocalDays(range.start, visibleEnd) > 0) return null
       const columnStart = Math.max(0, differenceInLocalDays(range.start, visibleStart))
       const columnEnd = Math.min(visibleDayCount - 1, differenceInLocalDays(range.end, visibleStart))
