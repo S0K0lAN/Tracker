@@ -151,7 +151,74 @@ function PermanentRemovalHarness() {
   )
 }
 
+function TimingPolicyHarness() {
+  const { state, addTask, saveTaskDurably, updateTask } = useApp()
+  const [result, setResult] = useState('')
+  const template = state.tasks[0] ?? taskTemplate
+  const deadlineOnly = {
+    ...template,
+    id: 'deadline-without-start',
+    startAt: undefined,
+    deadline: '2026-08-31T15:00:00.000Z',
+  }
+  const captureSyncResult = (operation: () => void) => {
+    try {
+      operation()
+      setResult('saved')
+    } catch (error) {
+      setResult(error instanceof Error ? error.message : 'failed')
+    }
+  }
+  return (
+    <div>
+      <output aria-label="timing result">{result}</output>
+      <output aria-label="invalid timing tasks">{state.tasks.filter((task) => task.id === 'deadline-without-start').length}</output>
+      <output aria-label="first task start">{template.startAt ?? ''}</output>
+      <button
+        type="button"
+        onClick={() => void saveTaskDurably(deadlineOnly).then(
+          () => setResult('saved'),
+          (error: unknown) => setResult(error instanceof Error ? error.message : 'failed'),
+        )}
+      >save deadline without start</button>
+      <button type="button" onClick={() => captureSyncResult(() => addTask(deadlineOnly))}>add deadline without start</button>
+      <button type="button" onClick={() => captureSyncResult(() => updateTask({ ...template, startAt: undefined }))}>remove required start</button>
+    </div>
+  )
+}
+
 describe('AppProvider storage persistence', () => {
+  it('rejects a durable deadline-only mutation before changing state or storage', async () => {
+    const adapter = new DelayedStorageAdapter()
+    adapter.loadResult.resolve(loadedState())
+    render(
+      <AppProvider storageAdapter={adapter}>
+        <TimingPolicyHarness />
+      </AppProvider>,
+    )
+
+    await screen.findByLabelText('invalid timing tasks')
+    await waitFor(() => expect(adapter.writes).toHaveLength(1))
+    adapter.writes[0].resolve()
+    await waitFor(() => expect(adapter.activeWrites).toBe(0))
+
+    fireEvent.click(screen.getByRole('button', { name: 'save deadline without start' }))
+
+    await waitFor(() => expect(screen.getByLabelText('timing result')).toHaveTextContent('Task deadline requires startAt'))
+    expect(screen.getByLabelText('invalid timing tasks')).toHaveTextContent('0')
+    expect(adapter.writes).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'add deadline without start' }))
+    expect(screen.getByLabelText('timing result')).toHaveTextContent('Task deadline requires startAt')
+    expect(screen.getByLabelText('invalid timing tasks')).toHaveTextContent('0')
+
+    const originalStart = screen.getByLabelText('first task start').textContent
+    fireEvent.click(screen.getByRole('button', { name: 'remove required start' }))
+    expect(screen.getByLabelText('timing result')).toHaveTextContent('Task deadline requires startAt')
+    expect(screen.getByLabelText('first task start')).toHaveTextContent(originalStart!)
+    expect(adapter.writes).toHaveLength(1)
+  })
+
   it('clears a Pomodoro task reference when that task is permanently removed', async () => {
     render(
       <AppProvider>

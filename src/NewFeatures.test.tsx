@@ -226,7 +226,7 @@ describe('calendar deadline projection', () => {
     expect(container.querySelectorAll('.year-month')).toHaveLength(12)
   })
 
-  it('shows a deadline-only task as a distinct marker in week and month views', async () => {
+  it('keeps a legacy deadline-only task visible in week and month views', async () => {
     const user = userEvent.setup()
     const deadline = new Date()
     deadline.setHours(15, 0, 0, 0)
@@ -432,6 +432,8 @@ describe('task editor keyboard interactions', () => {
 
     await user.click(screen.getByRole('button', { name: 'Создать новую задачу' }))
     await user.type(screen.getByLabelText('Название'), 'Задача с ошибкой даты')
+    await user.type(screen.getByRole('textbox', { name: 'Начало' }), '28.02.2026, 09:00')
+    await user.tab()
     const deadline = screen.getByRole('textbox', { name: 'Дедлайн' })
     await user.type(deadline, '31.02.2026, 18:00')
     await user.click(screen.getByRole('button', { name: 'Создать задачу' }))

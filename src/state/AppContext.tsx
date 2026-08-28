@@ -3,6 +3,7 @@ import type { AppSettings, AppState, Habit, Project, PomodoroState, SavedFilter,
 import { getEffectiveUrgencyThreshold } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import { UnsupportedSchemaVersionError } from '../domain/migrations'
+import { taskTimingMutationRequiresStart } from '../domain/taskTimingPolicy'
 import { LocalStorageAdapter } from '../core/storage/LocalStorageAdapter'
 import { StateSaveQueue } from '../core/storage/StateSaveQueue'
 import type { StorageAdapter } from '../core/storage/StorageAdapter'
@@ -391,10 +392,14 @@ export function AppProvider({ children, syncRegistry, storageAdapter }: AppProvi
   const saveTaskDurably = useCallback(async (task: Task) => {
     ensureTaskCommitAvailable()
     const current = stateRef.current
+    const previousTask = current.tasks.find((item) => item.id === task.id)
+    if (taskTimingMutationRequiresStart(previousTask, task)) {
+      throw new Error('Task deadline requires startAt')
+    }
     if (!current.projects.some((project) => project.id === task.projectId)) {
       throw new Error('Task project no longer exists')
     }
-    const action: Action = current.tasks.some((item) => item.id === task.id)
+    const action: Action = previousTask
       ? { type: 'task/update', task }
       : { type: 'task/add', task }
     const nextState = reducer(current, action)
@@ -1148,8 +1153,15 @@ export function AppProvider({ children, syncRegistry, storageAdapter }: AppProvi
     () => ({
       state,
       ready,
-      addTask: (task) => dispatch({ type: 'task/add', task }),
-      updateTask: (task) => dispatch({ type: 'task/update', task }),
+      addTask: (task) => {
+        if (taskTimingMutationRequiresStart(undefined, task)) throw new Error('Task deadline requires startAt')
+        dispatch({ type: 'task/add', task })
+      },
+      updateTask: (task) => {
+        const previousTask = stateRef.current.tasks.find((item) => item.id === task.id)
+        if (taskTimingMutationRequiresStart(previousTask, task)) throw new Error('Task deadline requires startAt')
+        dispatch({ type: 'task/update', task })
+      },
       saveTaskDurably,
       toggleTask: (id) => {
         const task = state.tasks.find((item) => item.id === id)

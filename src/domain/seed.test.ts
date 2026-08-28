@@ -21,7 +21,7 @@ describe('demo seed data', () => {
       && task.plannedDurationMinutes <= 1440)).toBe(true)
     expect(active.some((task) => task.plannedDurationMinutes !== 60)).toBe(true)
     expect(tasksWithLaterDeadline.length).toBeGreaterThanOrEqual(2)
-    expect(active.some((task) => task.deadline && !task.startAt)).toBe(true)
+    expect(active.every((task) => !task.deadline || Boolean(task.startAt))).toBe(true)
     expect(active.some((task) => !task.deadline && !task.startAt)).toBe(true)
     expect(new Set(active.map((task) => task.importance)).size).toBe(2)
   })

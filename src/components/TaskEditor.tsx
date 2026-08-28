@@ -7,6 +7,7 @@ import {
   MAX_PLANNED_DURATION_MINUTES,
 } from '../domain/models'
 import { INPUT_LIMITS } from '../domain/inputLimits'
+import { taskTimingMutationRequiresStart } from '../domain/taskTimingPolicy'
 import { parseVoiceTask, type ParsedVoiceTask } from '../domain/voiceParser'
 import { useApp } from '../state/AppContext'
 import { AttachmentViewer } from './AttachmentViewer'
@@ -37,6 +38,8 @@ const localInput = (value?: string) => {
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined)
 const DURATION_RANGE_ERROR = 'Укажите длительность от 1 минуты до 24 часов'
 const DURATION_DAY_ERROR_PREFIX = 'Длительность выходит за пределы дня.'
+const DEADLINE_REQUIRES_START_ERROR = 'Сначала укажите корректное начало задачи, затем дедлайн'
+const START_REQUIRED_BY_DEADLINE_ERROR = 'Сначала уберите дедлайн, затем очистите начало'
 type DurationUnit = 'minutes' | 'hours'
 
 const parseDurationMinutes = (value: string, unit: DurationUnit): number | '' => {
@@ -72,6 +75,9 @@ const maxDurationUntilLocalMidnight = (startAt: string) => {
 
 const isDurationError = (value: string) => (
   value === DURATION_RANGE_ERROR || value.startsWith(DURATION_DAY_ERROR_PREFIX)
+)
+const isTimingError = (value: string) => (
+  value === DEADLINE_REQUIRES_START_ERROR || value === START_REQUIRED_BY_DEADLINE_ERROR
 )
 const urgencyThresholdPresets = [
   { value: 1, label: '1 час', description: 'Только перед самым сроком' },
@@ -126,6 +132,7 @@ export function TaskEditor({
   const [durationUnit, setDurationUnit] = useState<DurationUnit>('minutes')
   const [durationInput, setDurationInput] = useState(formatDurationInput(initialDraft.plannedDurationMinutes || DEFAULT_PLANNED_DURATION_MINUTES, 'minutes'))
   const [startAtValid, setStartAtValid] = useState(true)
+  const [startAtDraftPresent, setStartAtDraftPresent] = useState(Boolean(initialDraft.startAt))
   const [deadlineValid, setDeadlineValid] = useState(true)
   const [dateInputResetToken, setDateInputResetToken] = useState(0)
   const [importance, setImportance] = useState<Importance>(initialDraft.importance)
@@ -262,6 +269,7 @@ export function TaskEditor({
     ? maxDurationUntilLocalMidnight(startAt)
     : MAX_PLANNED_DURATION_MINUTES
   const durationHasError = isDurationError(error)
+  const deadlineLocked = !startAtValid || (!startAt && !startAtDraftPresent)
 
   const draftData = useMemo<TaskDraftData>(() => ({
     title,
@@ -340,16 +348,29 @@ export function TaskEditor({
   )
 
   const updateStartAt = (value: string) => {
+    if (!value && deadline) {
+      setError(START_REQUIRED_BY_DEADLINE_ERROR)
+      setStartAtDraftPresent(true)
+      setDateInputResetToken((current) => current + 1)
+      return
+    }
     setStartAt(value)
-    setError((current) => isDurationError(current) ? '' : current)
+    setStartAtDraftPresent(Boolean(value))
+    setError((current) => isDurationError(current) || isTimingError(current) ? '' : current)
   }
 
   const updateDeadline = (value: string) => {
+    if (value && deadlineLocked) {
+      setError(DEADLINE_REQUIRES_START_ERROR)
+      editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
+      return
+    }
     setDeadline(value)
     if (!value) {
       setThresholdOverride('')
       setUrgencyOverride('')
     }
+    setError((current) => isTimingError(current) ? '' : current)
   }
 
   const updateDurationInput = (value: string) => {
@@ -407,6 +428,7 @@ export function TaskEditor({
     setDescription(recovered.description)
     setProjectId(state.projects.some((project) => project.id === recovered.projectId) ? recovered.projectId : 'inbox')
     setStartAt(recovered.startAt)
+    setStartAtDraftPresent(Boolean(recovered.startAt))
     setDeadline(recovered.deadline)
     setDurationUnit('minutes')
     setDurationInput(recovered.plannedDurationMinutes === ''
@@ -463,6 +485,14 @@ export function TaskEditor({
     if (!startAtValid || !deadlineValid) {
       setError('Исправьте дату и время перед сохранением')
       editorRef.current?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus()
+      return
+    }
+    if (taskTimingMutationRequiresStart(task, {
+      startAt: toIso(startAt),
+      deadline: toIso(deadline),
+    })) {
+      setError(DEADLINE_REQUIRES_START_ERROR)
+      editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
       return
     }
     if (plannedDurationMinutes === ''
@@ -604,20 +634,23 @@ export function TaskEditor({
     if (!voicePreview) return
     const parsed = voicePreview
     const hasSpokenDate = Boolean(parsed.startAt || parsed.deadline)
+    if (parsed.deadline && deadlineLocked) {
+      setError(DEADLINE_REQUIRES_START_ERROR)
+      editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
+      return
+    }
     if (parsed.title) setTitle(parsed.title)
     if (parsed.startAt) {
       updateStartAt(localInput(parsed.startAt))
-      updateDeadline('')
     }
     if (parsed.deadline) {
       updateDeadline(localInput(parsed.deadline))
-      updateStartAt('')
     }
     if (hasSpokenDate) {
       setStartAtValid(true)
       setDeadlineValid(true)
       setDateInputResetToken((current) => current + 1)
-      setError((current) => current === 'Исправьте дату и время перед сохранением' ? '' : current)
+      setError((current) => current === 'Исправьте дату и время перед сохранением' || isTimingError(current) ? '' : current)
     }
     if (parsed.importance) setImportance(parsed.importance)
     if (parsed.tags.length) {
@@ -754,7 +787,7 @@ export function TaskEditor({
               ]}
             />
           </div>
-          <DateTimePicker label="Начало" value={startAt} onChange={updateStartAt} onValidityChange={setStartAtValid} defaultTime="09:00" resetToken={dateInputResetToken} />
+          <DateTimePicker inputId="task-start-at" label="Начало" value={startAt} onChange={updateStartAt} onValidityChange={setStartAtValid} onDraftPresenceChange={setStartAtDraftPresent} defaultTime="09:00" resetToken={dateInputResetToken} />
           <div className="field">
             <label htmlFor="task-duration">Длительность</label>
             <div className="inline-add">
@@ -803,7 +836,21 @@ export function TaskEditor({
                 : 'От 1 минуты до 24 часов; начало задаёт положение блока в календаре.'}
             </small>
           </div>
-          <DateTimePicker label="Дедлайн" value={deadline} onChange={updateDeadline} onValidityChange={setDeadlineValid} defaultTime="18:00" resetToken={dateInputResetToken} />
+          <DateTimePicker
+            label="Дедлайн"
+            value={deadline}
+            onChange={updateDeadline}
+            onValidityChange={setDeadlineValid}
+            defaultTime="18:00"
+            resetToken={dateInputResetToken}
+            disabled={deadlineLocked}
+            allowClearWhenDisabled={Boolean(deadline)}
+            hint={deadlineLocked
+              ? deadline
+                ? 'Добавьте начало, чтобы изменить дедлайн; существующий срок можно очистить.'
+                : 'Сначала укажите корректное начало задачи.'
+              : undefined}
+          />
           {deadline && (
             <>
               <div className="field">

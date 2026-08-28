@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DateTimePicker, formatDateTimeInput, formatNumericDateTimeDraft, parseDateTimeInput } from './DateTimePicker'
 
 describe('manual date input', () => {
@@ -56,6 +56,28 @@ describe('manual date input', () => {
     await user.tab()
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByRole('alert')).toHaveTextContent('Проверьте дату и время')
+  })
+
+  it('can lock editing while keeping an explicit clear action available', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(
+      <DateTimePicker
+        label="Дедлайн"
+        value="2026-08-05T18:30"
+        onChange={onChange}
+        disabled
+        allowClearWhenDisabled
+        hint="Сначала укажите начало"
+      />,
+    )
+
+    expect(screen.getByLabelText('Дедлайн')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Открыть календарь дедлайна' })).toBeDisabled()
+    expect(screen.getByText('Сначала укажите начало')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Очистить дату дедлайна' }))
+    expect(onChange).toHaveBeenCalledWith('')
   })
 
   it('does not crash while the popover time is cleared before being replaced', async () => {

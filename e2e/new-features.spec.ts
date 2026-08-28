@@ -85,8 +85,16 @@ test('manual date entry keeps the week aligned and deadlines stack in the all-da
 
   await page.locator('.page-header').getByRole('button', { name: 'Запланировать' }).click()
   await page.getByLabel('Название').fill('Ручная дата E2E')
-  await page.getByRole('textbox', { name: 'Начало', exact: true }).fill(`${localDate}, 11:30`)
-  await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill(`${localDate}, 13:45`)
+  const startInput = page.getByRole('textbox', { name: 'Начало', exact: true })
+  const deadlineInput = page.getByRole('textbox', { name: 'Дедлайн', exact: true })
+  await expect(deadlineInput).toBeDisabled()
+  await startInput.fill(`${localDate}, 11:30`)
+  await expect(deadlineInput).toBeEnabled()
+  await deadlineInput.fill(`${localDate}, 13:45`)
+  await page.getByRole('button', { name: 'Очистить дату начала' }).click()
+  await expect(page.getByRole('alert')).toContainText('Сначала уберите дедлайн')
+  await expect(startInput).toHaveValue(`${localDate}, 11:30`)
+  await expect(deadlineInput).toHaveValue(`${localDate}, 13:45`)
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
 
   const week = page.locator('.week-calendar')
@@ -116,6 +124,7 @@ test('manual date entry keeps the week aligned and deadlines stack in the all-da
 
   await page.getByRole('button', { name: 'Создать новую задачу' }).click()
   await page.getByLabel('Название').fill('Невалидная дата E2E')
+  await page.getByRole('textbox', { name: 'Начало', exact: true }).fill(`${localDate}, 09:00`)
   await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill('31.02.2026, 18:00')
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -865,13 +874,17 @@ test('a project urgency threshold is inherited by its tasks and updates without 
   await page.getByRole('button', { name: 'Задача', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toHaveCount(0)
   await page.getByLabel('Название').fill(taskTitle)
-  const deadline = await page.evaluate(() => {
-    const value = new Date(Date.now() + 96 * 60 * 60 * 1000)
+  const schedule = await page.evaluate(() => {
     const pad = (part: number) => String(part).padStart(2, '0')
-    return `${pad(value.getDate())}.${pad(value.getMonth() + 1)}.${value.getFullYear()}, ${pad(value.getHours())}:${pad(value.getMinutes())}`
+    const format = (value: Date) => `${pad(value.getDate())}.${pad(value.getMonth() + 1)}.${value.getFullYear()}, ${pad(value.getHours())}:${pad(value.getMinutes())}`
+    return {
+      start: format(new Date(Date.now() + 95 * 60 * 60 * 1000)),
+      deadline: format(new Date(Date.now() + 96 * 60 * 60 * 1000)),
+    }
   })
+  await page.getByRole('textbox', { name: 'Начало', exact: true }).fill(schedule.start)
   const deadlineInput = page.getByRole('textbox', { name: 'Дедлайн', exact: true })
-  await deadlineInput.fill(deadline)
+  await deadlineInput.fill(schedule.deadline)
   await deadlineInput.press('Tab')
   await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toContainText('Из проекта · 1 день')
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()

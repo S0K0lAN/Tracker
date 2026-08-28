@@ -55,7 +55,7 @@ Done браузерного MVP. Они честно вынесены в отд�
 | SEARCH-01 | Поиск задач, проектов, тегов и фильтров | **Готово** | `/search` регистронезависимо группирует четыре типа результатов; component/E2E подтверждают кириллический поиск, empty state, сохранение и повторное применение фильтра. |
 | TRASH-01 | Корзина удалённых задач | **Готово** | Soft delete → `/trash` → reload → restore проходит E2E; восстановленная неразобранная задача возвращается во Входящие, permanent delete требует и component-тестом проверяет явное второе подтверждение. |
 | POM-01 | Таймер фокуса для задачи | **Готово** | Действие явно подписано «Таймер фокуса · 25 минут»; desktop/mobile E2E проверяют task binding, pause и timestamp persistence после reload. |
-| CAL-01 | Дедлайны и навигация календаря (#45) | **Готово** | Deadline-only task отображается зелёной полосой с иконкой и точным временем в секции «Весь день» week/3-day/day и однодневным marker в month; отдельный deadlines mode удалён, а E2E проверяет responsive overflow и смену периода горизонтальным drag. |
+| CAL-01 | Дедлайны и навигация календаря (#45) | **Готово** | Каждая задача с дедлайном отображается зелёной полосой с иконкой и точным временем в секции «Весь день» week/3-day/day и однодневным marker в month; legacy deadline-only данные сохраняют эту проекцию, отдельный deadlines mode удалён. |
 | CAL-02 | Длительность задачи (#46) | **Готово** | Schema v7 хранит 1–1440 целых минут, редактор не даёт блоку перейти локальную полночь, week/3-day/day вычисляют высоту независимо от дедлайна; migration/unit/component/E2E проверяют persistence и projection. |
 | INB-01 | Сортировка входящих | **Готово** | Доступны created desc, nearest deadline, importance и title; component проверяет порядок, E2E — сохранение выбора после reload. |
 | ARC-01 | Архив выполненных задач | **Готово** | Individual/bulk archive, отдельный Archive tab, restore и reload реализованы; component/E2E проверяют полный цикл возврата в completed Inbox. |
@@ -71,7 +71,7 @@ Done браузерного MVP. Они честно вынесены в отд�
 | TYPE-01 | Настройка шрифта всего приложения | **Готово** | Три локальных системных стека и масштаб 90–120% применяются CSS variables; schema v2 мигрирует в v3, component/E2E проверяют persistence и отсутствие mobile overflow при 120%. |
 | DATA-01 | Скачать и импортировать переносимую JSON-копию | **Готово** | Экспорт исключает OAuth/device-local sync config; импорт до изменения данных проверяет 10 МБ, схему, вложения и фон, показывает preview, требует подтверждение, сохраняется после reload и оставляет восстанавливаемую предыдущую копию. |
 | VOICE-01 | Надиктовывание задачи | **Готово** | Web Speech ru-RU и ручной fallback интегрированы; fallback остаётся рабочим при отсутствии API и проверен E2E. |
-| VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет default `startAt`, явные «до»/«дедлайн»/«срок», weekday, time, importance, tags и project; component/E2E — preview → взаимоисключающее применение даты → saved task. |
+| VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет default `startAt`, явные «до»/«дедлайн»/«срок», weekday, time, importance, tags и project; component проверяет, что голосовой дедлайн требует начала и не удаляет его. |
 | DES-01 | Лаконичный дизайн Todoist/Singularity | **Готово** | Общие tokens и progressive disclosure реализованы; независимый аудит desktop 1440×900, intermediate 1024×900 и mobile 390×844 подтвердил layering, focus и отсутствие horizontal overflow. |
 | QA-01 | Независимое покрытие новых функций | **Готово** | Набор содержит unit/component/E2E с наблюдаемыми эффектами, browser-error collection, обе темы и desktop/intermediate/mobile loops. Полный локальный gate 21 августа 2026 года записан ниже; непрерывного CI пока нет. |
 | DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v7, миграциям v1–v6, ограничениям и тестам. |
@@ -89,8 +89,9 @@ Done браузерного MVP. Они честно вынесены в отд�
 - `src/domain/voiceParser.test.ts` — 9 сценариев русского парсинга с
   фиксированным `now`, включая Unicode-safe границы кириллических токенов.
 - `src/components/TaskEditor.test.tsx` — применение голосовой даты к началу или
-  дедлайну, очистка второго поля, сброс невалидного ручного ввода, наследование
-  проектного порога и возврат с индивидуального порога к наследуемому.
+  дедлайну с обязательным сохранением начала, запрет очистки начала до дедлайна,
+  сброс невалидного ручного ввода, наследование проектного порога и возврат с
+  индивидуального порога к наследуемому.
 - `src/components/TaskDetails.test.tsx` — read mode, подзадачи, task actions и
   focus restore; `SettingsTypography.test.tsx` — применение/миграция шрифта.
 - `src/pages/ProjectsPage.test.tsx` — menu проекта, редактирование и сохранение
@@ -98,7 +99,7 @@ Done браузерного MVP. Они честно вынесены в отд�
   сохранение эффективного порога задач при удалении проекта.
 - `src/NewFeatures.test.tsx` — Today, Projects, Search, soft delete/restore,
   permanent delete confirmation, archive/restore, сортировка, list/board
-  Входящих и отдельный календарь, Pomodoro, deadline-only all-day/month, `Escape` внутри `SelectMenu` и
+  Входящих и отдельный календарь, Pomodoro, deadline all-day/month с legacy-совместимостью, `Escape` внутри `SelectMenu` и
   keyboard navigation task action-menu, 42-cell calendar и focus trap/restore
   TaskEditor, AttachmentViewer и mobile Sidebar.
 - `src/pages/HabitsPage.test.tsx` — rhythm/streak, независимый toggle,
