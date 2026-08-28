@@ -157,8 +157,10 @@ export function getTaskTiming(
   const deadlineAt = Number.isFinite(parsedDeadline) ? parsedDeadline : undefined
   const nowAt = now.getTime()
   const urgencyThresholdHours = getEffectiveUrgencyThreshold(task, projectThreshold)
-  const urgency = task.urgencyOverride
-    ?? (deadlineAt !== undefined && (deadlineAt - nowAt) / 3_600_000 <= urgencyThresholdHours ? 'high' : 'low')
+  const urgency = deadlineAt === undefined
+    ? 'low'
+    : task.urgencyOverride
+      ?? ((deadlineAt - nowAt) / 3_600_000 <= urgencyThresholdHours ? 'high' : 'low')
   return {
     urgency,
     overdue: Boolean(deadlineAt !== undefined && task.status === 'active' && deadlineAt < nowAt),

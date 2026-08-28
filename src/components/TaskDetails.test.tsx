@@ -49,8 +49,11 @@ describe('task details', () => {
     expect(within(details).getAllByText('Без проекта').length).toBeGreaterThan(0)
     expect(within(details).getByText('#планирование')).toBeInTheDocument()
     expect(within(details).getByRole('checkbox', { name: 'Проверить календарь' })).toBeChecked()
-    const durationFact = within(details).getByText('Длительность').closest('div')!
+    const durationFact = within(details).getByText('Длительность').closest<HTMLElement>('.task-details__schedule-item')!
     expect(within(durationFact).getByText('1 ч')).toBeInTheDocument()
+    expect(within(details).getByText('Планирование')).toBeInTheDocument()
+    expect(within(details).queryByText('Срочность')).not.toBeInTheDocument()
+    expect(within(details).queryByText('Не срочная')).not.toBeInTheDocument()
 
     await user.click(within(details).getByRole('button', { name: 'Редактировать' }))
 

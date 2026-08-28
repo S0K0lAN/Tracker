@@ -173,10 +173,11 @@ describe('remote snapshots', () => {
     const decoded = decodeRemoteSnapshot(envelope)
 
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-    expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, ...task }) => ({
+    expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, urgencyOverride, ...task }) => ({
       ...task,
       plannedDurationMinutes: expectedLegacyDuration(task.startAt, task.deadline),
-      urgencyThresholdOverrideHours: urgencyThresholdHours,
+      ...(task.deadline ? { urgencyThresholdOverrideHours: urgencyThresholdHours } : {}),
+      ...(task.deadline && urgencyOverride ? { urgencyOverride } : {}),
     })))
     expect(decoded.projects).toEqual(legacy.projects.map((project) => ({
       ...project,
@@ -196,10 +197,11 @@ describe('remote snapshots', () => {
     const decoded = decodeRemoteSnapshot(legacy)
 
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-    expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, ...task }) => ({
+    expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, urgencyOverride, ...task }) => ({
       ...task,
       plannedDurationMinutes: expectedLegacyDuration(task.startAt, task.deadline),
-      urgencyThresholdOverrideHours: urgencyThresholdHours,
+      ...(task.deadline ? { urgencyThresholdOverrideHours: urgencyThresholdHours } : {}),
+      ...(task.deadline && urgencyOverride ? { urgencyOverride } : {}),
     })))
     expect(decoded.projects).toEqual(legacy.projects.map((project) => ({
       ...project,

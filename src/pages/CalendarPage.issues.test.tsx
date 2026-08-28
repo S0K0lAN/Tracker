@@ -149,6 +149,26 @@ describe('CalendarPage GitHub issues #33, #35 and #46', () => {
     expect(both.querySelector('.calendar-task-signal--urgency')).toBeInTheDocument()
   })
 
+  it('does not render stale manual urgency for a scheduled task without a deadline', async () => {
+    const today = startOfLocalDay(new Date())
+    const template = createSeedState().tasks.find((task) => task.status === 'active')!
+    const scheduledWithoutDeadline = {
+      ...taskFrom(template, 'scheduled-without-deadline', 'План без дедлайна', { startAt: at(today, 9) }),
+      importance: 'low' as const,
+      urgencyOverride: 'high' as const,
+    }
+    const { container } = renderCalendar([scheduledWithoutDeadline])
+
+    await screen.findByRole('heading', { name: 'Календарь', level: 1 })
+    const timedTask = [...container.querySelectorAll<HTMLButtonElement>('.calendar-task')]
+      .find((task) => task.textContent?.includes(scheduledWithoutDeadline.title))!
+
+    expect(timedTask).toBeInTheDocument()
+    expect(timedTask).toHaveAttribute('data-urgency', 'low')
+    expect(timedTask).not.toHaveAccessibleName(/Срочная задача/)
+    expect(timedTask.querySelector('.calendar-task-signal--urgency')).not.toBeInTheDocument()
+  })
+
   it('opens every task of the day from the accessible deadline overflow and restores focus', async () => {
     const user = userEvent.setup()
     const today = startOfLocalDay(new Date())

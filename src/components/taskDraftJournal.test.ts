@@ -50,6 +50,18 @@ describe('task draft recovery journal', () => {
     expect(JSON.parse(localStorage.getItem(getTaskDraftStorageKey())!).version).toBe(3)
   })
 
+  it('drops urgency settings from a draft without a deadline', () => {
+    const withoutDeadline: TaskDraftData = { ...draft, deadline: '' }
+
+    expect(writeTaskDraft(withoutDeadline).status).toBe('saved')
+
+    expect(readTaskDraft()?.data).toMatchObject({
+      deadline: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    })
+  })
+
   it('recovers a version 1 threshold as an individual override', () => {
     const {
       urgencyThresholdOverrideHours: _override,

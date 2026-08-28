@@ -140,6 +140,7 @@ function normalizeTaskDraftFields(
     const subtasks = value.subtasks.map(normalizeSubtask)
     const reminders = value.reminders.map(normalizeReminder)
     if (subtasks.some((item) => item === null) || reminders.some((item) => item === null)) return null
+    const hasDeadline = value.deadline !== ''
     return {
       title: value.title,
       description: value.description,
@@ -148,8 +149,8 @@ function normalizeTaskDraftFields(
       deadline: value.deadline,
       plannedDurationMinutes,
       importance: value.importance,
-      urgencyThresholdOverrideHours,
-      urgencyOverride: value.urgencyOverride,
+      urgencyThresholdOverrideHours: hasDeadline ? urgencyThresholdOverrideHours : '',
+      urgencyOverride: hasDeadline ? value.urgencyOverride : '',
       tags: value.tags,
       subtasks: subtasks as Subtask[],
       pendingSubtaskTitle: value.pendingSubtaskTitle,

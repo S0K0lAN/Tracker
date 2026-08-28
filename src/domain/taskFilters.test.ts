@@ -52,6 +52,10 @@ describe('matchesSavedFilter', () => {
     expect(matchesSavedFilter({ ...task, urgencyThresholdOverrideHours: 6 }, urgentFilter, project(48), now)).toBe(false)
     expect(matchesSavedFilter({ ...task, urgencyOverride: 'high' }, urgentFilter, project(12), now)).toBe(true)
   })
+
+  it('does not match a stale manual urgency override without a deadline', () => {
+    expect(matchesSavedFilter({ ...task, deadline: undefined, urgencyOverride: 'high' }, urgentFilter, project(48), now)).toBe(false)
+  })
 })
 
 describe('isInboxTask', () => {

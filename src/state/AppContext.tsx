@@ -185,14 +185,19 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         projects: state.projects.filter((project) => project.id !== action.id),
-        tasks: state.tasks.map((task) => task.projectId === action.id
-          ? {
-              ...task,
-              projectId: 'inbox',
-              urgencyThresholdOverrideHours: getEffectiveUrgencyThreshold(task, removedProject?.urgencyThresholdHours),
-              updatedAt,
-            }
-          : task),
+        tasks: state.tasks.map((task) => {
+          if (task.projectId !== action.id) return task
+          const taskWithoutThreshold = { ...task }
+          delete taskWithoutThreshold.urgencyThresholdOverrideHours
+          return {
+            ...taskWithoutThreshold,
+            projectId: 'inbox',
+            ...(task.deadline
+              ? { urgencyThresholdOverrideHours: getEffectiveUrgencyThreshold(task, removedProject?.urgencyThresholdHours) }
+              : {}),
+            updatedAt,
+          }
+        }),
         savedFilters: state.savedFilters.map((filter) => filter.projectId === action.id ? { ...filter, projectId: undefined } : filter),
       }
     }

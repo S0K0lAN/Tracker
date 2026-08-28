@@ -845,14 +845,17 @@ test('a project urgency threshold is inherited by its tasks and updates without 
   await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
   await expect(page.getByText('Срочность за 1 день до дедлайна')).toBeVisible()
   await page.getByRole('button', { name: 'Задача', exact: true }).click()
-  await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toContainText('Из проекта · 1 день')
+  await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toHaveCount(0)
   await page.getByLabel('Название').fill(taskTitle)
   const deadline = await page.evaluate(() => {
     const value = new Date(Date.now() + 96 * 60 * 60 * 1000)
     const pad = (part: number) => String(part).padStart(2, '0')
     return `${pad(value.getDate())}.${pad(value.getMonth() + 1)}.${value.getFullYear()}, ${pad(value.getHours())}:${pad(value.getMinutes())}`
   })
-  await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill(deadline)
+  const deadlineInput = page.getByRole('textbox', { name: 'Дедлайн', exact: true })
+  await deadlineInput.fill(deadline)
+  await deadlineInput.press('Tab')
+  await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toContainText('Из проекта · 1 день')
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
 
   const taskCard = page.locator('.task-card').filter({ hasText: taskTitle })

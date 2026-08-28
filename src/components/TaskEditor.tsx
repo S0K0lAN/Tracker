@@ -89,16 +89,17 @@ function createInitialDraft(
   task: Task | undefined,
   defaults: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>> | undefined,
 ): TaskDraftData {
+  const deadline = localInput(task?.deadline ?? defaults?.deadline)
   return {
     title: task?.title ?? '',
     description: task?.description ?? '',
     projectId: task?.projectId ?? defaults?.projectId ?? 'inbox',
     startAt: localInput(task?.startAt ?? defaults?.startAt),
-    deadline: localInput(task?.deadline ?? defaults?.deadline),
+    deadline,
     plannedDurationMinutes: task?.plannedDurationMinutes ?? defaults?.plannedDurationMinutes ?? DEFAULT_PLANNED_DURATION_MINUTES,
     importance: task?.importance ?? 'low',
-    urgencyThresholdOverrideHours: task?.urgencyThresholdOverrideHours ?? '',
-    urgencyOverride: task?.urgencyOverride ?? '',
+    urgencyThresholdOverrideHours: deadline ? task?.urgencyThresholdOverrideHours ?? '' : '',
+    urgencyOverride: deadline ? task?.urgencyOverride ?? '' : '',
     tags: task?.tags.join(', ') ?? '',
     subtasks: task?.subtasks ?? [],
     pendingSubtaskTitle: '',
@@ -222,12 +223,14 @@ export function TaskEditor({
       ? lastKnownProjectThresholdRef.current.hours
       : DEFAULT_URGENCY_THRESHOLD_HOURS
     setProjectId('inbox')
-    setThresholdOverride((current) => current === '' ? previousThreshold : current)
+    if (deadline) setThresholdOverride((current) => current === '' ? previousThreshold : current)
     setDraftStorageMessage({
-      text: 'Выбранный проект удалён. Задача перенесена во «Входящие», прежний порог срочности сохранён.',
+      text: deadline
+        ? 'Выбранный проект удалён. Задача перенесена во «Входящие», прежний порог срочности сохранён.'
+        : 'Выбранный проект удалён. Задача перенесена во «Входящие».',
       error: false,
     })
-  }, [projectId, selectedProject])
+  }, [deadline, projectId, selectedProject])
 
   const thresholdOptions = [
     {
@@ -268,8 +271,8 @@ export function TaskEditor({
     deadline,
     plannedDurationMinutes,
     importance,
-    urgencyThresholdOverrideHours: thresholdOverride,
-    urgencyOverride,
+    urgencyThresholdOverrideHours: deadline ? thresholdOverride : '',
+    urgencyOverride: deadline ? urgencyOverride : '',
     tags,
     subtasks,
     pendingSubtaskTitle: subtaskTitle,
@@ -343,6 +346,10 @@ export function TaskEditor({
 
   const updateDeadline = (value: string) => {
     setDeadline(value)
+    if (!value) {
+      setThresholdOverride('')
+      setUrgencyOverride('')
+    }
   }
 
   const updateDurationInput = (value: string) => {
@@ -482,8 +489,8 @@ export function TaskEditor({
       deadline: toIso(deadline),
       plannedDurationMinutes,
       importance,
-      ...(thresholdOverride === '' ? {} : { urgencyThresholdOverrideHours: thresholdOverride }),
-      urgencyOverride: urgencyOverride || undefined,
+      ...(deadline && thresholdOverride !== '' ? { urgencyThresholdOverrideHours: thresholdOverride } : {}),
+      ...(deadline && urgencyOverride ? { urgencyOverride } : {}),
       tags: uniqueTags,
       subtasks,
       attachments,
@@ -797,29 +804,33 @@ export function TaskEditor({
             </small>
           </div>
           <DateTimePicker label="Дедлайн" value={deadline} onChange={updateDeadline} onValidityChange={setDeadlineValid} defaultTime="18:00" resetToken={dateInputResetToken} />
-          <div className="field">
-            <span>Становится срочной за</span>
-            <SelectMenu<number | 'inherit'>
-              label="Порог срочности"
-              value={thresholdOverride === '' ? 'inherit' : thresholdOverride}
-              onChange={(value) => setThresholdOverride(value === 'inherit' ? '' : value)}
-              options={thresholdOptions}
-            />
-            <small>Эффективный порог: {formatUrgencyThreshold(effectiveThreshold)} до дедлайна</small>
-          </div>
-          <div className="field">
-            <span>Срочность вручную</span>
-            <SelectMenu<Urgency | ''>
-              label="Срочность вручную"
-              value={urgencyOverride}
-              onChange={setUrgencyOverride}
-              options={[
-                { value: '', label: 'Автоматически', description: 'Рассчитать по дедлайну', icon: <Clock3 size={17} /> },
-                { value: 'low', label: 'Не срочно', icon: <Clock3 size={17} /> },
-                { value: 'high', label: 'Срочно', description: 'Всегда показывать как срочную', icon: <Clock3 size={17} /> },
-              ]}
-            />
-          </div>
+          {deadline && (
+            <>
+              <div className="field">
+                <span>Становится срочной за</span>
+                <SelectMenu<number | 'inherit'>
+                  label="Порог срочности"
+                  value={thresholdOverride === '' ? 'inherit' : thresholdOverride}
+                  onChange={(value) => setThresholdOverride(value === 'inherit' ? '' : value)}
+                  options={thresholdOptions}
+                />
+                <small>Эффективный порог: {formatUrgencyThreshold(effectiveThreshold)} до дедлайна</small>
+              </div>
+              <div className="field">
+                <span>Срочность вручную</span>
+                <SelectMenu<Urgency | ''>
+                  label="Срочность вручную"
+                  value={urgencyOverride}
+                  onChange={setUrgencyOverride}
+                  options={[
+                    { value: '', label: 'Автоматически', description: 'Рассчитать по дедлайну', icon: <Clock3 size={17} /> },
+                    { value: 'low', label: 'Не срочно', icon: <Clock3 size={17} /> },
+                    { value: 'high', label: 'Срочно', description: 'Всегда показывать как срочную', icon: <Clock3 size={17} /> },
+                  ]}
+                />
+              </div>
+            </>
+          )}
           <label className="field field--full">
             <span>Теги через запятую</span>
             <input value={tags} maxLength={INPUT_LIMITS.tagsText} onChange={(event) => setTags(event.target.value)} placeholder="работа, фокус, звонки" />

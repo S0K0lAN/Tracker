@@ -26,6 +26,11 @@ describe('task urgency', () => {
     expect(getTaskUrgency(baseTask, now)).toBe('low')
   })
 
+  it('ignores a stale manual override without a valid deadline', () => {
+    expect(getTaskUrgency({ ...baseTask, urgencyOverride: 'high' }, now)).toBe('low')
+    expect(getTaskUrgency({ ...baseTask, deadline: 'not-a-date', urgencyOverride: 'high' }, now)).toBe('low')
+  })
+
   it('becomes high three days before the deadline', () => {
     const task = { ...baseTask, deadline: '2026-08-02T12:00:00.000Z' }
     expect(getTaskUrgency(task, now)).toBe('high')

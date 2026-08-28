@@ -118,6 +118,10 @@ describe('TaskEditor defaults and date validation', () => {
     state.projects.find((project) => project.id === 'personal')!.urgencyThresholdHours = 168
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     const onClose = await renderEditor(undefined, { projectId: 'work' })
+    expect(screen.queryByRole('combobox', { name: 'Порог срочности' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Срочность вручную' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Дедлайн'), '31.08.2026, 18:00')
+    await user.tab()
     const threshold = screen.getByRole('combobox', { name: 'Порог срочности' })
 
     await waitFor(() => expect(threshold).toHaveTextContent('Из проекта · 1 день'))
@@ -145,6 +149,8 @@ describe('TaskEditor defaults and date validation', () => {
     state.projects.find((project) => project.id === 'work')!.urgencyThresholdHours = 24
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     const onClose = await renderEditor(undefined, { projectId: 'work' })
+    await user.type(screen.getByLabelText('Дедлайн'), '31.08.2026, 18:00')
+    await user.tab()
     const threshold = screen.getByRole('combobox', { name: 'Порог срочности' })
     await waitFor(() => expect(threshold).toHaveTextContent('Из проекта · 1 день'))
 
@@ -204,6 +210,8 @@ describe('TaskEditor defaults and date validation', () => {
     )
     await screen.findByRole('dialog', { name: 'Что нужно сделать?' })
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveTextContent('Работа'))
+    await user.type(screen.getByLabelText('Дедлайн'), '31.08.2026, 18:00')
+    await user.tab()
 
     fireEvent.click(screen.getByTestId('remove-project-during-edit'))
 
@@ -219,6 +227,32 @@ describe('TaskEditor defaults and date validation', () => {
       const created = saved.tasks.find((item: Task) => item.title === 'Черновик удалённого проекта')
       expect(created.projectId).toBe('inbox')
       expect(created.urgencyThresholdOverrideHours).toBe(24)
+    })
+  })
+
+  it('removes urgency settings when the deadline is cleared', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor(undefined, { deadline: '2026-08-31T15:00:00.000Z' })
+
+    await user.click(screen.getByRole('combobox', { name: 'Порог срочности' }))
+    await user.click(screen.getByRole('option', { name: /^1 день / }))
+    await user.click(screen.getByRole('combobox', { name: 'Срочность вручную' }))
+    await user.click(screen.getByRole('option', { name: /^Срочно/ }))
+
+    await user.clear(screen.getByLabelText('Дедлайн'))
+
+    expect(screen.queryByRole('combobox', { name: 'Порог срочности' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Срочность вручную' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Название'), 'Задача без срочности')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const created = saved.tasks.find((item: Task) => item.title === 'Задача без срочности')
+      expect(created).not.toHaveProperty('deadline')
+      expect(created).not.toHaveProperty('urgencyThresholdOverrideHours')
+      expect(created).not.toHaveProperty('urgencyOverride')
     })
   })
 

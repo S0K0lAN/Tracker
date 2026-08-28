@@ -70,6 +70,15 @@ describe('TaskCard safety and focus', () => {
     expect(within(calmCard as HTMLElement).getByText('Не срочно')).toBeInTheDocument()
   })
 
+  it('does not show urgency for a task without a deadline', async () => {
+    renderInbox(true)
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+
+    const card = screen.getByText('Подготовить план недели', { selector: '.task-card__title' }).closest('.task-card')!
+    expect(within(card as HTMLElement).queryByText('Срочно')).not.toBeInTheDocument()
+    expect(within(card as HTMLElement).queryByText('Не срочно')).not.toBeInTheDocument()
+  })
+
   it('moves focus to the Pomodoro primary action after starting it from the menu', async () => {
     const user = userEvent.setup()
     renderInbox()

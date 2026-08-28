@@ -866,6 +866,7 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
   const {
     urgencyThresholdHours: legacyUrgencyThresholdHours,
     urgencyThresholdOverrideHours,
+    urgencyOverride,
     ...preservedValue
   } = value
   const normalizedThresholdOverride = sourceSchemaVersion < 5
@@ -880,9 +881,12 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
     startAt,
     plannedDurationMinutes,
     deadline,
-    ...(normalizedThresholdOverride === undefined
+    ...(deadline === undefined || normalizedThresholdOverride === undefined
       ? {}
       : { urgencyThresholdOverrideHours: normalizedThresholdOverride }),
+    ...(deadline !== undefined && (urgencyOverride === 'low' || urgencyOverride === 'high')
+      ? { urgencyOverride }
+      : {}),
     importance: value.importance === 'high' ? 'high' : 'low',
     tags: Array.isArray(value.tags) ? value.tags : [],
     subtasks: Array.isArray(value.subtasks) ? value.subtasks : [],
