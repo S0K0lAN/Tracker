@@ -17,6 +17,12 @@ import {
 
 const STORAGE_KEY = 'focus-flow.state.v1'
 
+function formatExpectedLocalDateTime(value: string) {
+  const date = new Date(value)
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}, ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 async function mountEditor(
   task?: Task,
   defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
@@ -325,7 +331,7 @@ describe('TaskEditor defaults and date validation', () => {
     const deadline = screen.getByLabelText('Дедлайн')
 
     expect(deadline).toBeDisabled()
-    expect(deadline).toHaveValue('31.08.2026, 18:00')
+    expect(deadline).toHaveValue(formatExpectedLocalDateTime(legacyTask.deadline))
     expect(screen.getByText(/Добавьте начало, чтобы изменить дедлайн/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Очистить дату дедлайна' })).toBeEnabled()
 
@@ -834,7 +840,7 @@ describe('TaskEditor voice input', () => {
     await previewAndApply('Перенести встречу завтра в 11')
 
     await waitFor(() => expect((screen.getByLabelText('Начало') as HTMLInputElement).value).toMatch(/11:00$/))
-    expect(screen.getByLabelText('Дедлайн')).toHaveValue('03.08.2026, 18:00')
+    expect(screen.getByLabelText('Дедлайн')).toHaveValue(formatExpectedLocalDateTime(task.deadline))
   })
 
   it('preserves an existing start when the spoken date changes the deadline', async () => {
