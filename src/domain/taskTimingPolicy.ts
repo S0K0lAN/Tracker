@@ -1,6 +1,6 @@
 import type { Task } from './models'
 
-type TaskTiming = Pick<Task, 'startAt' | 'deadline'>
+type TaskTiming = Pick<Task, 'startAt' | 'plannedDurationMinutes' | 'deadline'>
 
 function representsSameInstant(left: string | undefined, right: string | undefined) {
   if (left === right) return true
@@ -29,4 +29,13 @@ export function taskTimingMutationRequiresStart(
     && !next.startAt
     && representsSameInstant(previous.deadline, next.deadline)
   )
+}
+
+/** A task can represent either a bounded work block or a deadline range. */
+export function taskHasDurationDeadlineConflict(
+  task: Pick<Task, 'plannedDurationMinutes' | 'deadline'>,
+) {
+  return task.plannedDurationMinutes !== undefined
+    && typeof task.deadline === 'string'
+    && task.deadline.trim().length > 0
 }

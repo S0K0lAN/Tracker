@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Flag, Plus, X, Zap } from 'lucide-react'
 import type { Task } from '../domain/models'
-import { getTaskUrgency, isOverdue, isSameLocalDay } from '../domain/models'
+import { getTaskUrgency, isSameLocalDay } from '../domain/models'
 import { useApp } from '../state/AppContext'
 import { useNow } from '../hooks/useNow'
 import { PageHeader } from '../components/PageHeader'
@@ -131,7 +131,14 @@ function taskDateRangeLabel(task: Task) {
 
 function taskTimingForDay(task: Task, date: Date) {
   const labels: string[] = []
-  if (task.startAt && isSameLocalDay(task.startAt, date)) labels.push(taskTimeRange(task))
+  if (task.startAt && isSameLocalDay(task.startAt, date)) {
+    if (task.deadline) {
+      const start = new Date(task.startAt)
+      if (!Number.isNaN(start.getTime())) labels.push(`Начало ${timeLabel.format(start)}`)
+    } else {
+      labels.push(taskTimeRange(task))
+    }
+  }
   if (task.deadline && isSameLocalDay(task.deadline, date)) {
     const deadline = new Date(task.deadline)
     if (!Number.isNaN(deadline.getTime())) labels.push(`Дедлайн ${timeLabel.format(deadline)}`)
@@ -143,6 +150,7 @@ function taskSignalLabels(task: Task, isUrgent: boolean) {
   return [
     task.importance === 'high' ? 'Важная задача' : '',
     isUrgent ? 'Срочная задача' : '',
+    task.status === 'completed' ? 'Выполненная задача' : '',
   ].filter(Boolean)
 }
 
@@ -186,7 +194,7 @@ function sortTasksForDay(tasks: Task[], date: Date) {
 export type PositionedWeekTask = PositionedTimedTask
 
 export function layoutWeekDayTasks(tasks: Task[]): PositionedWeekTask[] {
-  return layoutTimedDayTasks(tasks, {
+  return layoutTimedDayTasks(tasks.filter((task) => !task.deadline), {
     startHour: 8,
     endHour: 22,
     hourHeight: 38,
@@ -275,6 +283,7 @@ function DayTasksDialog({
                 aria-label={taskAccessibleName(`${task.title}, ${timingLabel}`, task, isUrgent)}
                 data-importance={task.importance}
                 data-urgency={isUrgent ? 'high' : 'low'}
+                data-status={task.status}
               >
                 <span className="calendar-day-dialog__task-marker" aria-hidden="true" />
                 <strong><TaskSignals task={task} isUrgent={isUrgent} /><span>{task.title}</span></strong>
@@ -319,14 +328,20 @@ function TimeCalendar({
   urgentTaskIds: ReadonlySet<string>
 }) {
   const hourHeight = mode === 'day' ? DAY_HOUR_HEIGHT : mode === 'three-days' ? THREE_DAY_HOUR_HEIGHT : WEEK_HOUR_HEIGHT
-  const allDayDeadlinesByDay = days.map((day) => tasks
-    .filter((task) => task.deadline && isSameLocalDay(task.deadline, day))
-    .sort((left, right) => new Date(left.deadline!).getTime() - new Date(right.deadline!).getTime()))
-  const mostAllDayItemsInDay = Math.max(0, ...allDayDeadlinesByDay.map((items) => items.length))
-  const visibleAllDayLanes = Math.max(1, Math.min(mode === 'day' ? 5 : 3, mostAllDayItemsInDay))
+  const deadlineLaneLimit = mode === 'day' ? 5 : 3
+  const allDayDeadlineRanges = layoutDeadlineRanges(tasks, days[0], days[days.length - 1])
+  const allDayLaneCount = allDayDeadlineRanges.reduce((count, range) => Math.max(count, range.lane + 1), 0)
+  const visibleAllDayLanes = Math.max(1, Math.min(deadlineLaneLimit, allDayLaneCount))
+  const visibleAllDayDeadlineRanges = allDayDeadlineRanges.filter((range) => range.lane < deadlineLaneLimit)
+  const hiddenAllDayDeadlineCounts = days.map((_, dayIndex) => allDayDeadlineRanges.filter((range) => (
+    range.lane >= deadlineLaneLimit
+    && range.columnStart <= dayIndex
+    && dayIndex < range.columnStart + range.columnSpan
+  )).length)
+  const hasAllDayOverflow = hiddenAllDayDeadlineCounts.some((count) => count > 0)
   const allDayLaneHeight = 10
     + visibleAllDayLanes * 26
-    + (mostAllDayItemsInDay > visibleAllDayLanes ? ALL_DAY_OVERFLOW_LANE_HEIGHT : 0)
+    + (hasAllDayOverflow ? ALL_DAY_OVERFLOW_LANE_HEIGHT : 0)
   const gridHeight = (ALL_DAY_END_HOUR - ALL_DAY_START_HOUR) * hourHeight
   const calendarStyle = {
     '--calendar-day-count': days.length,
@@ -350,53 +365,71 @@ function TimeCalendar({
           ))}
         </div>
       </div>
+      {visibleAllDayDeadlineRanges.length > 0 && (
+        <div
+          className="time-calendar__all-day-ranges"
+          role="group"
+          aria-label={`Дедлайны ${dateForAria(days[0])} — ${dateForAria(days[days.length - 1])}`}
+          style={{
+            gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${visibleAllDayLanes}, 24px)`,
+          }}
+        >
+          {visibleAllDayDeadlineRanges.map(({ task, columnStart, columnSpan, lane, startsBeforeView, endsAfterView }) => {
+            const isUrgent = urgentTaskIds.has(task.id)
+            const deadlineTime = timeLabel.format(new Date(task.deadline!))
+            const rangeLabel = taskDateRangeLabel(task)
+            return (
+              <button
+                type="button"
+                className={`deadline-range time-calendar__all-day-range ${startsBeforeView ? 'continues-before' : ''} ${endsAfterView ? 'continues-after' : ''}`}
+                style={{ gridColumn: `${columnStart + 1} / span ${columnSpan}`, gridRow: lane + 1 }}
+                key={task.id}
+                onClick={() => onEdit(task)}
+                title={`Дедлайн: ${task.title} · ${rangeLabel} · до ${deadlineTime}`}
+                aria-label={taskAccessibleName(`Дедлайн: ${task.title}, ${rangeLabel}, до ${deadlineTime}`, task, isUrgent)}
+                data-task-id={task.id}
+                data-range-lane={lane}
+                data-range-span={columnSpan}
+                data-importance={task.importance}
+                data-urgency={isUrgent ? 'high' : 'low'}
+                data-status={task.status}
+              >
+                <CalendarDays className="calendar-deadline-strip__glyph" size={12} aria-hidden="true" />
+                <TaskSignals task={task} isUrgent={isUrgent} />
+                <span className="calendar-deadline-strip__title">{task.title}</span>
+                <time className="calendar-deadline-strip__time" dateTime={task.deadline}>до {deadlineTime}</time>
+              </button>
+            )
+          })}
+        </div>
+      )}
       {days.map((day, dayIndex) => {
-        const scheduledTasks = tasks.filter((task) => task.startAt && isSameLocalDay(task.startAt, day))
+        const scheduledTasks = tasks.filter((task) => task.startAt && !task.deadline && isSameLocalDay(task.startAt, day))
         const positionedTasks = layoutTimedDayTasks(scheduledTasks, {
           startHour: ALL_DAY_START_HOUR,
           endHour: ALL_DAY_END_HOUR,
           hourHeight,
         })
-        const dayDeadlines = allDayDeadlinesByDay[dayIndex]
         const isToday = sameLocalDate(day, today)
-        const deadlineLimit = mode === 'day' ? 5 : 3
+        const hiddenDeadlineCount = hiddenAllDayDeadlineCounts[dayIndex]
         return (
           <div className={`week-day ${isToday ? 'is-today' : ''}`} key={day.toISOString()}>
             <button className={`week-day__header ${isToday ? 'is-today' : ''}`} onClick={() => onCreate(day)} aria-label={`Запланировать на ${dateForAria(day)}`} aria-current={isToday ? 'date' : undefined}>
               <span>{dayLabel.format(day)}</span><strong>{day.getDate()}</strong>
             </button>
-            <div className="week-day__all-day" role="group" aria-label={`Весь день, дедлайны на ${dateForAria(day)}`}>
-              {dayDeadlines.slice(0, deadlineLimit).map((task) => {
-                const isUrgent = urgentTaskIds.has(task.id)
-                const deadlineTime = timeLabel.format(new Date(task.deadline!))
-                return (
-                  <button
-                    className="calendar-deadline-strip"
-                    key={task.id}
-                    onClick={() => onEdit(task)}
-                    title={`Дедлайн: ${task.title} · до ${deadlineTime}`}
-                    aria-label={taskAccessibleName(`Дедлайн: ${task.title}, до ${deadlineTime}`, task, isUrgent)}
-                    data-importance={task.importance}
-                    data-urgency={isUrgent ? 'high' : 'low'}
-                  >
-                    <Clock3 className="calendar-deadline-strip__glyph" size={12} aria-hidden="true" />
-                    <TaskSignals task={task} isUrgent={isUrgent} />
-                    <span className="calendar-deadline-strip__title">{task.title}</span>
-                    <time className="calendar-deadline-strip__time" dateTime={task.deadline}>до {deadlineTime}</time>
-                  </button>
-                )
-              })}
-              {dayDeadlines.length > deadlineLimit && (
+            <div className="week-day__all-day" role="group" aria-label={`Весь день, ${dateForAria(day)}`}>
+              {hiddenDeadlineCount > 0 && (
                 <button
                   type="button"
                   className="week-day__all-day-more"
                   onClick={(event) => onOpenDay(day, event.currentTarget)}
-                  aria-label={`Показать все задачи и дедлайны на ${dateForAria(day)}, скрыто ${dayDeadlines.length - deadlineLimit}`}
+                  aria-label={`Показать все задачи и дедлайны на ${dateForAria(day)}, скрыто ${hiddenDeadlineCount}`}
                 >
-                  Ещё {dayDeadlines.length - deadlineLimit}
+                  Ещё {hiddenDeadlineCount}
                 </button>
               )}
-              {dayDeadlines.length === 0 && <span className="week-day__all-day-empty" aria-hidden="true" />}
+              {hiddenDeadlineCount === 0 && <span className="week-day__all-day-empty" aria-hidden="true" />}
             </div>
             <div className="week-day__grid">
               {Array.from({ length: 24 }, (_, index) => <i key={index} />)}
@@ -420,6 +453,7 @@ function TimeCalendar({
                     data-duration-minutes={durationMinutes}
                     data-importance={task.importance}
                     data-urgency={isUrgent ? 'high' : 'low'}
+                    data-status={task.status}
                   >
                     <span className="calendar-task__content"><TaskSignals task={task} isUrgent={isUrgent} /><strong>{task.title}</strong></span>
                   </button>
@@ -574,6 +608,7 @@ function MonthCalendar({
                         title={`Запланировано: ${task.title}`}
                         data-importance={task.importance}
                         data-urgency={isUrgent ? 'high' : 'low'}
+                        data-status={task.status}
                       >
                         <Clock3 className="month-day__task-clock" size={11} aria-hidden="true" />
                         <TaskSignals task={task} isUrgent={isUrgent} />
@@ -610,7 +645,7 @@ function MonthCalendar({
                 return (
                   <button
                     type="button"
-                    className={`deadline-range month-calendar__range month-day__deadline ${startsBeforeWeek ? 'continues-before' : ''} ${endsAfterWeek ? 'continues-after' : ''} ${isOverdue(task, today) ? 'is-overdue' : ''}`}
+                    className={`deadline-range month-calendar__range month-day__deadline ${startsBeforeWeek ? 'continues-before' : ''} ${endsAfterWeek ? 'continues-after' : ''}`}
                     style={{ gridColumn: `${columnStart + 1} / span ${columnSpan}`, gridRow: lane + 1 }}
                     key={`${task.id}-${weekIndex}`}
                     onClick={() => onEdit(task)}
@@ -621,6 +656,7 @@ function MonthCalendar({
                     data-range-span={columnSpan}
                     data-importance={task.importance}
                     data-urgency={isUrgent ? 'high' : 'low'}
+                    data-status={task.status}
                   >
                     <CalendarDays className="month-calendar__deadline-glyph" size={11} aria-hidden="true" />
                     <TaskSignals task={task} isUrgent={isUrgent} /><span>{task.title}</span>
@@ -704,16 +740,20 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
   const [anchor, setAnchor] = useState(new Date())
   const [openDay, setOpenDay] = useState<Date | null>(null)
   const dayDialogOpener = useRef<HTMLElement | null>(null)
-  const activeTasks = useMemo(() => state.tasks.filter((task) => task.status === 'active'), [state.tasks])
+  const calendarTasks = useMemo(
+    () => state.tasks.filter((task) => task.status === 'active' || task.status === 'completed'),
+    [state.tasks],
+  )
   const projectUrgencyThresholds = useMemo(
     () => new Map(state.projects.map((project) => [project.id, project.urgencyThresholdHours])),
     [state.projects],
   )
   const urgentTaskIds = useMemo(
-    () => new Set(activeTasks
+    () => new Set(calendarTasks
+      .filter((task) => task.status === 'active')
       .filter((task) => getTaskUrgency(task, now, projectUrgencyThresholds.get(task.projectId)) === 'high')
       .map((task) => task.id)),
-    [activeTasks, now, projectUrgencyThresholds],
+    [calendarTasks, now, projectUrgencyThresholds],
   )
 
   const showDay = (date: Date, opener?: HTMLElement) => {
@@ -788,12 +828,12 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
       </section>
 
       <CalendarSwipeSurface onMove={move}>
-        {mode === 'year' && <YearCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onOpenMonth={openMonth} today={now} />}
-        {mode === 'month' && <MonthCalendar anchor={anchor} tasks={activeTasks} onOpenDay={showDay} onEdit={onEditTask} today={now} urgentTaskIds={urgentTaskIds} />}
+        {mode === 'year' && <YearCalendar anchor={anchor} tasks={calendarTasks} onOpenDay={showDay} onOpenMonth={openMonth} today={now} />}
+        {mode === 'month' && <MonthCalendar anchor={anchor} tasks={calendarTasks} onOpenDay={showDay} onEdit={onEditTask} today={now} urgentTaskIds={urgentTaskIds} />}
         {(mode === 'week' || mode === 'three-days' || mode === 'day') && (
           <TimeCalendar
             days={timeDays}
-            tasks={activeTasks}
+            tasks={calendarTasks}
             mode={mode}
             onCreate={(date) => onEditTask(null, { startAt: plannedDate(date) })}
             onEdit={onEditTask}
@@ -804,15 +844,15 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
         )}
       </CalendarSwipeSurface>
 
-      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Высота события соответствует длительности задачи, а дедлайн отображается отдельно от временного блока.</p>
+      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Задачи с длительностью показаны временными блоками, дедлайновые — полосами «Весь день».</p>
 
       {openDay && (
         <DayTasksDialog
           date={openDay}
           tasks={sortTasksForDay(
-            mode === 'month'
-              ? tasksForMonthDate(activeTasks, openDay)
-              : tasksForLocalDate(activeTasks, openDay),
+            mode === 'year'
+              ? tasksForLocalDate(calendarTasks, openDay)
+              : tasksForMonthDate(calendarTasks, openDay),
             openDay,
           )}
           onClose={closeDay}

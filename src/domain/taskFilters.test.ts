@@ -11,7 +11,6 @@ const task: Task = {
   description: '',
   projectId: 'work',
   deadline: '2026-08-22T09:00:00.000Z',
-  plannedDurationMinutes: 60,
   importance: 'low',
   tags: [],
   subtasks: [],

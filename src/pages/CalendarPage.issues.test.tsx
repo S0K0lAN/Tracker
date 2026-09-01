@@ -29,7 +29,7 @@ function taskFrom(
     title,
     startAt: timing.startAt,
     deadline: timing.deadline,
-    plannedDurationMinutes: timing.plannedDurationMinutes ?? 60,
+    plannedDurationMinutes: timing.plannedDurationMinutes ?? (timing.deadline ? undefined : 60),
     status: 'active',
     tags: [],
     subtasks: [],
@@ -121,10 +121,10 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     )
 
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
-    const timedTask = (title: string) => [...container.querySelectorAll<HTMLButtonElement>('.calendar-task')]
+    const deadlineRange = (title: string) => [...container.querySelectorAll<HTMLButtonElement>('.time-calendar__all-day-range')]
       .find((task) => task.textContent?.includes(title))!
 
-    const urgent = timedTask(inheritedUrgent.title)
+    const urgent = deadlineRange(inheritedUrgent.title)
     expect(urgent).toHaveAttribute('data-importance', 'low')
     expect(urgent).toHaveAttribute('data-urgency', 'high')
     expect(urgent).toHaveAccessibleName(/Срочная задача/)
@@ -132,7 +132,7 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     expect(urgent.querySelector('.calendar-task-signal--urgency')).toBeInTheDocument()
     expect(urgent.querySelector('.calendar-task-signal--importance')).not.toBeInTheDocument()
 
-    const important = timedTask(importantCalm.title)
+    const important = deadlineRange(importantCalm.title)
     expect(important).toHaveAttribute('data-importance', 'high')
     expect(important).toHaveAttribute('data-urgency', 'low')
     expect(important).toHaveAccessibleName(/Важная задача/)
@@ -140,7 +140,7 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     expect(important.querySelector('.calendar-task-signal--importance')).toBeInTheDocument()
     expect(important.querySelector('.calendar-task-signal--urgency')).not.toBeInTheDocument()
 
-    const both = timedTask(importantUrgent.title)
+    const both = deadlineRange(importantUrgent.title)
     expect(both).toHaveAttribute('data-importance', 'high')
     expect(both).toHaveAttribute('data-urgency', 'high')
     expect(both).toHaveAccessibleName(/Важная задача/)
@@ -208,61 +208,61 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     await waitFor(() => expect(dayOverflow).toHaveFocus())
   })
 
-  it('shows deadline tasks as strips in the all-day lane of every time view', async () => {
+  it('shows one continuous deadline range across the all-day lane of every time view', async () => {
     const user = userEvent.setup()
     const today = startOfLocalDay(new Date())
+    const weekStart = startOfWeek(today)
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
     const deadlineTask = taskFrom(template, 'all-day-deadline', 'Контрольный срок', {
-      deadline: at(today, 18, 45),
-    })
-    const earlierDeadline = taskFrom(template, 'earlier-deadline', 'Ранний срок', {
-      deadline: at(today, 9, 15),
+      startAt: at(addLocalDays(weekStart, -3), 9),
+      deadline: at(addLocalDays(weekStart, 10), 18, 45),
     })
     const scheduledOnly = taskFrom(template, 'scheduled-only', 'Только план', {
       startAt: at(today, 11),
     })
-    const { container } = renderCalendar([deadlineTask, scheduledOnly, earlierDeadline])
+    const { container, onEditTask } = renderCalendar([deadlineTask, scheduledOnly])
 
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
 
-    for (const mode of ['Неделя', '3 дня', 'День'] as const) {
+    for (const [mode, expectedSpan] of [['Неделя', '7'], ['3 дня', '3'], ['День', '1']] as const) {
       if (mode !== 'Неделя') await user.click(screen.getByRole('button', { name: mode }))
 
       expect(screen.getByText('Весь день')).toBeInTheDocument()
       expect(screen.queryByText('Сроки')).not.toBeInTheDocument()
       expect(container.querySelectorAll('.week-day__all-day')).toHaveLength(mode === 'Неделя' ? 7 : mode === '3 дня' ? 3 : 1)
-      const strip = screen.getByTitle('Дедлайн: Контрольный срок · до 18:45')
-      expect(strip).toHaveAccessibleName(/Дедлайн: Контрольный срок, до 18:45/)
-      expect(within(strip).getByText('до 18:45')).toBeInTheDocument()
-      expect(strip.querySelector('.calendar-deadline-strip__glyph')).toBeInTheDocument()
-      const allDayLane = strip.closest<HTMLElement>('.week-day__all-day')!
-      expect(within(allDayLane).queryByText('Только план')).not.toBeInTheDocument()
-      expect([...allDayLane.querySelectorAll('.calendar-deadline-strip__title')].map((item) => item.textContent)).toEqual([
-        'Ранний срок',
-        'Контрольный срок',
-      ])
+      const range = container.querySelector<HTMLButtonElement>('[data-task-id="all-day-deadline"]')!
+      expect(range).toHaveClass('time-calendar__all-day-range', 'continues-before', 'continues-after')
+      expect(range).toHaveAttribute('data-range-span', expectedSpan)
+      expect(range).toHaveAccessibleName(/Дедлайн: Контрольный срок.+до 18:45/)
+      expect(within(range).getByText('до 18:45')).toBeInTheDocument()
+      expect(range.querySelector('.calendar-deadline-strip__glyph')).toBeInTheDocument()
+      expect([...container.querySelectorAll<HTMLButtonElement>('.calendar-task')]
+        .some((task) => task.textContent?.includes('Контрольный срок'))).toBe(false)
+      expect([...container.querySelectorAll<HTMLButtonElement>('.calendar-task')]
+        .some((task) => task.textContent?.includes('Только план'))).toBe(true)
     }
+
+    await user.click(container.querySelector<HTMLButtonElement>('[data-task-id="all-day-deadline"]')!)
+    expect(onEditTask).toHaveBeenCalledWith(deadlineTask)
   })
 
-  it('renders timed blocks from planned duration instead of the deadline in every time view', async () => {
+  it('does not duplicate a deadline task in the timed grid', async () => {
     const user = userEvent.setup()
     const today = startOfLocalDay(new Date())
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
     const task = taskFrom(template, 'duration-task', 'Фокус на два часа', {
       startAt: at(today, 9),
       deadline: at(addLocalDays(today, 2), 18),
-      plannedDurationMinutes: 120,
     })
     const { container } = renderCalendar([task])
 
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
 
-    for (const [mode, expectedHeight] of [['Неделя', '64px'], ['3 дня', '72px'], ['День', '84px']] as const) {
+    for (const mode of ['Неделя', '3 дня', 'День'] as const) {
       await user.click(screen.getByRole('button', { name: mode }))
-      const timedBlock = container.querySelector<HTMLButtonElement>('.calendar-task')!
-      expect(timedBlock).toHaveAttribute('data-duration-minutes', '120')
-      expect(timedBlock.style.height).toBe(expectedHeight)
-      expect(timedBlock).toHaveAttribute('title', expect.stringMatching(/09:00 — 11:00/))
+      expect([...container.querySelectorAll<HTMLButtonElement>('.calendar-task')]
+        .some((timedTask) => timedTask.textContent?.includes(task.title))).toBe(false)
+      expect(container.querySelector('[data-task-id="duration-task"]')).toHaveClass('time-calendar__all-day-range')
     }
   })
 
@@ -274,7 +274,6 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     const crossing = taskFrom(template, 'crossing', 'Через границу недели', {
       startAt: at(addLocalDays(gridStart, 5), 9),
       deadline: at(addLocalDays(gridStart, 9), 18),
-      plannedDurationMinutes: 90,
     })
     const overlapping = taskFrom(template, 'overlapping', 'Соседняя полоса', {
       startAt: at(addLocalDays(gridStart, 6), 10),
@@ -328,6 +327,26 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     expect(rangeDialog.querySelectorAll('.calendar-day-dialog__task')).toHaveLength(2)
     expect(within(rangeDialog).getByText('Через границу недели')).toBeInTheDocument()
     expect(within(rangeDialog).getByText('Соседняя полоса')).toBeInTheDocument()
+  })
+
+  it('keeps the year day dialog aligned with its point-in-time task marker', async () => {
+    const user = userEvent.setup()
+    const today = startOfLocalDay(new Date())
+    const template = createSeedState().tasks.find((task) => task.status === 'active')!
+    const spanningDeadline = taskFrom(template, 'year-point-range', 'Диапазон без точки сегодня', {
+      startAt: at(addLocalDays(today, -1), 9),
+      deadline: at(addLocalDays(today, 1), 18),
+    })
+    renderCalendar([spanningDeadline])
+
+    await screen.findByRole('heading', { name: 'Календарь', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Год' }))
+    await user.click(screen.getByRole('button', {
+      name: `${today.toLocaleDateString('ru-RU')}, задач нет`,
+    }))
+
+    const dialog = screen.getByRole('dialog', { name: /Все задачи дня/i })
+    expect(within(dialog).queryByText(spanningDeadline.title)).not.toBeInTheDocument()
   })
 
   it('caps month deadline lanes and exposes all 500 hidden tasks on demand', async () => {
@@ -392,5 +411,80 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     expect(screen.queryByRole('dialog', { name: /Все задачи дня/i })).not.toBeInTheDocument()
     await user.click(within(editor).getByRole('button', { name: 'Закрыть редактор' }))
     await waitFor(() => expect(stableOpener).toHaveFocus())
+  })
+
+  it('keeps completed tasks visible in year, month, week, three-day and day calendars', async () => {
+    const user = userEvent.setup()
+    const today = startOfLocalDay(new Date())
+    const template = createSeedState().tasks.find((task) => task.status === 'active')!
+    const completedTimed = {
+      ...taskFrom(template, 'completed-timed', 'Выполненный план', {
+        startAt: at(today, 10),
+        plannedDurationMinutes: 75,
+      }),
+      status: 'completed' as const,
+    }
+    const completedDeadline = {
+      ...taskFrom(template, 'completed-deadline', 'Выполненный срок', {
+        startAt: at(today, 9),
+        deadline: at(addLocalDays(today, 1), 18),
+      }),
+      status: 'completed' as const,
+    }
+    const archivedTimed = { ...completedTimed, id: 'archived-timed', title: 'Архивный план', status: 'archived' as const }
+    const deletedDeadline = { ...completedDeadline, id: 'deleted-deadline', title: 'Удалённый срок', status: 'deleted' as const }
+    const { container } = renderCalendar([completedTimed, completedDeadline, archivedTimed, deletedDeadline])
+
+    await screen.findByRole('heading', { name: 'Календарь', level: 1 })
+
+    for (const mode of ['Неделя', '3 дня', 'День'] as const) {
+      if (mode !== 'Неделя') await user.click(screen.getByRole('button', { name: mode }))
+      expect([...container.querySelectorAll<HTMLButtonElement>('.calendar-task')]
+        .find((task) => task.textContent?.includes(completedTimed.title))).toHaveAttribute('data-status', 'completed')
+      const deadlineRange = container.querySelector<HTMLButtonElement>('[data-task-id="completed-deadline"]')!
+      expect(deadlineRange).toHaveAttribute('data-status', 'completed')
+      expect(deadlineRange).toHaveAttribute('data-urgency', 'low')
+      expect(deadlineRange).toHaveAccessibleName(/Выполненная задача/)
+      expect(screen.queryByText(archivedTimed.title)).not.toBeInTheDocument()
+      expect(screen.queryByText(deletedDeadline.title)).not.toBeInTheDocument()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Месяц' }))
+    expect([...container.querySelectorAll<HTMLButtonElement>('.month-day__task')]
+      .find((task) => task.textContent?.includes(completedTimed.title))).toHaveAttribute('data-status', 'completed')
+    expect(container.querySelector('[data-task-id="completed-deadline"]')).toHaveAttribute('data-status', 'completed')
+    expect(screen.queryByText(archivedTimed.title)).not.toBeInTheDocument()
+    expect(screen.queryByText(deletedDeadline.title)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Год' }))
+    const todayButton = screen.getByRole('button', {
+      name: new RegExp(`${today.toLocaleDateString('ru-RU')}, задач: 2`),
+    })
+    await user.click(todayButton)
+    const dialog = screen.getByRole('dialog', { name: /Все задачи дня/i })
+    expect(within(dialog).getByText(completedTimed.title)).toBeInTheDocument()
+    expect(within(dialog).getByText(completedDeadline.title)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /Выполненный срок.+Выполненная задача/ })).toHaveAttribute('data-status', 'completed')
+    expect(within(dialog).queryByText(archivedTimed.title)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(deletedDeadline.title)).not.toBeInTheDocument()
+  })
+
+  it('does not add a calendar overdue class to a past deadline', async () => {
+    const user = userEvent.setup()
+    const today = startOfLocalDay(new Date())
+    const template = createSeedState().tasks.find((task) => task.status === 'active')!
+    const overdue = taskFrom(template, 'past-deadline', 'Прошедший срок', {
+      startAt: at(addLocalDays(today, -3), 9),
+      deadline: at(addLocalDays(today, -1), 18),
+    })
+    const { container } = renderCalendar([overdue])
+
+    await screen.findByRole('heading', { name: 'Календарь', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Месяц' }))
+
+    const range = container.querySelector<HTMLElement>('[data-task-id="past-deadline"]')!
+    expect(range).toBeInTheDocument()
+    expect(range).not.toHaveClass('is-overdue')
+    expect(container.querySelector('.is-overdue')).not.toBeInTheDocument()
   })
 })

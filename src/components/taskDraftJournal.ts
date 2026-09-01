@@ -35,7 +35,7 @@ export interface TaskDraftData {
 }
 
 interface StoredTaskDraft {
-  version: 1 | 2 | 3
+  version: 1 | 2 | 3 | 4
   taskId?: string
   baseTaskUpdatedAt?: string
   updatedAt: string
@@ -177,10 +177,12 @@ export function normalizeTaskDraftData(value: unknown): TaskDraftData | null {
     || plannedDurationMinutes < 1
     || plannedDurationMinutes > 1_440
   )) return null
-  return normalizeTaskDraftFields(value, threshold, plannedDurationMinutes)
+  const normalized = normalizeTaskDraftFields(value, threshold, plannedDurationMinutes)
+  if (!normalized || (normalized.deadline && normalized.plannedDurationMinutes !== '')) return null
+  return normalized
 }
 
-function inferLegacyDraftDuration(startAt: unknown, deadline: unknown) {
+function inferLegacyDraftDuration(startAt: unknown) {
   if (!isLocalDateTime(startAt) || startAt === '') return DEFAULT_PLANNED_DURATION_MINUTES
 
   const start = new Date(startAt)
@@ -191,16 +193,7 @@ function inferLegacyDraftDuration(startAt: unknown, deadline: unknown) {
     1,
     Math.min(DEFAULT_PLANNED_DURATION_MINUTES, minutesUntilMidnight),
   )
-  if (!isLocalDateTime(deadline) || deadline === '') return fallback
-
-  const end = new Date(deadline)
-  const duration = (end.getTime() - start.getTime()) / 60_000
-  return Number.isInteger(duration)
-    && duration >= 1
-    && duration <= MAX_PLANNED_DURATION_MINUTES
-    && end.getTime() <= nextLocalMidnight.getTime()
-    ? duration
-    : fallback
+  return fallback
 }
 
 function normalizeLegacyTaskDraftData(value: unknown): TaskDraftData | null {
@@ -213,7 +206,7 @@ function normalizeLegacyTaskDraftData(value: unknown): TaskDraftData | null {
   return normalizeTaskDraftFields(
     value,
     value.urgencyThresholdHours,
-    inferLegacyDraftDuration(value.startAt, value.deadline),
+    value.deadline === '' ? inferLegacyDraftDuration(value.startAt) : '',
   )
 }
 
@@ -228,13 +221,38 @@ function normalizeVersion2TaskDraftData(value: unknown): TaskDraftData | null {
   return normalizeTaskDraftFields(
     value,
     threshold,
-    inferLegacyDraftDuration(value.startAt, value.deadline),
+    value.deadline === '' ? inferLegacyDraftDuration(value.startAt) : '',
+  )
+}
+
+function normalizeVersion3TaskDraftData(value: unknown): TaskDraftData | null {
+  if (!isRecord(value)) return null
+  const threshold = value.urgencyThresholdOverrideHours
+  if (threshold !== '' && (
+    typeof threshold !== 'number'
+    || !Number.isFinite(threshold)
+    || threshold <= 0
+  )) return null
+  const plannedDurationMinutes = value.plannedDurationMinutes
+  if (plannedDurationMinutes !== '' && (
+    typeof plannedDurationMinutes !== 'number'
+    || !Number.isInteger(plannedDurationMinutes)
+    || plannedDurationMinutes < 1
+    || plannedDurationMinutes > MAX_PLANNED_DURATION_MINUTES
+  )) return null
+
+  // Version 3 allowed both concepts at once. A deadline is the user's explicit
+  // constraint, so recovery keeps it and drops the old implicit duration.
+  return normalizeTaskDraftFields(
+    value,
+    threshold,
+    value.deadline === '' ? plannedDurationMinutes : '',
   )
 }
 
 function normalizeStoredTaskDraft(value: unknown, taskId: string | undefined): StoredTaskDraft | null {
   if (!isRecord(value)
-    || (value.version !== 1 && value.version !== 2 && value.version !== 3)
+    || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4)
     || value.taskId !== taskId
     || (taskId ? !isIsoDate(value.baseTaskUpdatedAt) : value.baseTaskUpdatedAt !== undefined)
     || !isIsoDate(value.updatedAt)
@@ -246,7 +264,9 @@ function normalizeStoredTaskDraft(value: unknown, taskId: string | undefined): S
     ? normalizeLegacyTaskDraftData(value.data)
     : version === 2
       ? normalizeVersion2TaskDraftData(value.data)
-      : normalizeTaskDraftData(value.data)
+      : version === 3
+        ? normalizeVersion3TaskDraftData(value.data)
+        : normalizeTaskDraftData(value.data)
   if (!data) return null
   return {
     version,
@@ -363,7 +383,7 @@ export function writeTaskDraft(
     revision: nextRevision(storage, key),
   }
   const draft: StoredTaskDraft = {
-    version: 3,
+    version: 4,
     taskId,
     baseTaskUpdatedAt,
     updatedAt: new Date(Math.max(safeNow, Number.isFinite(baseTimestamp) ? baseTimestamp + 1 : safeNow)).toISOString(),

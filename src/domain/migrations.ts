@@ -8,7 +8,7 @@ import { createSeedState } from './seed'
 import { attachmentDataUrlMimeType, MAX_ATTACHMENT_BYTES, safeAttachmentDataUrl } from './attachments'
 import { safeCustomBackgroundDataUrl } from './backgrounds'
 
-export const CURRENT_SCHEMA_VERSION = 8
+export const CURRENT_SCHEMA_VERSION = 9
 
 const MAX_PAYLOAD_STRING_BYTES = 10 * 1024 * 1024
 // Per-field and known-user-text budgets must not pre-empt a historical v4
@@ -109,7 +109,7 @@ export function assertSnapshotStateShape(
     strict,
     strictSanitizableValues,
     schemaVersion >= 5,
-    schemaVersion >= 7,
+    schemaVersion,
     budget,
     `tasks[${index}]`,
   ))
@@ -162,7 +162,7 @@ function assertTaskShape(
   strict: boolean,
   strictSanitizableValues: boolean,
   useProjectUrgencyThresholds: boolean,
-  requirePlannedDuration: boolean,
+  schemaVersion: number,
   budget: SnapshotValidationBudget,
   path: string,
 ) {
@@ -177,7 +177,7 @@ function assertTaskShape(
     dateStringField(task, key, false, path, strictSanitizableValues)
   }
   if (strictSanitizableValues
-    && !requirePlannedDuration
+    && schemaVersion < 7
     && typeof task.startAt === 'string'
     && typeof task.deadline === 'string'
     && Date.parse(task.deadline) < Date.parse(task.startAt)
@@ -189,14 +189,20 @@ function assertTaskShape(
   } else {
     numberField(task, 'urgencyThresholdHours', strict, path, (value) => !strictSanitizableValues || value > 0)
   }
-  if (requirePlannedDuration) {
+  if (schemaVersion >= 7) {
     numberField(
       task,
       'plannedDurationMinutes',
-      true,
+      schemaVersion < 9,
       path,
       (value) => Number.isInteger(value) && value >= 1 && value <= MAX_PLANNED_DURATION_MINUTES,
     )
+  }
+  if (schemaVersion >= 9
+    && task.plannedDurationMinutes !== undefined
+    && task.deadline !== undefined
+  ) {
+    throw invalidField(`${path}.plannedDurationMinutes`)
   }
   numberField(task, 'focusMinutes', strict, path, (value) => value >= 0)
   enumField(task, 'importance', ['low', 'high'], strict, path)
@@ -868,15 +874,20 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
   const status = value.status && allowedStatuses.includes(value.status) ? value.status : 'active'
   const startAt = normalizedDate(value.startAt)
   const deadline = normalizedDate(value.deadline)
-  const plannedDurationMinutes = sourceSchemaVersion < 7
-    ? inferLegacyPlannedDuration(startAt, deadline)
-    : validPlannedDuration(value.plannedDurationMinutes)
-      ? value.plannedDurationMinutes
-      : DEFAULT_PLANNED_DURATION_MINUTES
+  const plannedDurationMinutes = deadline !== undefined
+    ? undefined
+    : sourceSchemaVersion < 7
+      ? legacyFallbackDuration(startAt)
+      : validPlannedDuration(value.plannedDurationMinutes)
+        ? value.plannedDurationMinutes
+        : sourceSchemaVersion < 9
+          ? DEFAULT_PLANNED_DURATION_MINUTES
+          : undefined
   const {
     urgencyThresholdHours: legacyUrgencyThresholdHours,
     urgencyThresholdOverrideHours,
     urgencyOverride,
+    plannedDurationMinutes: _plannedDurationMinutes,
     ...preservedValue
   } = value
   const normalizedThresholdOverride = sourceSchemaVersion < 5
@@ -889,7 +900,7 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
     description: value.description ?? '',
     projectId: value.projectId ?? 'inbox',
     startAt,
-    plannedDurationMinutes,
+    ...(plannedDurationMinutes === undefined ? {} : { plannedDurationMinutes }),
     deadline,
     ...(deadline === undefined || normalizedThresholdOverride === undefined
       ? {}
@@ -915,27 +926,6 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
     deletedAt: normalizedDate(value.deletedAt),
     focusMinutes: Number(value.focusMinutes) || 0,
   }
-}
-
-function inferLegacyPlannedDuration(startAt?: string, deadline?: string): number {
-  const fallbackDuration = legacyFallbackDuration(startAt)
-  if (!startAt || !deadline) return fallbackDuration
-
-  const startTime = Date.parse(startAt)
-  const deadlineTime = Date.parse(deadline)
-  const durationMinutes = (deadlineTime - startTime) / 60_000
-  if (!Number.isInteger(durationMinutes)
-    || durationMinutes < 1
-    || durationMinutes > MAX_PLANNED_DURATION_MINUTES
-  ) {
-    return fallbackDuration
-  }
-
-  const nextLocalMidnight = new Date(startTime)
-  nextLocalMidnight.setHours(24, 0, 0, 0)
-  return deadlineTime <= nextLocalMidnight.getTime()
-    ? durationMinutes
-    : fallbackDuration
 }
 
 function legacyFallbackDuration(startAt?: string): number {

@@ -102,6 +102,22 @@ function ProjectRemovalHarness({ onClose }: { onClose: () => void }) {
 }
 
 describe('TaskEditor defaults and date validation', () => {
+  it('creates a task without an implicit duration', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor()
+
+    expect(screen.getByLabelText('Длительность')).toHaveValue(null)
+    expect(screen.getByText(/Необязательно:/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Название'), 'Задача без длительности')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      expect(saved.tasks.find((item: Task) => item.title === 'Задача без длительности')).not.toHaveProperty('plannedDurationMinutes')
+    })
+  })
+
   it('uses and persists a contextual project for a new task', async () => {
     const user = userEvent.setup()
     const onClose = await renderEditor(undefined, { projectId: 'work' })
@@ -288,7 +304,36 @@ describe('TaskEditor defaults and date validation', () => {
       const task = saved.tasks.find((item: Task) => item.title === 'Задача с независимым дедлайном')
       expect(task.startAt).toBe(new Date(2026, 7, 21, 12, 0).toISOString())
       expect(task.deadline).toBe(new Date(2026, 7, 21, 11, 0).toISOString())
+      expect(task).not.toHaveProperty('plannedDurationMinutes')
     })
+  })
+
+  it('makes duration and deadline mutually exclusive while allowing the user to switch modes', async () => {
+    const user = userEvent.setup()
+    await renderEditor(undefined, {
+      startAt: '2026-08-31T09:00:00.000Z',
+      plannedDurationMinutes: 90,
+    })
+    const duration = screen.getByLabelText('Длительность')
+    const durationUnit = screen.getByLabelText('Единица длительности')
+    const deadline = screen.getByLabelText('Дедлайн')
+
+    expect(duration).toHaveValue(90)
+    expect(deadline).toBeDisabled()
+    expect(screen.getByText('Сначала очистите длительность, чтобы указать дедлайн.')).toBeInTheDocument()
+
+    await user.clear(duration)
+    expect(deadline).toBeEnabled()
+    await user.type(deadline, '31.08.2026, 18:00')
+    await user.tab()
+
+    expect(duration).toBeDisabled()
+    expect(durationUnit).toBeDisabled()
+    expect(screen.getByText('Сначала уберите дедлайн, чтобы указать длительность.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Очистить дату дедлайна' }))
+    expect(duration).toBeEnabled()
+    expect(durationUnit).toBeEnabled()
   })
 
   it('locks the deadline until start is valid and prevents removing a required start', async () => {
@@ -342,6 +387,29 @@ describe('TaskEditor defaults and date validation', () => {
     await waitFor(() => {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
       expect(saved.tasks.find((task: Task) => task.id === legacyTask.id)).not.toHaveProperty('deadline')
+    })
+  })
+
+  it('repairs an existing duration-deadline conflict by preserving the deadline', async () => {
+    const user = userEvent.setup()
+    const conflictingTask = {
+      ...createSeedState().tasks[0],
+      startAt: '2026-08-21T09:00:00.000Z',
+      plannedDurationMinutes: 90,
+      deadline: '2026-08-21T18:00:00.000Z',
+    }
+    const onClose = await renderEditor(conflictingTask)
+
+    expect(screen.getByLabelText('Дедлайн')).toHaveValue(formatExpectedLocalDateTime(conflictingTask.deadline))
+    expect(screen.getByLabelText('Длительность')).toBeDisabled()
+    expect(screen.getByLabelText('Длительность')).toHaveValue(null)
+
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      expect(saved.tasks.find((task: Task) => task.id === conflictingTask.id)).not.toHaveProperty('plannedDurationMinutes')
     })
   })
 
@@ -431,7 +499,7 @@ const recoveryData: TaskDraftData = {
   projectId: 'work',
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
-  plannedDurationMinutes: 90,
+  plannedDurationMinutes: '',
   importance: 'high',
   urgencyThresholdOverrideHours: 24,
   urgencyOverride: 'high',
@@ -479,13 +547,31 @@ describe('TaskEditor recovery journal', () => {
     expect(screen.getByRole('combobox', { name: 'Срочность вручную' })).toHaveTextContent('Срочно')
     expect(screen.getByLabelText('Начало')).toHaveValue('21.08.2026, 09:00')
     expect(screen.getByLabelText('Дедлайн')).toHaveValue('21.08.2026, 18:00')
-    expect(screen.getByLabelText('Длительность')).toHaveValue(90)
-    expect(screen.getByText(/^1 ч 30 мин\./)).toBeInTheDocument()
+    expect(screen.getByLabelText('Длительность')).toBeDisabled()
+    expect(screen.getByLabelText('Длительность')).toHaveValue(null)
     expect(screen.getByLabelText('Теги через запятую')).toHaveValue(recoveryData.tags)
     expect(screen.getByText('Проверить цифры')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Добавить подзадачу')).toHaveValue('Отправить письмо')
     expect(screen.getByLabelText('Время напоминания')).not.toHaveValue('')
     expect(screen.getByRole('status')).toHaveTextContent('Черновик восстановлен')
+  })
+
+  it('restores a duration draft without enabling a conflicting deadline', async () => {
+    const user = userEvent.setup()
+    expect(writeTaskDraft({
+      ...recoveryData,
+      deadline: '',
+      plannedDurationMinutes: 90,
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    }).status).toBe('saved')
+    await renderEditor()
+
+    await user.click(screen.getByRole('button', { name: 'Восстановить' }))
+
+    expect(screen.getByLabelText('Длительность')).toHaveValue(90)
+    expect(screen.getByLabelText('Дедлайн')).toBeDisabled()
+    expect(screen.queryByRole('combobox', { name: 'Срочность вручную' })).not.toBeInTheDocument()
   })
 
   it('keeps a recovered legacy deadline but requires start before creating the task', async () => {
@@ -713,7 +799,7 @@ describe('TaskEditor recovery journal', () => {
       projectId: 'inbox',
       startAt: '',
       deadline: '',
-      plannedDurationMinutes: 60,
+      plannedDurationMinutes: '',
       importance: 'low',
       urgencyThresholdOverrideHours: '',
       urgencyOverride: '',
@@ -740,7 +826,7 @@ describe('TaskEditor recovery journal', () => {
       projectId: 'inbox',
       startAt: '',
       deadline: '',
-      plannedDurationMinutes: 60,
+      plannedDurationMinutes: '',
       importance: 'low',
       urgencyThresholdOverrideHours: '',
       urgencyOverride: '',
@@ -827,6 +913,21 @@ describe('TaskEditor voice input', () => {
     expect(screen.getByLabelText('Дедлайн')).toHaveValue('')
     expect(screen.getByRole('alert')).toHaveTextContent('Сначала укажите корректное начало задачи')
     expect(screen.getByLabelText('Начало')).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Применить' })).toBeInTheDocument()
+  })
+
+  it('does not silently replace a duration with a spoken deadline', async () => {
+    await renderEditor(undefined, {
+      startAt: '2026-08-21T09:00:00.000Z',
+      plannedDurationMinutes: 90,
+    })
+
+    await previewAndApply('Сдать отчёт дедлайн завтра в 12:30')
+
+    expect(screen.getByLabelText('Длительность')).toHaveValue(90)
+    expect(screen.getByLabelText('Длительность')).toHaveFocus()
+    expect(screen.getByLabelText('Дедлайн')).toHaveValue('')
+    expect(screen.getByRole('alert')).toHaveTextContent('Сначала очистите длительность')
     expect(screen.getByRole('button', { name: 'Применить' })).toBeInTheDocument()
   })
 

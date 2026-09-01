@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Archive, CalendarClock, Check, Clock3, FileText, Flag, MoreHorizontal, Paperclip, Play, Timer, Trash2 } from 'lucide-react'
 import type { Task } from '../domain/models'
-import { getTaskTiming } from '../domain/models'
+import { getTaskUrgency } from '../domain/models'
 import { useApp } from '../state/AppContext'
 import { startPomodoroForTask } from './PomodoroTimer'
 import './task-card-actions.css'
@@ -25,8 +25,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const cardRef = useRef<HTMLElement>(null)
   const project = state.projects.find((item) => item.id === task.projectId)
-  const timing = getTaskTiming(task, undefined, project?.urgencyThresholdHours)
-  const urgency = timing.urgency
+  const urgency = getTaskUrgency(task, undefined, project?.urgencyThresholdHours)
   const doneCount = task.subtasks.filter((item) => item.completed).length
 
   useEffect(() => {
@@ -116,7 +115,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
             </span>
           )}
           {task.deadline && (
-            <span className={`meta-item ${timing.overdue ? 'meta-item--danger' : ''}`}>
+            <span className="meta-item">
               <CalendarClock size={13} /> {formatTaskDate(task.deadline)}
             </span>
           )}

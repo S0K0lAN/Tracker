@@ -45,9 +45,9 @@ function validDate(value?: string) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-export function getTaskPlannedDurationMinutes(task: Task) {
+export function getTaskPlannedDurationMinutes(task: Task): number {
   const duration = task.plannedDurationMinutes
-  return Number.isInteger(duration) && duration >= 1 && duration <= MAX_PLANNED_DURATION_MINUTES
+  return typeof duration === 'number' && Number.isInteger(duration) && duration >= 1 && duration <= MAX_PLANNED_DURATION_MINUTES
     ? duration
     : DEFAULT_EVENT_DURATION_MINUTES
 }

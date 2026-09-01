@@ -207,7 +207,6 @@ export function TaskDetails({
                 <dd className="task-details__urgency-value">
                   <span className={timing.urgency === 'high' ? 'task-details__urgent' : undefined}>
                     {timing.urgency === 'high' ? 'Срочная' : 'Не срочная'}
-                    {timing.overdue && <small className="task-details__overdue">Просрочена</small>}
                   </span>
                   <small className="task-details__urgency-note">
                     <span>{effectiveUrgencyThreshold} ч до дедлайна</span>
@@ -229,14 +228,18 @@ export function TaskDetails({
                   <small>Начало</small>
                   <strong>{startAt ?? 'Не задано'}</strong>
                 </span>
-                <span className="task-details__schedule-item">
-                  <small>Длительность</small>
-                  <strong>{formatDuration(task.plannedDurationMinutes)}</strong>
-                </span>
-                <span className="task-details__schedule-item">
-                  <small>Дедлайн</small>
-                  <strong>{deadline ?? 'Без дедлайна'}</strong>
-                </span>
+                {task.plannedDurationMinutes !== undefined && (
+                  <span className="task-details__schedule-item">
+                    <small>Длительность</small>
+                    <strong>{formatDuration(task.plannedDurationMinutes)}</strong>
+                  </span>
+                )}
+                {deadline && (
+                  <span className="task-details__schedule-item">
+                    <small>Дедлайн</small>
+                    <strong>{deadline}</strong>
+                  </span>
+                )}
               </dd>
             </div>
           </dl>

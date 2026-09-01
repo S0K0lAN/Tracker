@@ -90,7 +90,17 @@ function createLegacyV7State() {
   return {
     ...current,
     schemaVersion: 7 as const,
+    tasks: current.tasks.map((task) => ({ ...task, plannedDurationMinutes: task.plannedDurationMinutes ?? 60 })),
     habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit as LegacyHabit),
+  }
+}
+
+function createLegacyV8State() {
+  const current = createSeedState()
+  return {
+    ...current,
+    schemaVersion: 8 as const,
+    tasks: current.tasks.map((task) => ({ ...task, plannedDurationMinutes: task.plannedDurationMinutes ?? 60 })),
   }
 }
 
@@ -224,16 +234,43 @@ describe('state migrations for simplified navigation and habit icons', () => {
     },
   )
 
-  it('accepts a schema v7 snapshot written before habit creation timestamps were introduced', () => {
+  it('accepts a schema v7 snapshot and removes duration only from deadline tasks', () => {
     const legacy = createLegacyV7State()
 
     const migrated = parseStoredAppState(legacy)
 
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(migrated.habits.every((habit) => habit.createdAt === '1970-01-01T00:00:00.000Z')).toBe(true)
-    expect(migrated.tasks.map((task) => task.plannedDurationMinutes)).toEqual(
-      legacy.tasks.map((task) => task.plannedDurationMinutes),
+    expect(migrated.tasks.every((task) => !task.deadline || task.plannedDurationMinutes === undefined)).toBe(true)
+    expect(migrated.tasks.filter((task) => !task.deadline).map((task) => task.plannedDurationMinutes)).toEqual(
+      legacy.tasks.filter((task) => !task.deadline).map((task) => task.plannedDurationMinutes),
     )
+  })
+
+  it('migrates schema v8 by preserving deadlines and dropping their mandatory durations', () => {
+    const legacy = createLegacyV8State()
+    const legacyDeadlineTask = legacy.tasks.find((task) => task.deadline)!
+    const legacyDurationTask = legacy.tasks.find((task) => !task.deadline && task.plannedDurationMinutes === 90)!
+
+    const migrated = parseStoredAppState(legacy)
+    const deadlineTask = migrated.tasks.find((task) => task.id === legacyDeadlineTask.id)!
+    const durationTask = migrated.tasks.find((task) => task.id === legacyDurationTask.id)!
+
+    expect(deadlineTask.deadline).toBe(legacyDeadlineTask.deadline)
+    expect(deadlineTask).not.toHaveProperty('plannedDurationMinutes')
+    expect(durationTask.plannedDurationMinutes).toBe(90)
+  })
+
+  it('preserves a legacy deadline-only task without inventing a duration', () => {
+    const legacy = createLegacyV6State()
+    const deadline = '2026-09-03T12:00:00.000Z'
+    legacy.tasks[0].startAt = undefined
+    legacy.tasks[0].deadline = deadline
+
+    const migrated = parseStoredAppState(legacy)
+
+    expect(migrated.tasks[0].deadline).toBe(deadline)
+    expect(migrated.tasks[0]).not.toHaveProperty('plannedDurationMinutes')
   })
 
   it('requires a parseable habit creation timestamp in the current schema', () => {
@@ -311,25 +348,32 @@ describe('state migrations for simplified navigation and habit icons', () => {
 
   it.each([0, 1.5, 1441])('rejects an invalid current planned duration of %s minutes', (duration) => {
     const invalid = createSeedState()
-    invalid.tasks[0].plannedDurationMinutes = duration
+    invalid.tasks[1].plannedDurationMinutes = duration
+
+    expect(() => parseStoredAppState(invalid)).toThrow(/tasks\[1\]\.plannedDurationMinutes/)
+  })
+
+  it('allows an omitted current duration and accepts both inclusive bounds', () => {
+    const missing = createSeedState()
+    delete (missing.tasks[1] as Partial<Task>).plannedDurationMinutes
+    const minimum = createSeedState()
+    minimum.tasks[1].plannedDurationMinutes = 1
+    const maximum = createSeedState()
+    maximum.tasks[1].plannedDurationMinutes = 1440
+
+    expect(parseStoredAppState(missing).tasks[1]).not.toHaveProperty('plannedDurationMinutes')
+    expect(parseStoredAppState(minimum).tasks[1].plannedDurationMinutes).toBe(1)
+    expect(parseStoredAppState(maximum).tasks[1].plannedDurationMinutes).toBe(1440)
+  })
+
+  it('rejects duration and deadline together in the current schema', () => {
+    const invalid = createSeedState()
+    invalid.tasks[0].plannedDurationMinutes = 60
 
     expect(() => parseStoredAppState(invalid)).toThrow(/tasks\[0\]\.plannedDurationMinutes/)
   })
 
-  it('requires a current planned duration and accepts both inclusive bounds', () => {
-    const missing = createSeedState()
-    delete (missing.tasks[0] as Partial<Task>).plannedDurationMinutes
-    const minimum = createSeedState()
-    minimum.tasks[0].plannedDurationMinutes = 1
-    const maximum = createSeedState()
-    maximum.tasks[0].plannedDurationMinutes = 1440
-
-    expect(() => parseStoredAppState(missing)).toThrow(/tasks\[0\]\.plannedDurationMinutes/)
-    expect(parseStoredAppState(minimum).tasks[0].plannedDurationMinutes).toBe(1)
-    expect(parseStoredAppState(maximum).tasks[0].plannedDurationMinutes).toBe(1440)
-  })
-
-  it('infers a same-day v6 duration from the legacy start/deadline interval', () => {
+  it('preserves a same-day v6 deadline without deriving a conflicting duration', () => {
     const legacy = createLegacyV6State()
     const start = new Date(2026, 7, 21, 9, 15)
     const deadline = new Date(2026, 7, 21, 11)
@@ -338,28 +382,24 @@ describe('state migrations for simplified navigation and habit icons', () => {
 
     const migrated = parseStoredAppState(legacy)
 
-    expect(migrated.tasks[0].plannedDurationMinutes).toBe(105)
     expect(migrated.tasks[0].deadline).toBe(deadline.toISOString())
+    expect(migrated.tasks[0]).not.toHaveProperty('plannedDurationMinutes')
   })
 
-  it('uses a same-day fallback for legacy intervals over 24 hours, crossing midnight, or without a start', () => {
+  it('uses a same-day duration fallback for legacy tasks without deadlines', () => {
     const legacy = createLegacyV6State()
-    const longStart = new Date(2026, 7, 21, 9)
-    const longDeadline = new Date(2026, 7, 22, 10)
-    legacy.tasks[0].startAt = longStart.toISOString()
-    legacy.tasks[0].deadline = longDeadline.toISOString()
     const lateStart = new Date(2026, 7, 21, 23, 30)
-    const nextDayDeadline = new Date(2026, 7, 22, 0, 30)
+    legacy.tasks[0].deadline = undefined
+    legacy.tasks[0].startAt = new Date(2026, 7, 21, 9).toISOString()
+    legacy.tasks[1].deadline = undefined
     legacy.tasks[1].startAt = lateStart.toISOString()
-    legacy.tasks[1].deadline = nextDayDeadline.toISOString()
+    legacy.tasks[2].deadline = undefined
     legacy.tasks[2].startAt = undefined
 
     const migrated = parseStoredAppState(legacy)
 
     expect(migrated.tasks[0].plannedDurationMinutes).toBe(60)
-    expect(migrated.tasks[0].deadline).toBe(longDeadline.toISOString())
     expect(migrated.tasks[1].plannedDurationMinutes).toBe(30)
-    expect(migrated.tasks[1].deadline).toBe(nextDayDeadline.toISOString())
     expect(migrated.tasks[2].plannedDurationMinutes).toBe(60)
   })
 
@@ -391,9 +431,11 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(current.projects.every((project) => project.urgencyThresholdHours === 72)).toBe(true)
     expect(current.tasks.every((task) => !('urgencyThresholdHours' in task))).toBe(true)
     expect(current.tasks.every((task) => task.urgencyThresholdOverrideHours === undefined)).toBe(true)
-    expect(current.tasks.every((task) => Number.isInteger(task.plannedDurationMinutes)
-      && task.plannedDurationMinutes >= 1
-      && task.plannedDurationMinutes <= 1440)).toBe(true)
+    expect(current.tasks.every((task) => task.plannedDurationMinutes === undefined
+      || (Number.isInteger(task.plannedDurationMinutes)
+        && task.plannedDurationMinutes >= 1
+        && task.plannedDurationMinutes <= 1440))).toBe(true)
+    expect(current.tasks.every((task) => !task.deadline || task.plannedDurationMinutes === undefined)).toBe(true)
     expect(current.habits.every((habit) => Number.isFinite(Date.parse(habit.createdAt)))).toBe(true)
   })
 
@@ -415,16 +457,16 @@ describe('state migrations for simplified navigation and habit icons', () => {
       const legacy = createLegacyState(schemaVersion)
       legacy.settings.defaultUrgencyThresholdHours = 96
       legacy.tasks[0].urgencyThresholdHours = 24
-      legacy.tasks[1].urgencyThresholdHours = 120
+      legacy.tasks[3].urgencyThresholdHours = 120
 
       const migrated = parseStoredAppState(legacy)
 
       expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
       expect(migrated.projects.every((project) => project.urgencyThresholdHours === 96)).toBe(true)
       expect(migrated.tasks[0].urgencyThresholdOverrideHours).toBe(24)
-      expect(migrated.tasks[1].urgencyThresholdOverrideHours).toBe(120)
+      expect(migrated.tasks[3].urgencyThresholdOverrideHours).toBe(120)
       expect(migrated.tasks[0]).not.toHaveProperty('urgencyThresholdHours')
-      expect(migrated.tasks[1]).not.toHaveProperty('urgencyThresholdHours')
+      expect(migrated.tasks[3]).not.toHaveProperty('urgencyThresholdHours')
     },
   )
 
@@ -481,8 +523,8 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(migrated.tasks[1]).toMatchObject({
       startAt: '2026-08-21T12:00:00.000Z',
       deadline: '2026-08-21T11:00:00.000Z',
-      plannedDurationMinutes: 60,
     })
+    expect(migrated.tasks[1]).not.toHaveProperty('plannedDurationMinutes')
     expect(migrated.projects[0].color).toBe('#778c70')
     expect(migrated.projects[0].urgencyThresholdHours).toBe(72)
     expect(migrated.habits[0].color).toBe('#778c70')
@@ -512,6 +554,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     damaged.tasks[0].completedAt = 'invalid-completed-at'
     damaged.tasks[0].startAt = '2026-08-21T12:00:00.000Z'
     damaged.tasks[0].deadline = '2026-08-21T11:00:00.000Z'
+    damaged.tasks[0].plannedDurationMinutes = 90
     damaged.tasks[0].reminders = [{ id: 'invalid-reminder', at: 'not-a-date' }]
 
     const normalized = normalizeAppState(damaged)
@@ -530,6 +573,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
       completedAt: undefined,
       reminders: [],
     })
+    expect(normalized.tasks[0]).not.toHaveProperty('plannedDurationMinutes')
   })
 
   it('keeps the selected provider but requires a fresh browser OAuth session after reload', () => {

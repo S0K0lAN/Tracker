@@ -22,6 +22,7 @@ function renderInbox() {
   task.projectId = 'inbox'
   task.startAt = undefined
   task.deadline = undefined
+  task.plannedDurationMinutes = 60
   localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
   return renderStoredInbox()
 }
@@ -133,6 +134,8 @@ describe('task details', () => {
     inheritedTask.title = 'Наследуемый порог'
     const individualTask = state.tasks.find((item) => item.id === 'task-team-sync')!
     individualTask.title = 'Индивидуальный порог'
+    individualTask.plannedDurationMinutes = undefined
+    individualTask.deadline = inheritedTask.deadline
     individualTask.urgencyThresholdOverrideHours = 168
     localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
     renderStoredInbox()

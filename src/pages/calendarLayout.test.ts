@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Task } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import {
+  getTaskPlannedDurationMinutes,
   layoutDeadlineRanges,
   layoutTimedDayTasks,
   tasksForLocalDate,
@@ -20,7 +21,6 @@ function timedTask(
   hours: number,
   minutes: number,
   plannedDurationMinutes: number,
-  deadline?: string,
 ) {
   const template = createSeedState().tasks.find((task) => task.status === 'active')!
   return {
@@ -28,26 +28,30 @@ function timedTask(
     id,
     title: id,
     startAt: at(day, hours, minutes),
-    deadline,
+    deadline: undefined,
     plannedDurationMinutes,
   } as Task
 }
 
 describe('calendar planned duration projection', () => {
-  it('uses planned duration for height independently from the deadline', () => {
+  it('uses an explicit planned duration for height and a visual fallback for start-only legacy data', () => {
     const day = new Date(2026, 7, 3)
-    const earlyDeadline = timedTask('early-deadline', day, 9, 0, 120, at(day, 9, 15))
-    const lateDeadline = timedTask('late-deadline', day, 9, 0, 120, at(day, 21))
+    const explicitDuration = timedTask('explicit-duration', day, 9, 0, 120)
+    const fallbackDuration = { ...timedTask('fallback-duration', day, 12, 0, 60), plannedDurationMinutes: undefined } as Task
 
-    for (const task of [earlyDeadline, lateDeadline]) {
-      const [positioned] = layoutTimedDayTasks([task], { hourHeight: 60 })
-      expect(positioned).toMatchObject({
-        startMinute: 9 * 60,
-        endMinute: 11 * 60,
-        durationMinutes: 120,
-        height: 116,
-      })
-    }
+    expect(layoutTimedDayTasks([explicitDuration], { hourHeight: 60 })[0]).toMatchObject({
+      startMinute: 9 * 60,
+      endMinute: 11 * 60,
+      durationMinutes: 120,
+      height: 116,
+    })
+    expect(getTaskPlannedDurationMinutes(fallbackDuration)).toBe(60)
+    expect(layoutTimedDayTasks([fallbackDuration], { hourHeight: 60 })[0]).toMatchObject({
+      startMinute: 12 * 60,
+      endMinute: 13 * 60,
+      durationMinutes: 60,
+      height: 56,
+    })
   })
 
   it('lays out overlapping tasks using their individual planned durations', () => {
@@ -90,7 +94,11 @@ describe('calendar planned duration projection', () => {
   it('keeps point lookups while projecting a continuous deadline range in month view', () => {
     const startDay = new Date(2026, 7, 3)
     const deadlineDay = new Date(2026, 7, 6)
-    const task = timedTask('deadline-range', startDay, 9, 0, 60, at(deadlineDay, 18))
+    const task = {
+      ...timedTask('deadline-range', startDay, 9, 0, 60),
+      plannedDurationMinutes: undefined,
+      deadline: at(deadlineDay, 18),
+    } as Task
 
     const [deadlineRange] = layoutDeadlineRanges(
       [task],

@@ -3,7 +3,7 @@
 ## Назначение
 
 Матрица переводит расширенные продуктовые запросы в наблюдаемые критерии
-приёмки. Документация актуализирована 28 августа 2026 года по результатам
+приёмки. Документация актуализирована 1 сентября 2026 года по результатам
 независимого аудита и полного локального test/browser gate.
 Текущий результат команд отделён ниже от исторических browser gates:
 наличие теста в репозитории само по себе не считается свежим evidence.
@@ -54,8 +54,9 @@ Done браузерного MVP. Они честно вынесены в отд�
 | SEARCH-01 | Поиск задач, проектов, тегов и фильтров | **Готово** | `/search` регистронезависимо группирует четыре типа результатов; component/E2E подтверждают кириллический поиск, empty state, сохранение и повторное применение фильтра. |
 | TRASH-01 | Корзина удалённых задач | **Готово** | Soft delete → `/trash` → reload → restore проходит E2E; восстановленная неразобранная задача возвращается во Входящие, permanent delete требует и component-тестом проверяет явное второе подтверждение. |
 | POM-01 | Таймер фокуса для задачи | **Готово** | Действие явно подписано «Таймер фокуса · 25 минут»; desktop/mobile E2E проверяют task binding, pause и timestamp persistence после reload, а fake-clock unit — начисление минут, short/long break и каждый четвёртый цикл. |
-| CAL-01 | Дедлайны и навигация календаря (#33, #45) | **Готово** | Каждая задача с дедлайном отображается зелёной полосой с иконкой и точным временем в секции «Весь день» week/3-day/day; month показывает одну полосу `startAt → deadline` без дублирующей строки, а legacy deadline-only — однодневную полосу. |
-| CAL-02 | Длительность задачи (#46) | **Готово** | Schema v7 хранит 1–1440 целых минут, редактор не даёт блоку перейти локальную полночь, week/3-day/day вычисляют высоту независимо от дедлайна; migration/unit/component/E2E проверяют persistence и projection. |
+| CAL-01 | Дедлайны и навигация календаря (#33, #45) | **Готово** | Каждая задача с дедлайном отображается зелёной непрерывной полосой `startAt → deadline` с иконкой и точным временем в секции «Весь день» week/3-day/day и в месяце без временного или строкового дубля; legacy deadline-only остаётся однодневной. Белая рамка today лежит под задачами, отдельной overdue-индикации нет. |
+| CAL-02 | Длительность задачи (#46) | **Готово** | Schema v9 хранит необязательные 1–1440 целых минут и запрещает duration вместе с deadline; редактор требует сначала очистить один режим, week/3-day/day не переносят блок через полночь, migration/unit/component/E2E проверяют persistence и projection. |
+| CAL-03 | Выполненные задачи в календаре | **Готово** | Активные и завершённые задачи отображаются во всех пяти календарных режимах, а архивные и удалённые исключаются; component/E2E проверяют сохранение после completion и reload. |
 | INB-01 | Сортировка входящих | **Готово** | Доступны created desc, nearest deadline, importance и title; для недатированного default-набора nearest deadline сохраняет порядок создания. Component проверяет порядок, E2E — сохранение выбора после reload. |
 | ARC-01 | Архив выполненных задач | **Готово** | Individual/bulk archive, отдельный Archive tab, restore и reload реализованы; массовое действие действует только на видимые завершённые задачи выбранного фильтра, component/E2E проверяют persistence и возврат в completed Inbox. |
 | HAB-01 | Правильный «Ваш ритм» и серии | **Готово** | Schema v8 хранит `Habit.createdAt`; fixed-clock pure/component/migration tests проверяют local-day boundary, progress/streak/trend без дней до создания и сохранение legacy-истории. |
@@ -71,12 +72,12 @@ Done браузерного MVP. Они честно вынесены в отд�
 | VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет default `startAt`, явные «до»/«дедлайн»/«срок», weekday, time, importance, tags и project; component проверяет, что голосовой дедлайн требует начала и не удаляет его. |
 | DES-01 | Лаконичный дизайн Todoist/Singularity | **Готово** | Общие tokens и progressive disclosure реализованы; независимый аудит desktop 1440×900, intermediate 1024×900 и mobile 390×844 подтвердил layering, focus и отсутствие horizontal overflow. |
 | QA-01 | Независимое покрытие новых функций | **Готово** | Набор содержит unit/component/E2E с наблюдаемыми эффектами, единый automatic browser-error gate, обе темы и desktop/intermediate/mobile loops. GitHub Actions повторяет unit/build и E2E для PR/main. |
-| DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v8, миграциям v1–v7, ограничениям и тестам. |
+| DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v9, миграциям v1–v8, ограничениям и тестам. |
 | SYNC-01 | Подключить Google Drive через OAuth без сохранения token | **Готово** | GIS runtime использует только `drive.appdata`; подключение лишь авторизует и не переносит данные. Unit и mock-browser E2E проверяют connect, повторный вход после reload/401 и отсутствие token в localStorage/remote envelope. Live smoke честно вынесен за scope без credentials. |
 | SYNC-02 | Разделить получение, отправку и согласование данных | **Готово** | «Получить» не пишет remote, при отсутствии файла ничего не меняет, а применение отличающейся копии требует preview/confirm и создаёт rollback backup. «Отправить» не применяет remote локально, использует revision precondition и требует confirm при различии. Ручное «Синхронизировать» и авто-sync используют reconcile; component/unit и mock-browser E2E проверяют наблюдаемые эффекты каждого направления и конфликтов. |
 | SYNC-03 | Задел под новые хранилища | **Готово** | Второй configurable interactive provider полностью подключается через registry descriptor/runtime; component-тест проверяет defaults, required public config, connect и upload без Google-specific ветки. Secret config registry отклоняет. |
 
-Итого по явному scope браузерного MVP: **35 готовых**, **0 частично готовых**,
+Итого по явному scope браузерного MVP: **36 готовых**, **0 частично готовых**,
 **0 отсутствующих** критериев.
 
 ## Тестовая трассировка
@@ -103,7 +104,8 @@ Done браузерного MVP. Они честно вынесены в отд�
   10 иконок и optional description.
 - `src/domain/models.test.ts`, `migrations.test.ts` и `taskFilters.test.ts` —
   приоритет ручной срочности и task override, проектный порог, миграции
-  schema v1–v7 без изменения эффективных значений, habit history, duration и saved-filter projection.
+  schema v1–v8 без изменения эффективных значений, habit history, взаимное
+  исключение duration/deadline и saved-filter projection.
 - `src/core/sync/GoogleDriveAdapter.test.ts` — контрактные сценарии Drive.
 - `src/core/auth/GoogleIdentityAuthorization.test.ts` — GIS scope/session,
   expiry, revoke, retry загрузки script и отмена позднего OAuth callback.
@@ -219,6 +221,13 @@ storage races, durable TaskEditor journal, UI/UX/focus и маршрутизац
 интеграционного review все найденные blocker/P1/P2 были закрыты regression-
 тестами. Новый CI повторяет gate на pull request и `main`; числа ниже остаются
 датированным локальным evidence, а не результатом ещё не запущенного workflow.
+
+### Полный локальный gate 1 сентября 2026 года
+
+- Node.js **18.19.1**;
+- `npm test`: **43 Vitest-файла, 508/508 тестов**;
+- `npm run build`: TypeScript и production Vite build — **успешно**;
+- `npm run test:e2e`: **5 Playwright-файлов, 46/46 сценариев**.
 
 ## Известные ограничения перед следующим этапом
 

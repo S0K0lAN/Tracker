@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Bell, Clock3, FileImage, Flag, Folder, Paperclip, Plus, Trash2, X } from 'lucide-react'
 import type { Attachment, Importance, Task, Urgency } from '../domain/models'
 import {
-  DEFAULT_PLANNED_DURATION_MINUTES,
   DEFAULT_URGENCY_THRESHOLD_HOURS,
   MAX_PLANNED_DURATION_MINUTES,
 } from '../domain/models'
@@ -40,6 +39,8 @@ const DURATION_RANGE_ERROR = 'Укажите длительность от 1 м�
 const DURATION_DAY_ERROR_PREFIX = 'Длительность выходит за пределы дня.'
 const DEADLINE_REQUIRES_START_ERROR = 'Сначала укажите корректное начало задачи, затем дедлайн'
 const START_REQUIRED_BY_DEADLINE_ERROR = 'Сначала уберите дедлайн, затем очистите начало'
+const DEADLINE_CONFLICTS_DURATION_ERROR = 'Сначала очистите длительность, затем укажите дедлайн'
+const DURATION_CONFLICTS_DEADLINE_ERROR = 'Сначала уберите дедлайн, затем укажите длительность'
 type DurationUnit = 'minutes' | 'hours'
 
 const parseDurationMinutes = (value: string, unit: DurationUnit): number | '' => {
@@ -77,7 +78,10 @@ const isDurationError = (value: string) => (
   value === DURATION_RANGE_ERROR || value.startsWith(DURATION_DAY_ERROR_PREFIX)
 )
 const isTimingError = (value: string) => (
-  value === DEADLINE_REQUIRES_START_ERROR || value === START_REQUIRED_BY_DEADLINE_ERROR
+  value === DEADLINE_REQUIRES_START_ERROR
+  || value === START_REQUIRED_BY_DEADLINE_ERROR
+  || value === DEADLINE_CONFLICTS_DURATION_ERROR
+  || value === DURATION_CONFLICTS_DEADLINE_ERROR
 )
 const urgencyThresholdPresets = [
   { value: 1, label: '1 час', description: 'Только перед самым сроком' },
@@ -96,13 +100,14 @@ function createInitialDraft(
   defaults: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>> | undefined,
 ): TaskDraftData {
   const deadline = localInput(task?.deadline ?? defaults?.deadline)
+  const plannedDurationMinutes = task?.plannedDurationMinutes ?? defaults?.plannedDurationMinutes ?? ''
   return {
     title: task?.title ?? '',
     description: task?.description ?? '',
     projectId: task?.projectId ?? defaults?.projectId ?? 'inbox',
     startAt: localInput(task?.startAt ?? defaults?.startAt),
     deadline,
-    plannedDurationMinutes: task?.plannedDurationMinutes ?? defaults?.plannedDurationMinutes ?? DEFAULT_PLANNED_DURATION_MINUTES,
+    plannedDurationMinutes: deadline ? '' : plannedDurationMinutes,
     importance: task?.importance ?? 'low',
     urgencyThresholdOverrideHours: deadline ? task?.urgencyThresholdOverrideHours ?? '' : '',
     urgencyOverride: deadline ? task?.urgencyOverride ?? '' : '',
@@ -130,7 +135,11 @@ export function TaskEditor({
   const [startAt, setStartAt] = useState(initialDraft.startAt)
   const [deadline, setDeadline] = useState(initialDraft.deadline)
   const [durationUnit, setDurationUnit] = useState<DurationUnit>('minutes')
-  const [durationInput, setDurationInput] = useState(formatDurationInput(initialDraft.plannedDurationMinutes || DEFAULT_PLANNED_DURATION_MINUTES, 'minutes'))
+  const [durationInput, setDurationInput] = useState(
+    initialDraft.plannedDurationMinutes === ''
+      ? ''
+      : formatDurationInput(initialDraft.plannedDurationMinutes, 'minutes'),
+  )
   const [startAtValid, setStartAtValid] = useState(true)
   const [startAtDraftPresent, setStartAtDraftPresent] = useState(Boolean(initialDraft.startAt))
   const [deadlineValid, setDeadlineValid] = useState(true)
@@ -269,7 +278,10 @@ export function TaskEditor({
     ? maxDurationUntilLocalMidnight(startAt)
     : MAX_PLANNED_DURATION_MINUTES
   const durationHasError = isDurationError(error)
-  const deadlineLocked = !startAtValid || (!startAt && !startAtDraftPresent)
+  const durationDraftPresent = Boolean(durationInput.trim())
+  const deadlineLockedByDuration = durationDraftPresent
+  const deadlineLockedByStart = !startAtValid || (!startAt && !startAtDraftPresent)
+  const deadlineLocked = deadlineLockedByDuration || deadlineLockedByStart
 
   const draftData = useMemo<TaskDraftData>(() => ({
     title,
@@ -360,6 +372,11 @@ export function TaskEditor({
   }
 
   const updateDeadline = (value: string) => {
+    if (value && deadlineLockedByDuration) {
+      setError(DEADLINE_CONFLICTS_DURATION_ERROR)
+      durationRef.current?.focus()
+      return
+    }
     if (value && deadlineLocked) {
       setError(DEADLINE_REQUIRES_START_ERROR)
       editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
@@ -374,8 +391,12 @@ export function TaskEditor({
   }
 
   const updateDurationInput = (value: string) => {
+    if (value.trim() && deadline) {
+      setError(DURATION_CONFLICTS_DEADLINE_ERROR)
+      return
+    }
     setDurationInput(value)
-    setError((current) => isDurationError(current) ? '' : current)
+    setError((current) => isDurationError(current) || isTimingError(current) ? '' : current)
   }
 
   const updateDurationUnit = (unit: DurationUnit) => {
@@ -495,16 +516,22 @@ export function TaskEditor({
       editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
       return
     }
-    if (plannedDurationMinutes === ''
-      || !Number.isInteger(plannedDurationMinutes)
+    if (deadline && plannedDurationMinutes !== '') {
+      setError(DEADLINE_CONFLICTS_DURATION_ERROR)
+      durationRef.current?.focus()
+      return
+    }
+    if (plannedDurationMinutes !== '' && (
+      !Number.isInteger(plannedDurationMinutes)
       || plannedDurationMinutes < 1
-      || plannedDurationMinutes > MAX_PLANNED_DURATION_MINUTES) {
+      || plannedDurationMinutes > MAX_PLANNED_DURATION_MINUTES
+    )) {
       setError(DURATION_RANGE_ERROR)
       durationRef.current?.focus()
       return
     }
     const maxDuration = maxDurationUntilLocalMidnight(startAt)
-    if (startAt && plannedDurationMinutes > maxDuration) {
+    if (startAt && plannedDurationMinutes !== '' && plannedDurationMinutes > maxDuration) {
       setError(`${DURATION_DAY_ERROR_PREFIX} Для выбранного начала максимум ${formatDuration(maxDuration)}.`)
       durationRef.current?.focus()
       return
@@ -517,7 +544,7 @@ export function TaskEditor({
       projectId,
       startAt: toIso(startAt),
       deadline: toIso(deadline),
-      plannedDurationMinutes,
+      ...(plannedDurationMinutes !== '' ? { plannedDurationMinutes } : {}),
       importance,
       ...(deadline && thresholdOverride !== '' ? { urgencyThresholdOverrideHours: thresholdOverride } : {}),
       ...(deadline && urgencyOverride ? { urgencyOverride } : {}),
@@ -639,7 +666,12 @@ export function TaskEditor({
     if (!voicePreview) return
     const parsed = voicePreview
     const hasSpokenDate = Boolean(parsed.startAt || parsed.deadline)
-    if (parsed.deadline && deadlineLocked) {
+    if (parsed.deadline && deadlineLockedByDuration) {
+      setError(DEADLINE_CONFLICTS_DURATION_ERROR)
+      durationRef.current?.focus()
+      return
+    }
+    if (parsed.deadline && deadlineLockedByStart) {
       setError(DEADLINE_REQUIRES_START_ERROR)
       editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
       return
@@ -809,6 +841,7 @@ export function TaskEditor({
                 list={`task-duration-${durationUnit}`}
                 value={durationInput}
                 onChange={(event) => updateDurationInput(event.target.value)}
+                disabled={Boolean(deadline)}
                 aria-invalid={durationHasError}
                 aria-describedby="task-duration-hint"
                 aria-errormessage={durationHasError ? 'task-editor-error' : undefined}
@@ -817,6 +850,7 @@ export function TaskEditor({
                 aria-label="Единица длительности"
                 value={durationUnit}
                 onChange={(event) => updateDurationUnit(event.target.value as DurationUnit)}
+                disabled={Boolean(deadline)}
               >
                 <option value="minutes">минуты</option>
                 <option value="hours">часы</option>
@@ -830,15 +864,19 @@ export function TaskEditor({
               </datalist>
             </div>
             <small id="task-duration-hint">
-              {plannedDurationMinutes !== ''
+              {deadline
+                ? 'Сначала уберите дедлайн, чтобы указать длительность.'
+                : <>
+                  {plannedDurationMinutes !== ''
                 && Number.isInteger(plannedDurationMinutes)
                 && plannedDurationMinutes >= 1
                 && plannedDurationMinutes <= MAX_PLANNED_DURATION_MINUTES
                 ? `${formatDuration(plannedDurationMinutes)}. `
                 : ''}
-              {startAt
-                ? `Максимум до полуночи: ${formatDuration(maxPlannedDurationMinutes)}.`
-                : 'От 1 минуты до 24 часов; начало задаёт положение блока в календаре.'}
+                  {startAt
+                    ? `Максимум до полуночи: ${formatDuration(maxPlannedDurationMinutes)}.`
+                    : 'Необязательно: от 1 минуты до 24 часов; начало задаёт положение блока в календаре.'}
+                </>}
             </small>
           </div>
           <DateTimePicker
@@ -850,11 +888,13 @@ export function TaskEditor({
             resetToken={dateInputResetToken}
             disabled={deadlineLocked}
             allowClearWhenDisabled={Boolean(deadline)}
-            hint={deadlineLocked
-              ? deadline
+            hint={deadlineLockedByDuration
+              ? 'Сначала очистите длительность, чтобы указать дедлайн.'
+              : deadlineLockedByStart
+                ? deadline
                 ? 'Добавьте начало, чтобы изменить дедлайн; существующий срок можно очистить.'
                 : 'Сначала укажите корректное начало задачи.'
-              : undefined}
+                : undefined}
           />
           {deadline && (
             <>

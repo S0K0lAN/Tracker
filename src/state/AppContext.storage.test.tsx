@@ -159,6 +159,14 @@ function TimingPolicyHarness() {
     ...template,
     id: 'deadline-without-start',
     startAt: undefined,
+    plannedDurationMinutes: undefined,
+    deadline: '2026-08-31T15:00:00.000Z',
+  }
+  const conflictingTiming = {
+    ...template,
+    id: 'duration-and-deadline',
+    startAt: '2026-08-31T12:00:00.000Z',
+    plannedDurationMinutes: 60,
     deadline: '2026-08-31T15:00:00.000Z',
   }
   const captureSyncResult = (operation: () => void) => {
@@ -173,6 +181,7 @@ function TimingPolicyHarness() {
     <div>
       <output aria-label="timing result">{result}</output>
       <output aria-label="invalid timing tasks">{state.tasks.filter((task) => task.id === 'deadline-without-start').length}</output>
+      <output aria-label="conflicting timing tasks">{state.tasks.filter((task) => task.id === 'duration-and-deadline').length}</output>
       <output aria-label="first task start">{template.startAt ?? ''}</output>
       <button
         type="button"
@@ -183,6 +192,39 @@ function TimingPolicyHarness() {
       >save deadline without start</button>
       <button type="button" onClick={() => captureSyncResult(() => addTask(deadlineOnly))}>add deadline without start</button>
       <button type="button" onClick={() => captureSyncResult(() => updateTask({ ...template, startAt: undefined }))}>remove required start</button>
+      <button
+        type="button"
+        onClick={() => void saveTaskDurably(conflictingTiming).then(
+          () => setResult('saved'),
+          (error: unknown) => setResult(error instanceof Error ? error.message : 'failed'),
+        )}
+      >save conflicting timing</button>
+      <button type="button" onClick={() => captureSyncResult(() => addTask(conflictingTiming))}>add conflicting timing</button>
+      <button type="button" onClick={() => captureSyncResult(() => updateTask({ ...template, plannedDurationMinutes: 60 }))}>update conflicting timing</button>
+    </div>
+  )
+}
+
+function UrgencyMutationHarness() {
+  const { state, addTask, saveTaskDurably, updateTask } = useApp()
+  const template = state.tasks[0] ?? taskTemplate
+  const taskId = 'urgency-without-deadline'
+  const task = {
+    ...template,
+    id: taskId,
+    deadline: undefined,
+    urgencyOverride: 'high' as const,
+    urgencyThresholdOverrideHours: 12,
+  }
+  const saved = state.tasks.find((item) => item.id === taskId)
+  return (
+    <div>
+      <output aria-label="urgency fields without deadline">
+        {saved ? `${saved.urgencyOverride ?? 'none'}|${saved.urgencyThresholdOverrideHours ?? 'none'}` : 'missing'}
+      </output>
+      <button type="button" onClick={() => addTask(task)}>add urgency without deadline</button>
+      <button type="button" onClick={() => saved && updateTask({ ...saved, urgencyOverride: 'high', urgencyThresholdOverrideHours: 12 })}>update urgency without deadline</button>
+      <button type="button" onClick={() => void saveTaskDurably(task)}>save urgency without deadline</button>
     </div>
   )
 }
@@ -217,6 +259,62 @@ describe('AppProvider storage persistence', () => {
     expect(screen.getByLabelText('timing result')).toHaveTextContent('Task deadline requires startAt')
     expect(screen.getByLabelText('first task start')).toHaveTextContent(originalStart!)
     expect(adapter.writes).toHaveLength(1)
+  })
+
+  it('rejects duration and deadline together before changing state or storage', async () => {
+    const adapter = new DelayedStorageAdapter()
+    adapter.loadResult.resolve(loadedState())
+    render(
+      <AppProvider storageAdapter={adapter}>
+        <TimingPolicyHarness />
+      </AppProvider>,
+    )
+
+    await screen.findByLabelText('conflicting timing tasks')
+    await waitFor(() => expect(adapter.writes).toHaveLength(1))
+    adapter.writes[0].resolve()
+    await waitFor(() => expect(adapter.activeWrites).toBe(0))
+
+    fireEvent.click(screen.getByRole('button', { name: 'save conflicting timing' }))
+    await waitFor(() => expect(screen.getByLabelText('timing result')).toHaveTextContent('Task duration and deadline are mutually exclusive'))
+    expect(screen.getByLabelText('conflicting timing tasks')).toHaveTextContent('0')
+    expect(adapter.writes).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'add conflicting timing' }))
+    expect(screen.getByLabelText('timing result')).toHaveTextContent('Task duration and deadline are mutually exclusive')
+    expect(screen.getByLabelText('conflicting timing tasks')).toHaveTextContent('0')
+
+    fireEvent.click(screen.getByRole('button', { name: 'update conflicting timing' }))
+    expect(screen.getByLabelText('timing result')).toHaveTextContent('Task duration and deadline are mutually exclusive')
+    expect(adapter.writes).toHaveLength(1)
+  })
+
+  it('removes urgency fields from every mutation path when there is no valid deadline', async () => {
+    const adapter = new DelayedStorageAdapter()
+    adapter.loadResult.resolve(loadedState())
+    render(
+      <AppProvider storageAdapter={adapter}>
+        <UrgencyMutationHarness />
+      </AppProvider>,
+    )
+
+    await screen.findByLabelText('urgency fields without deadline')
+    await waitFor(() => expect(adapter.writes).toHaveLength(1))
+    adapter.writes[0].resolve()
+    await waitFor(() => expect(adapter.activeWrites).toBe(0))
+
+    fireEvent.click(screen.getByRole('button', { name: 'add urgency without deadline' }))
+    expect(screen.getByLabelText('urgency fields without deadline')).toHaveTextContent('none|none')
+
+    fireEvent.click(screen.getByRole('button', { name: 'update urgency without deadline' }))
+    expect(screen.getByLabelText('urgency fields without deadline')).toHaveTextContent('none|none')
+
+    fireEvent.click(screen.getByRole('button', { name: 'save urgency without deadline' }))
+    await waitFor(() => expect(adapter.writes).toHaveLength(2))
+    const persisted = adapter.writes[1].state.tasks.find((task) => task.id === 'urgency-without-deadline')
+    expect(persisted).not.toHaveProperty('urgencyOverride')
+    expect(persisted).not.toHaveProperty('urgencyThresholdOverrideHours')
+    adapter.writes[1].resolve()
   })
 
   it('clears a Pomodoro task reference when that task is permanently removed', async () => {

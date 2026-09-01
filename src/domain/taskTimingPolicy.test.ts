@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { taskTimingMutationRequiresStart } from './taskTimingPolicy'
+import { taskHasDurationDeadlineConflict, taskTimingMutationRequiresStart } from './taskTimingPolicy'
 
 describe('task timing mutation policy', () => {
   const legacyDeadline = '2026-08-31T15:00:00.000Z'
@@ -52,5 +52,24 @@ describe('task timing mutation policy', () => {
       { deadline: legacyDeadline },
       {},
     )).toBe(false)
+  })
+})
+
+describe('task duration/deadline policy', () => {
+  it('rejects any task that has both a duration and a deadline', () => {
+    expect(taskHasDurationDeadlineConflict({
+      plannedDurationMinutes: 60,
+      deadline: '2026-08-31T15:00:00.000Z',
+    })).toBe(true)
+  })
+
+  it('accepts a duration or a deadline on its own', () => {
+    expect(taskHasDurationDeadlineConflict({ plannedDurationMinutes: 60 })).toBe(false)
+    expect(taskHasDurationDeadlineConflict({ deadline: '2026-08-31T15:00:00.000Z' })).toBe(false)
+    expect(taskHasDurationDeadlineConflict({})).toBe(false)
+  })
+
+  it('does not classify an empty deadline input as a stored deadline', () => {
+    expect(taskHasDurationDeadlineConflict({ plannedDurationMinutes: 60, deadline: '  ' })).toBe(false)
   })
 })

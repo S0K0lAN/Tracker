@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from './models'
-import { getEffectiveUrgencyThreshold, getTaskTiming, getTaskUrgency, isOverdue } from './models'
+import { getEffectiveUrgencyThreshold, getTaskTiming, getTaskUrgency } from './models'
 
 const baseTask: Task = {
   id: 'task',
   title: 'Проверить срочность',
   description: '',
   projectId: 'inbox',
-  plannedDurationMinutes: 60,
   importance: 'low',
   tags: [],
   subtasks: [],
@@ -75,11 +74,10 @@ describe('task urgency', () => {
     expect(getTaskUrgency(task, now, 120)).toBe('low')
   })
 
-  it('treats an unparseable deadline as absent instead of urgent or overdue', () => {
+  it('treats an unparseable deadline as absent instead of urgent', () => {
     const task = { ...baseTask, deadline: 'not-a-date' }
 
     expect(getTaskUrgency(task, now)).toBe('low')
-    expect(isOverdue(task, now)).toBe(false)
   })
 
   it('manual override wins over automatic urgency', () => {
@@ -93,9 +91,8 @@ describe('task urgency', () => {
     expect(getTaskUrgency(task, now, 168)).toBe('low')
   })
 
-  it('detects overdue active tasks but not completed tasks', () => {
+  it('keeps a past deadline urgent without a separate overdue classification', () => {
     const task = { ...baseTask, deadline: '2026-07-29T12:00:00.000Z' }
-    expect(isOverdue(task, now)).toBe(true)
-    expect(isOverdue({ ...task, status: 'completed' }, now)).toBe(false)
+    expect(getTaskTiming(task, now)).toEqual({ urgency: 'high' })
   })
 })

@@ -27,20 +27,40 @@
 }
 
 .week-day__all-day {
+  position: relative;
   height: var(--week-all-day-height);
   min-height: var(--week-all-day-height);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   padding: 5px 4px;
   overflow: hidden;
   background: color-mix(in srgb, var(--calendar-task-green-soft) 52%, var(--surface));
   border-bottom: 1px solid var(--line);
 }
 
-.week-day__all-day button {
-  overflow: hidden;
+.time-calendar {
+  --calendar-time-axis-width: 55px;
+
+  position: relative;
+}
+
+.time-calendar__all-day-ranges {
+  position: absolute;
+  z-index: 4;
+  top: 66px;
+  right: 0;
+  left: var(--calendar-time-axis-width);
+  display: grid;
+  gap: 2px 0;
+  padding-top: 5px;
+  pointer-events: none;
+}
+
+.time-calendar .time-calendar__all-day-range {
+  width: auto;
+  max-width: calc(100% - 8px);
+  height: 24px;
   min-height: 24px;
+  margin-inline: 4px;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -55,27 +75,33 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+  pointer-events: auto;
 }
 
-.week-day__all-day small {
-  color: var(--calendar-task-green-strong);
-  font-size: calc(10px * var(--app-font-scale));
-  font-weight: 700;
-  line-height: 12px;
-}
-
-.week-day__all-day .week-day__all-day-more {
+.week-day__all-day-more {
+  position: absolute;
+  z-index: 5;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  min-width: 0;
   min-height: 24px;
-  justify-content: flex-start;
-  padding: 0 3px;
+  padding: 0 4px;
+  overflow: hidden;
   color: var(--calendar-task-green-strong);
   background: transparent;
   border: 0;
+  border-radius: 5px;
   font-size: calc(10px * var(--app-font-scale));
+  font-weight: 700;
   line-height: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.week-day__all-day .week-day__all-day-more:hover {
+.week-day__all-day-more:hover {
   color: var(--calendar-task-green-strong);
   background: color-mix(in srgb, var(--calendar-task-green-soft) 72%, transparent);
 }
@@ -93,7 +119,7 @@
   white-space: nowrap;
 }
 
-.calendar-deadline-strip > .calendar-task-signals {
+.time-calendar__all-day-range > .calendar-task-signals {
   min-width: auto;
   overflow: visible;
   white-space: normal;
@@ -244,19 +270,11 @@
   overflow: visible;
 }
 
-.month-calendar .deadline-range,
-.month-calendar .deadline-range.is-important {
+.month-calendar .deadline-range {
   color: var(--calendar-task-green-strong);
   background: var(--calendar-task-green-soft);
   border-color: color-mix(in srgb, var(--calendar-task-green-line) 64%, var(--line));
   border-left-color: var(--calendar-task-green);
-}
-
-.month-calendar .deadline-range.is-overdue,
-.month-calendar .deadline-range.is-important.is-overdue {
-  border-color: var(--calendar-task-green-line);
-  border-left-color: var(--calendar-task-green);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--calendar-task-green-line) 52%, transparent);
 }
 
 .month-calendar .deadline-range > .calendar-task-signals {
@@ -311,12 +329,25 @@
 .month-day.is-today::after {
   content: '';
   position: absolute;
-  z-index: 6;
   inset: 2px;
   border: 2px solid var(--calendar-today-frame);
   border-radius: 9px;
   box-shadow: 0 0 0 1px var(--calendar-today-frame-shadow);
   pointer-events: none;
+}
+
+.week-day.is-today::after {
+  z-index: 6;
+}
+
+.month-day.is-today::after {
+  z-index: 1;
+}
+
+.month-day__number,
+.month-day__items {
+  position: relative;
+  z-index: 2;
 }
 
 .year-calendar .year-month__days > button.is-today {
@@ -332,6 +363,10 @@
 }
 
 @media (max-width: 700px) {
+  .time-calendar {
+    --calendar-time-axis-width: 38px;
+  }
+
   .month-calendar__week {
     --month-range-top: 29px;
   }
@@ -343,30 +378,30 @@
     font-size: min(calc(9px * var(--app-font-scale)), 10px);
   }
 
-  .week-day__all-day .week-day__all-day-more {
+  .week-day__all-day-more {
     min-height: 24px;
     padding-inline: 1px;
     font-size: calc(9px * var(--app-font-scale));
   }
 
-  .time-calendar--week .week-day__all-day .calendar-deadline-strip {
+  .time-calendar--week .time-calendar__all-day-range {
     justify-content: center;
     gap: 1px;
   }
 
-  .week-day__all-day .calendar-task-signals {
+  .time-calendar__all-day-range .calendar-task-signals {
     gap: 1px;
     margin: 0;
   }
 
-  .week-day__all-day .calendar-deadline-strip__glyph {
+  .time-calendar__all-day-range .calendar-deadline-strip__glyph {
     width: 9px;
     height: 9px;
     flex-basis: 9px;
   }
 
-  .week-day__all-day .calendar-task-signal,
-  .week-day__all-day .calendar-task-signal > svg {
+  .time-calendar__all-day-range .calendar-task-signal,
+  .time-calendar__all-day-range .calendar-task-signal > svg {
     width: 9px;
     height: 9px;
     flex-basis: 9px;

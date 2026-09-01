@@ -3,7 +3,7 @@ import type { AppSettings, AppState, Habit, Project, PomodoroState, SavedFilter,
 import { getEffectiveUrgencyThreshold } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import { UnsupportedSchemaVersionError } from '../domain/migrations'
-import { taskTimingMutationRequiresStart } from '../domain/taskTimingPolicy'
+import { taskHasDurationDeadlineConflict, taskTimingMutationRequiresStart } from '../domain/taskTimingPolicy'
 import { LocalStorageAdapter } from '../core/storage/LocalStorageAdapter'
 import { StateSaveQueue } from '../core/storage/StateSaveQueue'
 import type { StorageAdapter } from '../core/storage/StorageAdapter'
@@ -238,6 +238,16 @@ function reducer(state: AppState, action: Action): AppState {
   }
 }
 
+function normalizeTaskUrgencyFields(task: Task): Task {
+  const hasValidDeadline = Boolean(task.deadline && Number.isFinite(Date.parse(task.deadline)))
+  if (hasValidDeadline) return task
+  if (task.urgencyOverride === undefined && task.urgencyThresholdOverrideHours === undefined) return task
+  const normalized = { ...task }
+  delete normalized.urgencyOverride
+  delete normalized.urgencyThresholdOverrideHours
+  return normalized
+}
+
 export interface SyncConflictView {
   intent: SyncIntent
   modifiedAt?: string
@@ -391,8 +401,12 @@ export function AppProvider({ children, syncRegistry, storageAdapter }: AppProvi
 
   const saveTaskDurably = useCallback(async (task: Task) => {
     ensureTaskCommitAvailable()
+    task = normalizeTaskUrgencyFields(task)
     const current = stateRef.current
     const previousTask = current.tasks.find((item) => item.id === task.id)
+    if (taskHasDurationDeadlineConflict(task)) {
+      throw new Error('Task duration and deadline are mutually exclusive')
+    }
     if (taskTimingMutationRequiresStart(previousTask, task)) {
       throw new Error('Task deadline requires startAt')
     }
@@ -1154,11 +1168,15 @@ export function AppProvider({ children, syncRegistry, storageAdapter }: AppProvi
       state,
       ready,
       addTask: (task) => {
+        task = normalizeTaskUrgencyFields(task)
+        if (taskHasDurationDeadlineConflict(task)) throw new Error('Task duration and deadline are mutually exclusive')
         if (taskTimingMutationRequiresStart(undefined, task)) throw new Error('Task deadline requires startAt')
         dispatch({ type: 'task/add', task })
       },
       updateTask: (task) => {
+        task = normalizeTaskUrgencyFields(task)
         const previousTask = stateRef.current.tasks.find((item) => item.id === task.id)
+        if (taskHasDurationDeadlineConflict(task)) throw new Error('Task duration and deadline are mutually exclusive')
         if (taskTimingMutationRequiresStart(previousTask, task)) throw new Error('Task deadline requires startAt')
         dispatch({ type: 'task/update', task })
       },

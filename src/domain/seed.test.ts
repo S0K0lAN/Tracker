@@ -16,10 +16,14 @@ describe('demo seed data', () => {
     expect(state.tasks.some((task) => task.status === 'archived' || task.status === 'deleted')).toBe(false)
     expect(new Set(state.tasks.map((task) => task.id)).size).toBe(state.tasks.length)
     expect(new Set(state.projects.map((project) => project.id)).size).toBe(state.projects.length)
-    expect(state.tasks.every((task) => Number.isInteger(task.plannedDurationMinutes)
-      && task.plannedDurationMinutes >= 1
-      && task.plannedDurationMinutes <= 1440)).toBe(true)
-    expect(active.some((task) => task.plannedDurationMinutes !== 60)).toBe(true)
+    expect(state.tasks.every((task) => task.plannedDurationMinutes === undefined
+      || (Number.isInteger(task.plannedDurationMinutes)
+        && task.plannedDurationMinutes >= 1
+        && task.plannedDurationMinutes <= 1440))).toBe(true)
+    expect(active.some((task) => task.plannedDurationMinutes !== undefined
+      && task.plannedDurationMinutes !== 60)).toBe(true)
+    expect(state.tasks.every((task) => task.deadline === undefined
+      || task.plannedDurationMinutes === undefined)).toBe(true)
     expect(tasksWithLaterDeadline.length).toBeGreaterThanOrEqual(2)
     expect(active.every((task) => !task.deadline || Boolean(task.startAt))).toBe(true)
     expect(active.some((task) => !task.deadline && !task.startAt)).toBe(true)
