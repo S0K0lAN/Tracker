@@ -41,6 +41,7 @@ describe('demo seed data', () => {
     expect(state.tasks.some((task) => task.focusMinutes > 0)).toBe(true)
     expect(state.habits.length).toBeGreaterThanOrEqual(4)
     expect(state.habits.every((habit) => habit.completions.length > 0)).toBe(true)
+    expect(state.habits.every((habit) => Number.isFinite(Date.parse(habit.createdAt)))).toBe(true)
     expect(state.habits.find((habit) => habit.id === 'habit-water')?.completions).not.toContain(today)
   })
 })

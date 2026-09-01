@@ -1,6 +1,7 @@
 # Временный отчёт об аудите Focus Flow
 
-> Дата: 21 августа 2026 года. Файл собран как временный рабочий артефакт и
+> Первоначальный аудит: 21 августа 2026 года; исправления и verification
+> обновлены 24 августа 2026 года. Файл собран как временный рабочий артефакт и
 > может быть удалён после переноса принятых решений в постоянную документацию
 > и GitHub issues.
 
@@ -12,7 +13,7 @@
 - основной цикл «быстро записать → увидеть во времени и матрице → выполнить»;
 - desktop 1440×900, промежуточная ширина 1024×900 и mobile 390×844;
 - клавиатура, focus management, доступные имена, light/dark и reduced motion;
-- модели, миграции schema v1–v4, localStorage recovery, portable import/export;
+- модели, миграции schema v1–v5, localStorage recovery, portable import/export;
 - OAuth runtime, Google Drive adapter, remote snapshots и plugin registry;
 - 19 открытых GitHub issues через публичный GitHub API;
 - зависимости (`npm audit` и production-only audit);
@@ -32,7 +33,7 @@ Baseline до исправлений:
 - `npm run test:e2e`: 34/34 сценария прошли;
 - performance gate на 500 задач: render 345 ms, p95 frame 24,6 ms,
   long frames 0%;
-- Axe не нашёл автоматических WCAG AA-нарушений, но ручной аудит нашёл
+- Axe не нашёл автоматических WCAG AA color-contrast нарушений, но ручной аудит нашёл
   несколько сценариев, которые статический анализ не видит.
 
 ## 2. Краткий результат аудита концепций
@@ -76,11 +77,9 @@ parser, подзадачи, даты, проект, теги, напоминан
 - счётчик «На сегодня» учитывал только `startAt`, тогда как быстрый фильтр и
   Today учитывают `startAt OR deadline`;
 
-Остаётся:
-
-- windowed list сохраняет performance, но в accessibility tree присутствует
-  только текущее окно. Нужен отдельный keyboard/AT design: доступная пагинация
-  или виртуализатор, способный последовательно достигнуть всех элементов.
+Исправлено после аудита 24 августа: windowed list сохранил performance и
+получил keyboard/AT-навигацию по диапазонам, live-объявления, позицию каждого
+элемента и browser-регрессию достижения последней карточки.
 
 ### Проекты
 
@@ -129,11 +128,12 @@ project detail, а запрос и вкладка сохраняются в quer
 
 ### Привычки
 
-Текущая статистика полезна: индивидуальный planned-day progress, streak и
-14-дневный trend. Для новой привычки отсутствует `createdAt`, поэтому прошлые
-плановые дни могут сразу ухудшать процент. Расширенную статистику нельзя
-проектировать по пустому issue #48; сначала зафиксировать метрики 7/28/90 дней,
-current/best streak и heatmap.
+Текущая статистика полезна: индивидуальный 14-дневный planned-day progress и
+streak, а trend по умолчанию показывает 30 дней и поддерживает диапазоны
+14/30/90/365 дней и произвольные даты. После аудита schema v8 добавила `Habit.createdAt`: дни до
+создания больше не ухудшают progress/streak/trend, а миграция сохраняет
+историю старых привычек. Следующее расширение статистики требует отдельного
+решения для best streak, heatmap и сравнения периодов.
 
 График получил скрытую визуально семантическую таблицу с дневными значениями;
 она не создаёт горизонтальный overflow на mobile.
@@ -164,7 +164,7 @@ Production-ready Google Drive нельзя заявлять без live OAuth sm
 | Issue | Решение текущего аудита | Предложение / основание |
 | --- | --- | --- |
 | [#49 Повторяющиеся задачи](https://github.com/S0K0lAN/Tracker/issues/49) | Future, не реализовывать | ADR для recurrence rule, instances/exceptions, edit this/future/all, timezone/date-only и tombstones; затем schema migration. |
-| [#48 Статистика привычек](https://github.com/S0K0lAN/Tracker/issues/48) | Needs thought | Сначала определить planned/completed, 7/28/90, current/best streak, heatmap и дату создания привычки. |
+| [#48 Статистика привычек](https://github.com/S0K0lAN/Tracker/issues/48) | Исправлено и закрыто | Добавлены дневной график, диапазоны 14/30/90/365 и произвольные даты; schema v8 хранит дату создания привычки и исключает более ранние дни из статистики. Best streak/heatmap остаются отдельным будущим улучшением. |
 | [#47 Убрать календари на год](https://github.com/S0K0lAN/Tracker/issues/47) | Конфликт требований | Year — подтверждённый режим. При нехватке места скрывать его в overflow, не удалять модель/маршрут. |
 | [#46 Длительность задачи](https://github.com/S0K0lAN/Tracker/issues/46) | Нужна смена модели | Сейчас deadline заменяет end. Возможное будущее: `durationMinutes`/`endAt`, deadline отдельно; следующая schema migration, DST и overnight tests. |
 | [#45 Плашка сроков/all-day](https://github.com/S0K0lAN/Tracker/issues/45) | Future/dependency | Зависит от #44/#46. После date-only модели объединить all-day events и deadline bands, сохраняя семантическое различие. |
@@ -183,13 +183,11 @@ Production-ready Google Drive нельзя заявлять без live OAuth sm
 | [#16 Календари проектов](https://github.com/S0K0lAN/Tracker/issues/16) | Future/plan | Предпочтительно project filter в едином Calendar + URL/query/deep-link из Project, не отдельные копии календаря. |
 | [#12 Дедлайны на календаре](https://github.com/S0K0lAN/Tracker/issues/12) | Needs thought/duplicate | Консолидировать с #33/#35/#45 после выбора all-day/date-only модели. |
 
-Повторная проверка показала ровно 14 открытых issues: #12, #16, #17, #18,
-#21, #22, #31, #34 и #44–#49. Для #31 подготовлено локальное исправление и
-issue остаётся открытым до merge; остальные относятся к
 Повторная проверка в момент аудита показала ровно 14 открытых issues:
 #12, #16, #17, #18, #21, #22, #31, #34 и #44–#49. Позднее 21 августа
-продуктовое решение по #22 было пересмотрено и реализовано локально; статус
-внешнего issue этим отчётом не изменяется. Остальные относятся к
+для #31 подготовили локальное исправление, а продуктовое решение по #22
+пересмотрели и реализовали локально; статус внешних issues этим отчётом не
+изменяется. Остальные относятся к
 future/needs-thought/conflict scope.
 
 ## 4. Security и privacy
@@ -215,7 +213,8 @@ future/needs-thought/conflict scope.
 
 - schema v4 усилила проверку дат, порядка начала/дедлайна, цветов, порогов и
   `pomodoro.runningSince`; schema v5 добавила проектный порог с наследованием и
-  миграцией прежнего порога задачи в явный override;
+  миграцией прежнего порога задачи в явный override; schema v8 добавила
+  проверяемый момент создания привычки без потери legacy-истории;
 - CSS-цвета проектов/привычек ограничены `#RRGGBB`, поэтому import/sync больше
   не может инициировать внешний request через `url(...)`;
 - recovery не удаляет источник при неуспешной quarantine и не принимает ошибку
@@ -229,7 +228,7 @@ future/needs-thought/conflict scope.
   `dev:lan`/`preview:lan` с предупреждением в README;
 - экспорт явно помечен как незашифрованный конфиденциальный JSON.
 - snapshot ограничен по глубине и сложности; текущая schema проверяет
-  уникальность ID, canonical inbox и ссылки задач, фильтров и Pomodoro, а legacy v1–v4
+  уникальность ID, canonical inbox и ссылки задач, фильтров и Pomodoro, а legacy v1–v5
   детерминированно восстанавливаются;
 - outgoing portable/remote snapshot валидируется до публикации, поэтому
   приложение не создаёт экспорт, который само не сможет безопасно прочитать;
@@ -294,15 +293,14 @@ complexity budgets.
 5. Plugin API проектировать только после permissions, sandbox/capability RPC,
    namespaced storage и запрета прямого DOM/localStorage/token access.
 
-## 6. Итоговый verification
+## 6. Итоговый verification (повторно 24 августа 2026 года)
 
-- чистая установка `npm ci`: успешно;
-- `npm test`: 35 файлов, 376/376 тестов;
+- `npm test`: 41 файл, 439/439 тестов;
 - `npm run build`: TypeScript и production build успешно;
-- `npm run test:e2e`: 40/40 сценариев;
+- `npm run test:e2e`: 43/43 сценария;
 - `npm audit` и `npm audit --omit=dev`: 0 advisories;
-- 500 задач: render 552 ms, p95 frame 23,0 ms, long frames 0%;
-- light/dark WCAG AA automation и horizontal-overflow gate прошли;
+- 500 задач: render 486 ms, p95 frame 22,0 ms, long frames 0%;
+- light/dark WCAG AA color-contrast automation и horizontal-overflow gate прошли;
 - визуально проверены 1440×900, 1024×900 и 390×844: deadline bands,
   desktop/sidebar breakpoint и mobile project context action;
 - browser gate собирал `pageerror`/`console.error`; новых ошибок нет.

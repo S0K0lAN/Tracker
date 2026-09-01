@@ -49,6 +49,7 @@ function createLegacyV1State() {
       urgencyThresholdHours: urgencyThresholdOverrideHours ?? 72,
     })),
     projects: current.projects.map(({ urgencyThresholdHours: _threshold, ...project }) => project),
+    habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit),
   }
 }
 
@@ -82,6 +83,7 @@ function invalidRemoteStates(): [string, (state: AppState) => void][] {
     ['duplicate task IDs', (state) => state.tasks.push(structuredClone(state.tasks[0]))],
     ['duplicate project IDs', (state) => state.projects.push(structuredClone(state.projects[0]))],
     ['duplicate habit IDs', (state) => state.habits.push(structuredClone(state.habits[0]))],
+    ['an invalid habit creation time', (state) => { state.habits[0].createdAt = 'not-a-date' }],
     ['duplicate filter IDs', (state) => state.savedFilters.push(remoteFilter('same'), remoteFilter('same'))],
     ['a missing inbox', (state) => {
       state.projects = state.projects.filter(({ id }) => id !== 'inbox')
@@ -161,6 +163,7 @@ describe('remote snapshots', () => {
     expect(envelope.data.settings.fontFamily).toBe('readable')
     expect(envelope.data.settings.fontScale).toBe(110)
     expect(envelope.data.tasks).toEqual(state.tasks)
+    expect(envelope.data.habits[0].createdAt).toBe(state.habits[0].createdAt)
   })
 
   it('decodes an envelope and applies the current migrations', () => {
@@ -182,6 +185,10 @@ describe('remote snapshots', () => {
     expect(decoded.projects).toEqual(legacy.projects.map((project) => ({
       ...project,
       urgencyThresholdHours: legacy.settings.defaultUrgencyThresholdHours,
+    })))
+    expect(decoded.habits).toEqual(legacy.habits.map((habit) => ({
+      ...habit,
+      createdAt: '1970-01-01T00:00:00.000Z',
     })))
     expect(decoded.settings.theme).toBe(legacy.settings.theme)
     expect(decoded.sync.status).toBe('idle')
@@ -206,6 +213,10 @@ describe('remote snapshots', () => {
     expect(decoded.projects).toEqual(legacy.projects.map((project) => ({
       ...project,
       urgencyThresholdHours: legacy.settings.defaultUrgencyThresholdHours,
+    })))
+    expect(decoded.habits).toEqual(legacy.habits.map((habit) => ({
+      ...habit,
+      createdAt: '1970-01-01T00:00:00.000Z',
     })))
     expect(decoded.savedFilters[0].projectId).toBeUndefined()
     expect(decoded.pomodoro.taskId).toBeUndefined()
@@ -355,7 +366,7 @@ describe('remote snapshots', () => {
     })
   })
 
-  it.each(invalidRemoteStates())('rejects outgoing schema v5 data with %s', (_label, mutate) => {
+  it.each(invalidRemoteStates())('rejects outgoing current-schema data with %s', (_label, mutate) => {
     const state = createSeedState()
     mutate(state)
 
@@ -365,7 +376,7 @@ describe('remote snapshots', () => {
     }))
   })
 
-  it.each(invalidRemoteStates())('rejects incoming remote schema v5 data with %s', (_label, mutate) => {
+  it.each(invalidRemoteStates())('rejects incoming current-schema data with %s', (_label, mutate) => {
     const state = createSeedState()
     mutate(state)
 

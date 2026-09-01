@@ -790,6 +790,21 @@ async function previewAndApply(transcript: string) {
 }
 
 describe('TaskEditor voice input', () => {
+  it('keeps the manual fallback phrase available after cancelling its preview', async () => {
+    const user = userEvent.setup()
+    await renderEditor()
+
+    await user.click(screen.getByRole('button', { name: 'Надиктовать задачу' }))
+    const command = screen.getByLabelText('Фраза для разбора задачи')
+    await user.type(command, 'Позвонить врачу завтра в 10')
+    await user.click(screen.getByRole('button', { name: 'Разобрать' }))
+    await user.click(screen.getByRole('button', { name: 'Отмена' }))
+
+    expect(command).toHaveValue('Позвонить врачу завтра в 10')
+    expect(screen.getByText('Голосовой ввод не поддерживается этим браузером')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Применить' })).not.toBeInTheDocument()
+  })
+
   it('applies an unmarked spoken date to the start and leaves the deadline empty', async () => {
     await renderEditor()
     await previewAndApply('Запланировать встречу завтра в 10')

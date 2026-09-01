@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Task } from '../domain/models'
@@ -40,10 +40,14 @@ describe('Inbox header', () => {
     expect(screen.queryByText('С началом')).not.toBeInTheDocument()
     expect(screen.queryByText('С дедлайном')).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Сводка' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Вид: Список' })).toHaveAttribute('aria-pressed', 'true')
 
     await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    expect(screen.getByRole('button', { name: 'Неразобранные' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Все' }))
 
+    expect(screen.getByRole('button', { name: 'Все' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Неразобранные' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('Общий обзор')).toBeInTheDocument()
     expect(screen.getByText('Активных задач: 4')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Все задачи' })).toBeInTheDocument()
@@ -78,5 +82,37 @@ describe('Inbox header', () => {
 
     expect(screen.getByText('Срочная по проекту')).toBeInTheDocument()
     expect(screen.queryByText('Несрочная по проекту')).not.toBeInTheDocument()
+  })
+
+  it('archives only completed tasks visible through the selected quick filter', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    const base = state.tasks[0]
+    const today = new Date()
+    today.setHours(10, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    state.tasks = [
+      { ...base, id: 'completed-today', title: 'Завершена сегодня', status: 'completed', startAt: today.toISOString(), deadline: undefined, completedAt: today.toISOString() },
+      { ...base, id: 'completed-tomorrow', title: 'Завершена завтра', status: 'completed', startAt: tomorrow.toISOString(), deadline: undefined, completedAt: today.toISOString() },
+    ]
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+
+    render(<AppProvider><InboxPage onEditTask={vi.fn()} /></AppProvider>)
+    await act(async () => { await Promise.resolve() })
+
+    await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    await user.click(screen.getByRole('button', { name: 'Сегодня' }))
+    await user.click(screen.getByRole('button', { name: 'Показать завершённые' }))
+
+    expect(screen.getByText('Завершена сегодня')).toBeInTheDocument()
+    expect(screen.queryByText('Завершена завтра')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Архивировать' }))
+
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as { tasks: Task[] }
+      expect(stored.tasks.find((task) => task.id === 'completed-today')?.status).toBe('archived')
+      expect(stored.tasks.find((task) => task.id === 'completed-tomorrow')?.status).toBe('completed')
+    })
   })
 })

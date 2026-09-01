@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CURRENT_SCHEMA_VERSION, normalizeAppState, parseStoredAppState, SNAPSHOT_LIMITS } from './migrations'
 import type { AppState, SavedFilter, Task } from './models'
 import { createSeedState } from './seed'
@@ -43,10 +43,12 @@ type LegacyTask = Omit<PreDurationTask, 'urgencyThresholdOverrideHours'> & {
 }
 
 type LegacyProject = Omit<AppState['projects'][number], 'urgencyThresholdHours'>
+type LegacyHabit = Omit<AppState['habits'][number], 'createdAt'> & { createdAt?: string }
 
-type LegacyAppState = Omit<AppState, 'tasks' | 'projects'> & {
+type LegacyAppState = Omit<AppState, 'tasks' | 'projects' | 'habits'> & {
   tasks: LegacyTask[]
   projects: LegacyProject[]
+  habits: LegacyHabit[]
 }
 
 function createLegacyState(schemaVersion: 1 | 2 | 3 | 4 = 4): LegacyAppState {
@@ -59,6 +61,17 @@ function createLegacyState(schemaVersion: 1 | 2 | 3 | 4 = 4): LegacyAppState {
       urgencyThresholdHours: urgencyThresholdOverrideHours ?? current.settings.defaultUrgencyThresholdHours,
     })),
     projects: current.projects.map(({ urgencyThresholdHours: _urgencyThresholdHours, ...project }) => project),
+    habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit),
+  }
+}
+
+function createLegacyV5State() {
+  const current = createSeedState()
+  return {
+    ...current,
+    schemaVersion: 5 as const,
+    tasks: current.tasks.map(({ plannedDurationMinutes: _duration, ...task }) => task as PreDurationTask),
+    habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit as LegacyHabit),
   }
 }
 
@@ -68,8 +81,20 @@ function createLegacyV6State() {
     ...current,
     schemaVersion: 6 as const,
     tasks: current.tasks.map(({ plannedDurationMinutes: _duration, ...task }) => task as PreDurationTask),
+    habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit as LegacyHabit),
   }
 }
+
+function createLegacyV7State() {
+  const current = createSeedState()
+  return {
+    ...current,
+    schemaVersion: 7 as const,
+    habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit as LegacyHabit),
+  }
+}
+
+afterEach(() => vi.useRealTimers())
 
 function currentIntegrityCases(): [string, (state: AppState) => void, RegExp][] {
   return [
@@ -173,6 +198,52 @@ describe('state migrations for simplified navigation and habit icons', () => {
       connectionStatus: 'connected',
       connectionMode: 'implicit',
     })
+  })
+
+  it.each([1, 2, 3, 4, 5, 6, 7] as const)(
+    'migrates schema v%s habits with a deterministic conservative creation time',
+    (schemaVersion) => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2040-05-06T07:08:09.000Z'))
+      const legacy = schemaVersion === 7
+        ? createLegacyV7State()
+        : schemaVersion === 6
+          ? createLegacyV6State()
+          : schemaVersion === 5
+            ? createLegacyV5State()
+            : createLegacyState(schemaVersion)
+      const completions = [...legacy.habits[0].completions]
+      legacy.habits[1].createdAt = '2025-03-30T22:15:00.000Z'
+
+      const migrated = parseStoredAppState(legacy)
+
+      expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+      expect(migrated.habits[0].createdAt).toBe('1970-01-01T00:00:00.000Z')
+      expect(migrated.habits[0].completions).toEqual(completions)
+      expect(migrated.habits[1].createdAt).toBe('2025-03-30T22:15:00.000Z')
+    },
+  )
+
+  it('accepts a schema v7 snapshot written before habit creation timestamps were introduced', () => {
+    const legacy = createLegacyV7State()
+
+    const migrated = parseStoredAppState(legacy)
+
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(migrated.habits.every((habit) => habit.createdAt === '1970-01-01T00:00:00.000Z')).toBe(true)
+    expect(migrated.tasks.map((task) => task.plannedDurationMinutes)).toEqual(
+      legacy.tasks.map((task) => task.plannedDurationMinutes),
+    )
+  })
+
+  it('requires a parseable habit creation timestamp in the current schema', () => {
+    const missing = createSeedState()
+    delete (missing.habits[0] as Partial<AppState['habits'][number]>).createdAt
+    const invalid = createSeedState()
+    invalid.habits[0].createdAt = 'not-a-date'
+
+    expect(() => parseStoredAppState(missing)).toThrow(/habits\[0\]\.createdAt/)
+    expect(() => parseStoredAppState(invalid)).toThrow(/habits\[0\]\.createdAt/)
   })
 
   it('rejects unsafe typography values in current snapshots', () => {
@@ -313,7 +384,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(() => parseStoredAppState(invalidLegacyTaskThreshold)).toThrow(/tasks\[0\]\.urgencyThresholdHours/)
   })
 
-  it('validates the current seed with project thresholds and planned durations', () => {
+  it('validates the current seed with project thresholds and habit creation timestamps', () => {
     const current = parseStoredAppState(createSeedState())
 
     expect(current.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
@@ -323,6 +394,19 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(current.tasks.every((task) => Number.isInteger(task.plannedDurationMinutes)
       && task.plannedDurationMinutes >= 1
       && task.plannedDurationMinutes <= 1440)).toBe(true)
+    expect(current.habits.every((habit) => Number.isFinite(Date.parse(habit.createdAt)))).toBe(true)
+  })
+
+  it('removes stale urgency settings from a task without a deadline', () => {
+    const current = createSeedState()
+    current.tasks[0].deadline = undefined
+    current.tasks[0].urgencyThresholdOverrideHours = 24
+    current.tasks[0].urgencyOverride = 'high'
+
+    const normalized = parseStoredAppState(current)
+
+    expect(normalized.tasks[0]).not.toHaveProperty('urgencyThresholdOverrideHours')
+    expect(normalized.tasks[0]).not.toHaveProperty('urgencyOverride')
   })
 
   it.each([1, 2, 3, 4] as const)(
@@ -734,7 +818,7 @@ describe('state migrations for simplified navigation and habit icons', () => {
     const legacy = createLegacyState(1)
     delete (legacy.tasks[0] as Partial<LegacyTask>).id
     delete (legacy.projects[0] as Partial<LegacyProject>).id
-    delete (legacy.habits[0] as Partial<AppState['habits'][number]>).id
+    delete (legacy.habits[0] as Partial<LegacyHabit>).id
 
     const first = parseStoredAppState(legacy)
     const second = parseStoredAppState(legacy)

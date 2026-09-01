@@ -72,6 +72,7 @@ export interface Habit {
   targetDays: number[]
   completions: string[]
   color: string
+  createdAt: string
 }
 
 export interface AppSettings {

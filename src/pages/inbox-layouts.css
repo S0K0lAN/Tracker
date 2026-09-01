@@ -46,6 +46,53 @@
   min-height: 39px;
 }
 
+.virtual-task-list__navigation {
+  position: sticky;
+  top: 8px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  margin-bottom: 8px;
+  padding: 6px 8px 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: var(--shadow-sm);
+}
+
+.virtual-task-list__range {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: calc(12px * var(--app-font-scale));
+  font-weight: 700;
+}
+
+.virtual-task-list__controls {
+  display: flex;
+  gap: 5px;
+}
+
+.virtual-task-list__controls button {
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 8px;
+  font-size: calc(12px * var(--app-font-scale));
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.virtual-task-list__controls button[aria-disabled='true'] {
+  color: var(--text-faint);
+  background: var(--surface-soft);
+  cursor: default;
+}
+
 .inbox-board {
   display: grid;
   grid-auto-columns: minmax(300px, 1fr);
@@ -232,6 +279,12 @@
   cursor: pointer;
 }
 
+@media (max-width: 820px) {
+  .virtual-task-list__navigation {
+    top: 68px;
+  }
+}
+
 @media (max-width: 720px) {
   .inbox-viewbar {
     align-items: stretch;
@@ -250,6 +303,26 @@
   .inbox-sort {
     width: 100%;
     margin-left: 0;
+  }
+
+  .virtual-task-list__navigation {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 5px;
+    padding: 8px;
+  }
+
+  .virtual-task-list__range {
+    text-align: center;
+  }
+
+  .virtual-task-list__controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .virtual-task-list__controls button {
+    min-height: 40px;
   }
 
   .inbox-calendar {

@@ -60,7 +60,7 @@ export const createSeedState = (): AppState => {
   const everyDay = [1, 2, 3, 4, 5, 6, 0]
 
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     projects: [
       { id: 'inbox', name: 'Без проекта', color: '#9ca89c', urgencyThresholdHours: 72, createdAt: dateAt(-100, 9) },
       { id: 'work', name: 'Работа', color: '#778c70', urgencyThresholdHours: 72, description: 'Рабочие задачи и инициативы', createdAt: dateAt(-90, 9) },
@@ -291,6 +291,7 @@ export const createSeedState = (): AppState => {
         targetDays: everyDay,
         completions: scheduledCompletions(everyDay, [-1, -2, -3, -5, -6]),
         color: '#75a8b5',
+        createdAt: dateAt(-45, 12),
       },
       {
         id: 'habit-read',
@@ -300,6 +301,7 @@ export const createSeedState = (): AppState => {
         targetDays: weekdays,
         completions: scheduledCompletions(weekdays, [-1, -2, -3, -4, -7, -8, -9]),
         color: '#9b7fbd',
+        createdAt: dateAt(-40, 12),
       },
       {
         id: 'habit-walk',
@@ -309,6 +311,7 @@ export const createSeedState = (): AppState => {
         targetDays: everyDay,
         completions: scheduledCompletions(everyDay, [-1, -3, -4, -7]),
         color: '#778c70',
+        createdAt: dateAt(-35, 12),
       },
       {
         id: 'habit-stretch',
@@ -318,6 +321,7 @@ export const createSeedState = (): AppState => {
         targetDays: weekdays,
         completions: scheduledCompletions(weekdays, [-1, -2, -4, -5, -8]),
         color: '#d78b69',
+        createdAt: dateAt(-30, 12),
       },
     ],
     savedFilters: [],

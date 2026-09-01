@@ -1,27 +1,15 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
 const CALENDAR_GREEN = 'rgb(47, 125, 75)'
 const CALENDAR_GREEN_SOFT = 'rgb(225, 241, 230)'
-const runtimeErrors = new WeakMap<Page, string[]>()
 
 test.beforeEach(async ({ page }) => {
-  const errors: string[] = []
-  runtimeErrors.set(page, errors)
-  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(`console.error: ${message.text()}`)
-  })
-
   await page.goto('/inbox')
   await page.evaluate(() => localStorage.clear())
   await page.reload()
   await page.waitForFunction((storageKey) => localStorage.getItem(storageKey), STORAGE_KEY)
-})
-
-test.afterEach(async ({ page }) => {
-  expect(runtimeErrors.get(page) ?? [], 'browser runtime errors').toEqual([])
 })
 
 async function expectStoredTaskStatus(page: Page, title: string, status: string) {

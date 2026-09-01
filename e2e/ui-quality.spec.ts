@@ -1,13 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
-  page.on('pageerror', (error) => {
-    throw error
-  })
-  page.on('console', (message) => {
-    if (message.type() === 'error') throw new Error(`Browser console error: ${message.text()}`)
-  })
   await page.goto('/inbox')
   await page.evaluate(() => localStorage.clear())
   await page.reload()
@@ -114,4 +108,56 @@ test('long task list scroll keeps frame pacing responsive', async ({ page }, tes
   expect(renderMs).toBeLessThan(2_000)
   expect(p95).toBeLessThan(40)
   expect(longFrameRatio).toBeLessThan(0.08)
+})
+
+test('keyboard navigation can reach the final task in a windowed Inbox list', async ({ page }) => {
+  await page.evaluate(() => {
+    const raw = localStorage.getItem('focus-flow.state.v1')
+    if (!raw) throw new Error('Local state was not initialized')
+    const state = JSON.parse(raw)
+    const template = state.tasks.find((task: { status: string }) => task.status === 'active')
+    state.settings.inboxSort = 'title-asc'
+    state.tasks = Array.from({ length: 160 }, (_, index) => ({
+      ...template,
+      id: `keyboard-${index + 1}`,
+      title: `Клавиатурная задача ${String(index + 1).padStart(3, '0')}`,
+      projectId: 'inbox',
+      startAt: undefined,
+      deadline: undefined,
+      status: 'active',
+      createdAt: new Date(1_785_360_000_000 + index).toISOString(),
+      updatedAt: new Date(1_785_360_000_000 + index).toISOString(),
+    }))
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+  })
+  await page.reload()
+
+  const list = page.getByRole('list', { name: 'Виртуальный список задач' })
+  const next = page.getByRole('button', { name: 'Следующие' })
+  await expect(list).toBeVisible()
+  await expect(page.getByText(/Доступны задачи 1–\d+ из 160/)).toBeVisible()
+  await next.focus()
+
+  let pageCount = 0
+  while (await next.getAttribute('aria-disabled') !== 'true' && pageCount < 40) {
+    await next.press('Enter')
+    await expect(next).toBeFocused()
+    pageCount += 1
+  }
+  expect(pageCount).toBeGreaterThan(0)
+  expect(pageCount).toBeLessThan(40)
+  await expect(next).toHaveAttribute('aria-disabled', 'true')
+
+  const finalTask = page.locator('.task-card').filter({ hasText: 'Клавиатурная задача 160' }).locator('.task-card__body')
+  await expect(finalTask).toBeVisible()
+  let reachedFinalTask = false
+  for (let tabCount = 0; tabCount < 80; tabCount += 1) {
+    await page.keyboard.press('Tab')
+    if (await finalTask.evaluate((element) => element === document.activeElement)) {
+      reachedFinalTask = true
+      break
+    }
+  }
+  expect(reachedFinalTask).toBe(true)
+  await expect(finalTask).toBeFocused()
 })

@@ -46,11 +46,12 @@ Focus Flow — персональный local-first таск-трекер для
   диапазонными полосами `startAt → deadline` в месяце;
 - матрица 2×2;
 - создание привычек и редактирование названия, описания и одной из десяти
-  векторных иконок; ритм считается по сохранённому `targetDays`, но UI
-  настройки расписания/цвета ещё нет;
+  векторных иконок; ритм считается по сохранённому `targetDays` только с
+  локального календарного дня `createdAt`, но UI настройки расписания/цвета
+  ещё нет;
 - темы, акцент, семейство и масштаб шрифта, плотность, reduced motion,
   встроенные/пользовательский фон и синхронизация;
-- schema v7, миграции schema v1–v6 и backup/recovery localStorage;
+- schema v8, миграции schema v1–v7 и backup/recovery localStorage;
 - инъецируемый StorageAdapter, сериализованная/coalescing очередь записей и
   localStorage-адаптер с import-backup/restore;
 - переносимый JSON-export/import с preview, ограничением размера и отменой через import-backup;
@@ -61,8 +62,9 @@ Focus Flow — персональный local-first таск-трекер для
 - минимальный in-process каркас реестра расширений без permissions, sandbox и
   готового Plugin API v1;
 - unit/component и Playwright E2E-тесты;
-- автоматический WCAG AA-аудит светлой и тёмной тем на desktop/mobile;
-- windowed list и performance gate прокрутки списка из 500 задач.
+- автоматический WCAG AA color-contrast gate светлой и тёмной тем на desktop/mobile;
+- доступный keyboard/AT windowed list и performance gate прокрутки списка из 500 задач;
+- CI для unit/build/E2E на pull request и `main`.
 
 Текущая реализация — проверяемая браузерная основа. Она ещё не является Tauri-сборкой для Ubuntu и не доказывает live OAuth-синхронизацию с Google Drive.
 
@@ -91,6 +93,8 @@ loopback `http://127.0.0.1:4173`). Для live OAuth открытый origin д�
 npm test
 npm run build
 npm run test:e2e
+# Эквивалентный полный gate:
+npm run check:full
 ```
 
 `npm run check` включает только unit/component-тесты и build, поэтому E2E
@@ -104,10 +108,11 @@ unit/component-теста с указанным флагом Node 26 и успе
 запуска актуальных 34 E2E-сценариев 10 августа не дошла до assertions из-за
 отсутствия системного Chrome.
 
-Более новый полный локальный gate 21 августа 2026 года на Node.js 18.19.1:
-376/376 unit/component-тестов, успешный build и 40/40 E2E-сценариев. Оба
+Более новый полный локальный gate 24 августа 2026 года на Node.js 18.19.1:
+439/439 unit/component-тестов, успешный build и 43/43 E2E-сценария. Оба
 dependency audit (`npm audit` и `npm audit --omit=dev`) сообщили 0 известных
-уязвимостей. Это датированный локальный снимок; CI в репозитории пока нет.
+уязвимостей. Это датированный локальный снимок; актуальный CI теперь повторяет
+unit/build/E2E gate на pull request и `main`.
 
 ## 4. Архитектурные границы
 

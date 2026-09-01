@@ -8,7 +8,7 @@ import { createSeedState } from './seed'
 import { attachmentDataUrlMimeType, MAX_ATTACHMENT_BYTES, safeAttachmentDataUrl } from './attachments'
 import { safeCustomBackgroundDataUrl } from './backgrounds'
 
-export const CURRENT_SCHEMA_VERSION = 7
+export const CURRENT_SCHEMA_VERSION = 8
 
 const MAX_PAYLOAD_STRING_BYTES = 10 * 1024 * 1024
 // Per-field and known-user-text budgets must not pre-empt a historical v4
@@ -42,6 +42,7 @@ export const SNAPSHOT_LIMITS = {
 const FONT_FAMILIES = ['system', 'humanist', 'readable'] as const
 const FONT_SCALES = [90, 100, 110, 120] as const
 const DEFAULT_ENTITY_COLOR = '#778c70'
+const LEGACY_HABIT_CREATED_AT = '1970-01-01T00:00:00.000Z'
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i
 const UTF8_ENCODER = new TextEncoder()
 
@@ -120,7 +121,14 @@ export function assertSnapshotStateShape(
     budget,
     `projects[${index}]`,
   ))
-  habits.forEach((habit, index) => assertHabitShape(habit, strict, strictSanitizableValues, budget, `habits[${index}]`))
+  habits.forEach((habit, index) => assertHabitShape(
+    habit,
+    strict,
+    strictSanitizableValues,
+    schemaVersion >= 8,
+    budget,
+    `habits[${index}]`,
+  ))
   savedFilters.forEach((filter, index) => assertFilterShape(filter, strict, strictSanitizableValues, budget, `savedFilters[${index}]`))
 
   const pomodoro = recordField(raw, 'pomodoro', strict)
@@ -249,6 +257,7 @@ function assertHabitShape(
   habit: Record<string, unknown>,
   strict: boolean,
   strictSanitizableValues: boolean,
+  requireCreatedAt: boolean,
   budget: SnapshotValidationBudget,
   path: string,
 ) {
@@ -256,6 +265,7 @@ function assertHabitShape(
   userTextField(habit, 'name', strict, path, budget, SNAPSHOT_LIMITS.shortTextBytes)
   boundedStringField(habit, 'icon', strict, path, SNAPSHOT_LIMITS.identifierBytes)
   colorField(habit, 'color', strict, path, strictSanitizableValues)
+  dateStringField(habit, 'createdAt', requireCreatedAt, path, true)
   userTextField(habit, 'description', false, path, budget, SNAPSHOT_LIMITS.longTextBytes)
   numberArray(
     habit,
@@ -996,6 +1006,7 @@ function normalizeHabit(value: Partial<Habit>): Habit {
     targetDays: Array.isArray(value.targetDays) ? value.targetDays : [1, 2, 3, 4, 5],
     completions: Array.isArray(value.completions) ? value.completions : [],
     color: safeColor(value.color, DEFAULT_ENTITY_COLOR),
+    createdAt: normalizedDate(value.createdAt) ?? LEGACY_HABIT_CREATED_AT,
   }
 }
 

@@ -26,7 +26,7 @@ import {
   type TaskDraftData,
   type TaskDraftWriteResult,
 } from './taskDraftJournal'
-import { VoiceCaptureButton } from './VoiceCaptureButton'
+import { VoiceCaptureButton, VoiceCaptureFailureNotice, type VoiceCaptureFailure } from './VoiceCaptureButton'
 import './task-editor-enhancements.css'
 
 const localInput = (value?: string) => {
@@ -144,7 +144,7 @@ export function TaskEditor({
   const [reminders, setReminders] = useState(initialDraft.reminders)
   const [attachments, setAttachments] = useState<Attachment[]>(task?.attachments ?? [])
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
-  const [voiceFallback, setVoiceFallback] = useState(false)
+  const [voiceFailure, setVoiceFailure] = useState<VoiceCaptureFailure>()
   const [voiceCommand, setVoiceCommand] = useState('')
   const [voicePreview, setVoicePreview] = useState<ParsedVoiceTask | null>(null)
   const [error, setError] = useState('')
@@ -630,6 +630,11 @@ export function TaskEditor({
     setVoicePreview(parseVoiceTask(transcript))
   }
 
+  const previewRecognizedVoiceTranscript = (transcript: string) => {
+    setVoiceFailure(undefined)
+    previewVoiceTranscript(transcript)
+  }
+
   const applyVoicePreview = () => {
     if (!voicePreview) return
     const parsed = voicePreview
@@ -661,7 +666,7 @@ export function TaskEditor({
       const project = state.projects.find((item) => item.name.toLowerCase().includes(parsed.projectHint!.toLowerCase()))
       if (project) setProjectId(project.id)
     }
-    setVoiceFallback(false)
+    setVoiceFailure(undefined)
     setVoiceCommand('')
     setVoicePreview(null)
   }
@@ -726,13 +731,13 @@ export function TaskEditor({
           <div className="field field--full">
             <span className="field__label-row">
               <label htmlFor="task-title">Название</label>
-              <VoiceCaptureButton onTranscript={previewVoiceTranscript} onUnavailable={() => setVoiceFallback(true)} />
+              <VoiceCaptureButton onTranscript={previewRecognizedVoiceTranscript} onUnavailable={setVoiceFailure} />
             </span>
             <input id="task-title" ref={titleRef} value={title} maxLength={INPUT_LIMITS.taskTitle} onChange={(event) => setTitle(event.target.value)} placeholder="Например, подготовить отчёт" />
           </div>
-          {voiceFallback && (
+          {voiceFailure && (
             <div className="voice-fallback field--full">
-              <div><strong>Голосовой ввод недоступен в этом браузере</strong><small>Введите фразу так, как произнесли бы её: «Позвонить врачу завтра в 10 важно #здоровье».</small></div>
+              <VoiceCaptureFailureNotice failure={voiceFailure} />
               <div>
                 <input aria-label="Фраза для разбора задачи" value={voiceCommand} onChange={(event) => setVoiceCommand(event.target.value)} placeholder="Введите команду…" />
                 <button type="button" className="button button--ghost" onClick={() => voiceCommand.trim() && previewVoiceTranscript(voiceCommand)}>Разобрать</button>
