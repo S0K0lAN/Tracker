@@ -68,6 +68,7 @@ describe('isInboxTask', () => {
   it('accepts only tasks in the canonical inbox without a start or deadline', () => {
     expect(isInboxTask(makeTask())).toBe(true)
     expect(isInboxTask({ ...makeTask(), projectId: 'work' })).toBe(false)
+    expect(isInboxTask({ ...makeTask(), allDayDate: '2026-08-21' })).toBe(false)
     expect(isInboxTask({ ...makeTask(), startAt: '2026-08-21T09:00:00.000+03:00' })).toBe(false)
     expect(isInboxTask({ ...makeTask(), deadline: '2026-08-21T18:00:00.000+03:00' })).toBe(false)
   })

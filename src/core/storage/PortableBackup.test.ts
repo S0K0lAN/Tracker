@@ -140,7 +140,7 @@ describe('portable Focus Flow backup', () => {
     const legacy = {
       ...current,
       schemaVersion: 2,
-      tasks: current.tasks.map(({ urgencyThresholdOverrideHours, ...task }) => ({
+      tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, allDayDate: _allDayDate, ...task }) => ({
         ...task,
         urgencyThresholdHours: urgencyThresholdOverrideHours ?? current.settings.defaultUrgencyThresholdHours,
       })),

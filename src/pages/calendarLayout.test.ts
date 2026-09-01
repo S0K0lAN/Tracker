@@ -3,6 +3,7 @@ import type { Task } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import {
   getTaskPlannedDurationMinutes,
+  layoutAllDayRanges,
   layoutDeadlineRanges,
   layoutTimedDayTasks,
   tasksForLocalDate,
@@ -118,5 +119,35 @@ describe('calendar planned duration projection', () => {
       new Date(2026, 7, 1),
       new Date(2026, 7, 10),
     )[0]).toMatchObject({ columnStart: 2, columnSpan: 1, lane: 0 })
+  })
+
+  it('projects a date-only task once in the shared all-day lanes without a timed block', () => {
+    const viewStart = new Date(2026, 7, 3)
+    const allDayTask = {
+      ...timedTask('all-day-task', viewStart, 9, 0, 60),
+      startAt: undefined,
+      plannedDurationMinutes: undefined,
+      allDayDate: '2026-08-04',
+    } as Task
+    const deadlineTask = {
+      ...timedTask('deadline-task', viewStart, 9, 0, 60),
+      plannedDurationMinutes: undefined,
+      deadline: at(new Date(2026, 7, 5), 18),
+    } as Task
+
+    expect(tasksForLocalDate([allDayTask], new Date(2026, 7, 4))).toEqual([allDayTask])
+    expect(tasksForLocalDate([allDayTask], new Date(2026, 7, 5))).toEqual([])
+    expect(tasksForMonthDate([allDayTask], new Date(2026, 7, 4))).toEqual([allDayTask])
+    expect(layoutTimedDayTasks([allDayTask])).toEqual([])
+    expect(layoutDeadlineRanges([allDayTask], viewStart, new Date(2026, 7, 6))).toEqual([])
+    expect(layoutAllDayRanges([deadlineTask, allDayTask], viewStart, new Date(2026, 7, 6)).map((range) => ({
+      id: range.task.id,
+      columnStart: range.columnStart,
+      columnSpan: range.columnSpan,
+      lane: range.lane,
+    }))).toEqual([
+      { id: 'deadline-task', columnStart: 0, columnSpan: 3, lane: 0 },
+      { id: 'all-day-task', columnStart: 1, columnSpan: 1, lane: 1 },
+    ])
   })
 })

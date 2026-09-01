@@ -7,7 +7,7 @@ import type { AppState, Task } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 import { CalendarPage } from './CalendarPage'
-import { addLocalDays, startOfLocalDay, startOfWeek } from './calendarLayout'
+import { addLocalDays, startOfLocalDay, startOfWeek, toLocalDateKey } from './calendarLayout'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
 
@@ -21,15 +21,16 @@ function taskFrom(
   template: Task,
   id: string,
   title: string,
-  timing: { startAt?: string; deadline?: string; plannedDurationMinutes?: number },
+  timing: { startAt?: string; allDayDate?: string; deadline?: string; plannedDurationMinutes?: number },
 ): Task {
   return {
     ...template,
     id,
     title,
     startAt: timing.startAt,
+    allDayDate: timing.allDayDate,
     deadline: timing.deadline,
-    plannedDurationMinutes: timing.plannedDurationMinutes ?? (timing.deadline ? undefined : 60),
+    plannedDurationMinutes: timing.plannedDurationMinutes ?? (timing.deadline || timing.allDayDate ? undefined : 60),
     status: 'active',
     tags: [],
     subtasks: [],
@@ -134,7 +135,7 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
 
     const important = deadlineRange(importantCalm.title)
     expect(important).toHaveAttribute('data-importance', 'high')
-    expect(important).toHaveAttribute('data-urgency', 'low')
+    expect(important).not.toHaveAttribute('data-urgency')
     expect(important).toHaveAccessibleName(/Важная задача/)
     expect(important).not.toHaveAccessibleName(/Срочная задача/)
     expect(important.querySelector('.calendar-task-signal--importance')).toBeInTheDocument()
@@ -164,7 +165,7 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
       .find((task) => task.textContent?.includes(scheduledWithoutDeadline.title))!
 
     expect(timedTask).toBeInTheDocument()
-    expect(timedTask).toHaveAttribute('data-urgency', 'low')
+    expect(timedTask).not.toHaveAttribute('data-urgency')
     expect(timedTask).not.toHaveAccessibleName(/Срочная задача/)
     expect(timedTask.querySelector('.calendar-task-signal--urgency')).not.toBeInTheDocument()
   })
@@ -244,6 +245,48 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
 
     await user.click(container.querySelector<HTMLButtonElement>('[data-task-id="all-day-deadline"]')!)
     expect(onEditTask).toHaveBeenCalledWith(deadlineTask)
+  })
+
+  it('shows an ordinary date-only task once across all five calendar views', async () => {
+    const user = userEvent.setup()
+    const today = startOfLocalDay(new Date())
+    const template = createSeedState().tasks.find((task) => task.status === 'active')!
+    const allDayTask = taskFrom(template, 'ordinary-all-day', 'Обычная задача на весь день', {
+      allDayDate: toLocalDateKey(today),
+    })
+    const { container, onEditTask } = renderCalendar([allDayTask])
+
+    await screen.findByRole('heading', { name: 'Календарь', level: 1 })
+
+    for (const mode of ['Неделя', '3 дня', 'День'] as const) {
+      if (mode !== 'Неделя') await user.click(screen.getByRole('button', { name: mode }))
+      const range = container.querySelector<HTMLButtonElement>('[data-task-id="ordinary-all-day"]')!
+      expect(range).toHaveClass('time-calendar__all-day-range', 'is-all-day-task')
+      expect(range).toHaveAttribute('data-all-day-kind', 'task')
+      expect(range).toHaveAttribute('data-range-span', '1')
+      expect(range).toHaveAccessibleName(/Весь день: Обычная задача на весь день/)
+      expect(range.querySelector('time')).not.toBeInTheDocument()
+      expect([...container.querySelectorAll<HTMLButtonElement>('.calendar-task')]
+        .some((task) => task.textContent?.includes(allDayTask.title))).toBe(false)
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Месяц' }))
+    const monthItem = [...container.querySelectorAll<HTMLButtonElement>('.month-day__task--all-day')]
+      .find((task) => task.textContent?.includes(allDayTask.title))!
+    expect(monthItem).toHaveAttribute('data-all-day', 'true')
+    expect(monthItem).toHaveAccessibleName(/Весь день: Обычная задача на весь день/)
+    expect(container.querySelectorAll('[data-task-id="ordinary-all-day"]')).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', { name: 'Год' }))
+    const todayButton = screen.getByRole('button', {
+      name: new RegExp(`${today.toLocaleDateString('ru-RU')}, задач: 1`),
+    })
+    await user.click(todayButton)
+    const dialog = screen.getByRole('dialog', { name: /Все задачи дня/i })
+    expect(within(dialog).getByRole('button', { name: /Обычная задача на весь день, Весь день/ })).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: /Обычная задача на весь день, Весь день/ }))
+    expect(onEditTask).toHaveBeenCalledWith(allDayTask)
   })
 
   it('does not duplicate a deadline task in the timed grid', async () => {
@@ -431,9 +474,15 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
       }),
       status: 'completed' as const,
     }
+    const completedAllDay = {
+      ...taskFrom(template, 'completed-all-day', 'Выполнено за весь день', {
+        allDayDate: toLocalDateKey(today),
+      }),
+      status: 'completed' as const,
+    }
     const archivedTimed = { ...completedTimed, id: 'archived-timed', title: 'Архивный план', status: 'archived' as const }
     const deletedDeadline = { ...completedDeadline, id: 'deleted-deadline', title: 'Удалённый срок', status: 'deleted' as const }
-    const { container } = renderCalendar([completedTimed, completedDeadline, archivedTimed, deletedDeadline])
+    const { container } = renderCalendar([completedTimed, completedDeadline, completedAllDay, archivedTimed, deletedDeadline])
 
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
 
@@ -443,8 +492,9 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
         .find((task) => task.textContent?.includes(completedTimed.title))).toHaveAttribute('data-status', 'completed')
       const deadlineRange = container.querySelector<HTMLButtonElement>('[data-task-id="completed-deadline"]')!
       expect(deadlineRange).toHaveAttribute('data-status', 'completed')
-      expect(deadlineRange).toHaveAttribute('data-urgency', 'low')
+      expect(deadlineRange).not.toHaveAttribute('data-urgency')
       expect(deadlineRange).toHaveAccessibleName(/Выполненная задача/)
+      expect(container.querySelector('[data-task-id="completed-all-day"]')).toHaveAttribute('data-status', 'completed')
       expect(screen.queryByText(archivedTimed.title)).not.toBeInTheDocument()
       expect(screen.queryByText(deletedDeadline.title)).not.toBeInTheDocument()
     }
@@ -452,18 +502,21 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
     await user.click(screen.getByRole('button', { name: 'Месяц' }))
     expect([...container.querySelectorAll<HTMLButtonElement>('.month-day__task')]
       .find((task) => task.textContent?.includes(completedTimed.title))).toHaveAttribute('data-status', 'completed')
+    expect([...container.querySelectorAll<HTMLButtonElement>('.month-day__task--all-day')]
+      .find((task) => task.textContent?.includes(completedAllDay.title))).toHaveAttribute('data-status', 'completed')
     expect(container.querySelector('[data-task-id="completed-deadline"]')).toHaveAttribute('data-status', 'completed')
     expect(screen.queryByText(archivedTimed.title)).not.toBeInTheDocument()
     expect(screen.queryByText(deletedDeadline.title)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Год' }))
     const todayButton = screen.getByRole('button', {
-      name: new RegExp(`${today.toLocaleDateString('ru-RU')}, задач: 2`),
+      name: new RegExp(`${today.toLocaleDateString('ru-RU')}, задач: 3`),
     })
     await user.click(todayButton)
     const dialog = screen.getByRole('dialog', { name: /Все задачи дня/i })
     expect(within(dialog).getByText(completedTimed.title)).toBeInTheDocument()
     expect(within(dialog).getByText(completedDeadline.title)).toBeInTheDocument()
+    expect(within(dialog).getByText(completedAllDay.title)).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: /Выполненный срок.+Выполненная задача/ })).toHaveAttribute('data-status', 'completed')
     expect(within(dialog).queryByText(archivedTimed.title)).not.toBeInTheDocument()
     expect(within(dialog).queryByText(deletedDeadline.title)).not.toBeInTheDocument()

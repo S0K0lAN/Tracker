@@ -44,7 +44,7 @@ function createLegacyV1State() {
   return {
     ...current,
     schemaVersion: 1 as const,
-    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, ...task }) => ({
+    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, allDayDate: _allDayDate, ...task }) => ({
       ...task,
       urgencyThresholdHours: urgencyThresholdOverrideHours ?? 72,
     })),
@@ -86,6 +86,7 @@ function invalidRemoteStates(): [string, (state: AppState) => void][] {
     }],
     ['an orphan Pomodoro task', (state) => { state.pomodoro.taskId = 'missing-task' }],
     ['a task with duration and deadline', (state) => { state.tasks[0].plannedDurationMinutes = 60 }],
+    ['an all-day task with timed scheduling', (state) => { state.tasks[0].allDayDate = '2026-09-01' }],
     ['too many entities', (state) => {
       state.projects = Array(SNAPSHOT_LIMITS.projects + 1).fill(state.projects[0])
     }],
@@ -170,6 +171,8 @@ describe('remote snapshots', () => {
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, urgencyOverride, ...task }) => ({
       ...task,
+      startAt: task.startAt,
+      deadline: task.deadline,
       ...(!task.deadline ? { plannedDurationMinutes: expectedLegacyDuration(task.startAt) } : {}),
       ...(task.deadline ? { urgencyThresholdOverrideHours: urgencyThresholdHours } : {}),
       ...(task.deadline && urgencyOverride ? { urgencyOverride } : {}),
@@ -198,6 +201,8 @@ describe('remote snapshots', () => {
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, urgencyOverride, ...task }) => ({
       ...task,
+      startAt: task.startAt,
+      deadline: task.deadline,
       ...(!task.deadline ? { plannedDurationMinutes: expectedLegacyDuration(task.startAt) } : {}),
       ...(task.deadline ? { urgencyThresholdOverrideHours: urgencyThresholdHours } : {}),
       ...(task.deadline && urgencyOverride ? { urgencyOverride } : {}),

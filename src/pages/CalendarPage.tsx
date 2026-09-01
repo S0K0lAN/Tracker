@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Flag, Plus, X, Zap } from 'lucide-react'
 import type { Task } from '../domain/models'
-import { getTaskUrgency, isSameLocalDay } from '../domain/models'
+import { getTaskUrgencySignal, isSameLocalDay } from '../domain/models'
 import { useApp } from '../state/AppContext'
 import { useNow } from '../hooks/useNow'
 import { PageHeader } from '../components/PageHeader'
 import { trapTabKey } from '../components/focusTrap'
 import {
   addLocalDays,
+  dateFromLocalDateKey,
   getTaskPlannedDurationMinutes,
+  isSameLocalDateKey,
+  layoutAllDayRanges,
   layoutDeadlineRanges,
   layoutTimedDayTasks,
   sameLocalDate,
@@ -118,6 +121,8 @@ function taskTimeRange(task: Task) {
 }
 
 function taskDateRangeLabel(task: Task) {
+  const allDayDate = dateFromLocalDateKey(task.allDayDate)
+  if (allDayDate) return shortDate.format(allDayDate)
   const start = task.startAt ? new Date(task.startAt) : null
   const deadline = task.deadline ? new Date(task.deadline) : null
   if (start && !Number.isNaN(start.getTime()) && deadline && !Number.isNaN(deadline.getTime()) && deadline.getTime() >= start.getTime()) {
@@ -130,6 +135,7 @@ function taskDateRangeLabel(task: Task) {
 }
 
 function taskTimingForDay(task: Task, date: Date) {
+  if (isSameLocalDateKey(task.allDayDate, date)) return 'Весь день'
   const labels: string[] = []
   if (task.startAt && isSameLocalDay(task.startAt, date)) {
     if (task.deadline) {
@@ -184,6 +190,7 @@ function taskDeadlineAriaLabel(task: Task, isUrgent: boolean) {
 
 function sortTasksForDay(tasks: Task[], date: Date) {
   const momentOnDay = (task: Task) => {
+    if (isSameLocalDateKey(task.allDayDate, date)) return startOfLocalDay(date).getTime()
     if (task.startAt && isSameLocalDay(task.startAt, date)) return new Date(task.startAt).getTime()
     if (task.deadline && isSameLocalDay(task.deadline, date)) return new Date(task.deadline).getTime()
     return startOfLocalDay(date).getTime()
@@ -194,7 +201,7 @@ function sortTasksForDay(tasks: Task[], date: Date) {
 export type PositionedWeekTask = PositionedTimedTask
 
 export function layoutWeekDayTasks(tasks: Task[]): PositionedWeekTask[] {
-  return layoutTimedDayTasks(tasks.filter((task) => !task.deadline), {
+  return layoutTimedDayTasks(tasks.filter((task) => !task.deadline && !task.allDayDate), {
     startHour: 8,
     endHour: 22,
     hourHeight: 38,
@@ -282,7 +289,7 @@ function DayTasksDialog({
                 onClick={() => onEdit(task)}
                 aria-label={taskAccessibleName(`${task.title}, ${timingLabel}`, task, isUrgent)}
                 data-importance={task.importance}
-                data-urgency={isUrgent ? 'high' : 'low'}
+                data-urgency={isUrgent ? 'high' : undefined}
                 data-status={task.status}
               >
                 <span className="calendar-day-dialog__task-marker" aria-hidden="true" />
@@ -328,17 +335,17 @@ function TimeCalendar({
   urgentTaskIds: ReadonlySet<string>
 }) {
   const hourHeight = mode === 'day' ? DAY_HOUR_HEIGHT : mode === 'three-days' ? THREE_DAY_HOUR_HEIGHT : WEEK_HOUR_HEIGHT
-  const deadlineLaneLimit = mode === 'day' ? 5 : 3
-  const allDayDeadlineRanges = layoutDeadlineRanges(tasks, days[0], days[days.length - 1])
-  const allDayLaneCount = allDayDeadlineRanges.reduce((count, range) => Math.max(count, range.lane + 1), 0)
-  const visibleAllDayLanes = Math.max(1, Math.min(deadlineLaneLimit, allDayLaneCount))
-  const visibleAllDayDeadlineRanges = allDayDeadlineRanges.filter((range) => range.lane < deadlineLaneLimit)
-  const hiddenAllDayDeadlineCounts = days.map((_, dayIndex) => allDayDeadlineRanges.filter((range) => (
-    range.lane >= deadlineLaneLimit
+  const allDayLaneLimit = mode === 'day' ? 5 : 3
+  const allDayRanges = layoutAllDayRanges(tasks, days[0], days[days.length - 1])
+  const allDayLaneCount = allDayRanges.reduce((count, range) => Math.max(count, range.lane + 1), 0)
+  const visibleAllDayLanes = Math.max(1, Math.min(allDayLaneLimit, allDayLaneCount))
+  const visibleAllDayRanges = allDayRanges.filter((range) => range.lane < allDayLaneLimit)
+  const hiddenAllDayCounts = days.map((_, dayIndex) => allDayRanges.filter((range) => (
+    range.lane >= allDayLaneLimit
     && range.columnStart <= dayIndex
     && dayIndex < range.columnStart + range.columnSpan
   )).length)
-  const hasAllDayOverflow = hiddenAllDayDeadlineCounts.some((count) => count > 0)
+  const hasAllDayOverflow = hiddenAllDayCounts.some((count) => count > 0)
   const allDayLaneHeight = 10
     + visibleAllDayLanes * 26
     + (hasAllDayOverflow ? ALL_DAY_OVERFLOW_LANE_HEIGHT : 0)
@@ -365,71 +372,75 @@ function TimeCalendar({
           ))}
         </div>
       </div>
-      {visibleAllDayDeadlineRanges.length > 0 && (
+      {visibleAllDayRanges.length > 0 && (
         <div
           className="time-calendar__all-day-ranges"
           role="group"
-          aria-label={`Дедлайны ${dateForAria(days[0])} — ${dateForAria(days[days.length - 1])}`}
+          aria-label={`Задачи на весь день и дедлайны ${dateForAria(days[0])} — ${dateForAria(days[days.length - 1])}`}
           style={{
             gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`,
             gridTemplateRows: `repeat(${visibleAllDayLanes}, 24px)`,
           }}
         >
-          {visibleAllDayDeadlineRanges.map(({ task, columnStart, columnSpan, lane, startsBeforeView, endsAfterView }) => {
+          {visibleAllDayRanges.map(({ task, columnStart, columnSpan, lane, startsBeforeView, endsAfterView }) => {
             const isUrgent = urgentTaskIds.has(task.id)
-            const deadlineTime = timeLabel.format(new Date(task.deadline!))
             const rangeLabel = taskDateRangeLabel(task)
+            const deadlineTime = task.deadline ? timeLabel.format(new Date(task.deadline)) : undefined
+            const entryLabel = task.deadline
+              ? `Дедлайн: ${task.title}, ${rangeLabel}, до ${deadlineTime}`
+              : `Весь день: ${task.title}, ${rangeLabel}`
             return (
               <button
                 type="button"
-                className={`deadline-range time-calendar__all-day-range ${startsBeforeView ? 'continues-before' : ''} ${endsAfterView ? 'continues-after' : ''}`}
+                className={`deadline-range time-calendar__all-day-range ${task.allDayDate ? 'is-all-day-task' : 'is-deadline-task'} ${startsBeforeView ? 'continues-before' : ''} ${endsAfterView ? 'continues-after' : ''}`}
                 style={{ gridColumn: `${columnStart + 1} / span ${columnSpan}`, gridRow: lane + 1 }}
                 key={task.id}
                 onClick={() => onEdit(task)}
-                title={`Дедлайн: ${task.title} · ${rangeLabel} · до ${deadlineTime}`}
-                aria-label={taskAccessibleName(`Дедлайн: ${task.title}, ${rangeLabel}, до ${deadlineTime}`, task, isUrgent)}
+                title={entryLabel}
+                aria-label={taskAccessibleName(entryLabel, task, isUrgent)}
                 data-task-id={task.id}
+                data-all-day-kind={task.deadline ? 'deadline' : 'task'}
                 data-range-lane={lane}
                 data-range-span={columnSpan}
                 data-importance={task.importance}
-                data-urgency={isUrgent ? 'high' : 'low'}
+                data-urgency={isUrgent ? 'high' : undefined}
                 data-status={task.status}
               >
                 <CalendarDays className="calendar-deadline-strip__glyph" size={12} aria-hidden="true" />
                 <TaskSignals task={task} isUrgent={isUrgent} />
                 <span className="calendar-deadline-strip__title">{task.title}</span>
-                <time className="calendar-deadline-strip__time" dateTime={task.deadline}>до {deadlineTime}</time>
+                {task.deadline && <time className="calendar-deadline-strip__time" dateTime={task.deadline}>до {deadlineTime}</time>}
               </button>
             )
           })}
         </div>
       )}
       {days.map((day, dayIndex) => {
-        const scheduledTasks = tasks.filter((task) => task.startAt && !task.deadline && isSameLocalDay(task.startAt, day))
+        const scheduledTasks = tasks.filter((task) => task.startAt && !task.deadline && !task.allDayDate && isSameLocalDay(task.startAt, day))
         const positionedTasks = layoutTimedDayTasks(scheduledTasks, {
           startHour: ALL_DAY_START_HOUR,
           endHour: ALL_DAY_END_HOUR,
           hourHeight,
         })
         const isToday = sameLocalDate(day, today)
-        const hiddenDeadlineCount = hiddenAllDayDeadlineCounts[dayIndex]
+        const hiddenAllDayCount = hiddenAllDayCounts[dayIndex]
         return (
           <div className={`week-day ${isToday ? 'is-today' : ''}`} key={day.toISOString()}>
             <button className={`week-day__header ${isToday ? 'is-today' : ''}`} onClick={() => onCreate(day)} aria-label={`Запланировать на ${dateForAria(day)}`} aria-current={isToday ? 'date' : undefined}>
               <span>{dayLabel.format(day)}</span><strong>{day.getDate()}</strong>
             </button>
             <div className="week-day__all-day" role="group" aria-label={`Весь день, ${dateForAria(day)}`}>
-              {hiddenDeadlineCount > 0 && (
+              {hiddenAllDayCount > 0 && (
                 <button
                   type="button"
                   className="week-day__all-day-more"
                   onClick={(event) => onOpenDay(day, event.currentTarget)}
-                  aria-label={`Показать все задачи и дедлайны на ${dateForAria(day)}, скрыто ${hiddenDeadlineCount}`}
+                  aria-label={`Показать все задачи и дедлайны на ${dateForAria(day)}, скрыто ${hiddenAllDayCount}`}
                 >
-                  Ещё {hiddenDeadlineCount}
+                  Ещё {hiddenAllDayCount}
                 </button>
               )}
-              {hiddenDeadlineCount === 0 && <span className="week-day__all-day-empty" aria-hidden="true" />}
+              {hiddenAllDayCount === 0 && <span className="week-day__all-day-empty" aria-hidden="true" />}
             </div>
             <div className="week-day__grid">
               {Array.from({ length: 24 }, (_, index) => <i key={index} />)}
@@ -452,7 +463,7 @@ function TimeCalendar({
                     data-overlap-column={`${column + 1}/${columnCount}`}
                     data-duration-minutes={durationMinutes}
                     data-importance={task.importance}
-                    data-urgency={isUrgent ? 'high' : 'low'}
+                    data-urgency={isUrgent ? 'high' : undefined}
                     data-status={task.status}
                   >
                     <span className="calendar-task__content"><TaskSignals task={task} isUrgent={isUrgent} /><strong>{task.title}</strong></span>
@@ -569,9 +580,11 @@ function MonthCalendar({
         >
           {weekDays.map((date, dayIndex) => {
             const dayTasks = sortTasksForDay(tasksForMonthDate(tasks, date), date)
-            const scheduledTasks = dayTasks.filter((task) => task.startAt && !task.deadline && isSameLocalDay(task.startAt, date))
-            const visibleTasks = scheduledTasks.slice(0, MONTH_CELL_LIMIT)
-            const hiddenScheduledCount = scheduledTasks.length - visibleTasks.length
+            const scheduledTasks = dayTasks.filter((task) => task.startAt && !task.deadline && !task.allDayDate && isSameLocalDay(task.startAt, date))
+            const allDayTasks = dayTasks.filter((task) => isSameLocalDateKey(task.allDayDate, date))
+            const ordinaryTasks = [...allDayTasks, ...scheduledTasks]
+            const visibleTasks = ordinaryTasks.slice(0, MONTH_CELL_LIMIT)
+            const hiddenOrdinaryCount = ordinaryTasks.length - visibleTasks.length
             const hiddenDeadlineCount = hiddenDeadlineCounts[dayIndex]
             const isToday = sameLocalDate(date, today)
             return (
@@ -598,32 +611,36 @@ function MonthCalendar({
                   )}
                   {visibleTasks.map((task) => {
                     const isUrgent = urgentTaskIds.has(task.id)
+                    const isAllDay = Boolean(task.allDayDate)
                     return (
                       <button
                         type="button"
-                        className="month-day__task"
+                        className={`month-day__task ${isAllDay ? 'month-day__task--all-day' : ''}`}
                         key={task.id}
                         onClick={() => onEdit(task)}
-                        aria-label={taskAccessibleName(`Запланировано: ${task.title}`, task, isUrgent)}
-                        title={`Запланировано: ${task.title}`}
+                        aria-label={taskAccessibleName(`${isAllDay ? 'Весь день' : 'Запланировано'}: ${task.title}`, task, isUrgent)}
+                        title={`${isAllDay ? 'Весь день' : 'Запланировано'}: ${task.title}`}
+                        data-all-day={isAllDay ? 'true' : undefined}
                         data-importance={task.importance}
-                        data-urgency={isUrgent ? 'high' : 'low'}
+                        data-urgency={isUrgent ? 'high' : undefined}
                         data-status={task.status}
                       >
-                        <Clock3 className="month-day__task-clock" size={11} aria-hidden="true" />
+                        {isAllDay
+                          ? <CalendarDays className="month-day__task-clock" size={11} aria-hidden="true" />
+                          : <Clock3 className="month-day__task-clock" size={11} aria-hidden="true" />}
                         <TaskSignals task={task} isUrgent={isUrgent} />
                         <span>{task.title}</span>
                       </button>
                     )
                   })}
-                  {hiddenScheduledCount > 0 && (
+                  {hiddenOrdinaryCount > 0 && (
                     <button
                       type="button"
                       className="month-day__more"
                       onClick={(event) => onOpenDay(date, event.currentTarget)}
-                      aria-label={`Показать все задачи на ${dateForAria(date)}, скрыто ${hiddenScheduledCount}`}
+                      aria-label={`Показать все задачи на ${dateForAria(date)}, скрыто ${hiddenOrdinaryCount}`}
                     >
-                      Ещё {hiddenScheduledCount}
+                      Ещё {hiddenOrdinaryCount}
                     </button>
                   )}
                 </div>
@@ -655,7 +672,7 @@ function MonthCalendar({
                     data-range-lane={lane}
                     data-range-span={columnSpan}
                     data-importance={task.importance}
-                    data-urgency={isUrgent ? 'high' : 'low'}
+                    data-urgency={isUrgent ? 'high' : undefined}
                     data-status={task.status}
                   >
                     <CalendarDays className="month-calendar__deadline-glyph" size={11} aria-hidden="true" />
@@ -751,7 +768,7 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
   const urgentTaskIds = useMemo(
     () => new Set(calendarTasks
       .filter((task) => task.status === 'active')
-      .filter((task) => getTaskUrgency(task, now, projectUrgencyThresholds.get(task.projectId)) === 'high')
+      .filter((task) => getTaskUrgencySignal(task, now, projectUrgencyThresholds.get(task.projectId)) === 'high')
       .map((task) => task.id)),
     [calendarTasks, now, projectUrgencyThresholds],
   )
@@ -844,7 +861,7 @@ export function CalendarPage({ onEditTask }: { onEditTask: (task: Task | null, d
         )}
       </CalendarSwipeSurface>
 
-      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Задачи с длительностью показаны временными блоками, дедлайновые — полосами «Весь день».</p>
+      <p className="calendar-note"><CalendarDays size={15} /> Листайте периоды горизонтальным свайпом или перетаскиванием мышью. Задачи с длительностью показаны временными блоками, обычные задачи на весь день и дедлайновые — в секции «Весь день».</p>
 
       {openDay && (
         <DayTasksDialog

@@ -25,7 +25,7 @@ function formatExpectedLocalDateTime(value: string) {
 
 async function mountEditor(
   task?: Task,
-  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
+  defaults?: Partial<Pick<Task, 'projectId' | 'allDayDate' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
   storageAdapter?: StorageAdapter,
 ) {
   const onClose = vi.fn()
@@ -85,7 +85,7 @@ class ControlledTaskStorage implements StorageAdapter {
 
 async function renderEditor(
   task?: Task,
-  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
+  defaults?: Partial<Pick<Task, 'projectId' | 'allDayDate' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
 ) {
   const { onClose } = await mountEditor(task, defaults)
   return onClose
@@ -336,6 +336,99 @@ describe('TaskEditor defaults and date validation', () => {
     expect(durationUnit).toBeEnabled()
   })
 
+  it('creates an ordinary all-day task from a blank editor with one button', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor()
+    const today = new Date()
+    const pad = (value: number) => String(value).padStart(2, '0')
+    const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+    const toggle = screen.getByRole('button', { name: 'Весь день' })
+
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(getComputedStyle(toggle).minHeight).toBe('44px')
+    expect(screen.getByText('Одним нажатием запланировать обычную задачу на текущую дату.')).toBeInTheDocument()
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('Дата')).toHaveValue(todayKey)
+    await waitFor(() => expect(screen.getByLabelText('Дата')).toHaveFocus())
+    expect(screen.queryByLabelText('Начало')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Длительность')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Дедлайн')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Срочность вручную' })).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Название'), 'Обычная задача на весь день')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const created = saved.tasks.find((item: Task) => item.title === 'Обычная задача на весь день')
+      expect(created.allDayDate).toBe(todayKey)
+      expect(created).not.toHaveProperty('startAt')
+      expect(created).not.toHaveProperty('plannedDurationMinutes')
+      expect(created).not.toHaveProperty('deadline')
+      expect(created).not.toHaveProperty('urgencyOverride')
+    })
+  })
+
+  it('preserves the selected date, time and duration when switching all-day mode back off', async () => {
+    const user = userEvent.setup()
+    await renderEditor(undefined, {
+      startAt: new Date(2026, 7, 31, 9, 15).toISOString(),
+      plannedDurationMinutes: 90,
+    })
+    const toggle = screen.getByRole('button', { name: 'Весь день' })
+
+    expect(screen.getByText('Одним нажатием сделать задачу на весь день на дату начала.')).toBeInTheDocument()
+    await user.click(toggle)
+    const date = screen.getByLabelText('Дата')
+    expect(date).toHaveValue('2026-08-31')
+    await user.clear(date)
+    await user.type(date, '2026-09-02')
+    await user.click(toggle)
+
+    expect(screen.getByLabelText('Начало')).toHaveValue('02.09.2026, 09:15')
+    expect(screen.getByLabelText('Длительность')).toHaveValue(90)
+    expect(screen.getByLabelText('Дедлайн')).toBeDisabled()
+  })
+
+  it('keeps all-day mode blocked until an existing deadline is cleared and labels default urgency as absent', async () => {
+    const user = userEvent.setup()
+    await renderEditor(undefined, {
+      startAt: '2026-08-31T09:00:00.000Z',
+      deadline: '2026-08-31T15:00:00.000Z',
+    })
+    const toggle = screen.getByRole('button', { name: 'Весь день' })
+
+    expect(toggle).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('combobox', { name: 'Срочность вручную' })).toHaveTextContent('Нет')
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('alert')).toHaveTextContent('Сначала уберите дедлайн')
+    expect(screen.getByLabelText('Дедлайн')).not.toHaveValue('')
+
+    await user.click(screen.getByRole('button', { name: 'Очистить дату дедлайна' }))
+    expect(toggle).toHaveAttribute('aria-disabled', 'false')
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('requires a valid date while all-day mode remains selected', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor()
+    await user.type(screen.getByLabelText('Название'), 'Нужна дата')
+    await user.click(screen.getByRole('button', { name: 'Весь день' }))
+    const date = screen.getByLabelText('Дата')
+    await user.clear(date)
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Укажите корректную дату')
+    expect(date).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Весь день' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('locks the deadline until start is valid and prevents removing a required start', async () => {
     const user = userEvent.setup()
     await renderEditor()
@@ -497,6 +590,8 @@ const recoveryData: TaskDraftData = {
   title: 'Восстановленный отчёт',
   description: 'Не потерять локальные изменения',
   projectId: 'work',
+  allDay: false,
+  allDayDate: '',
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
   plannedDurationMinutes: '',
@@ -572,6 +667,50 @@ describe('TaskEditor recovery journal', () => {
     expect(screen.getByLabelText('Длительность')).toHaveValue(90)
     expect(screen.getByLabelText('Дедлайн')).toBeDisabled()
     expect(screen.queryByRole('combobox', { name: 'Срочность вручную' })).not.toBeInTheDocument()
+  })
+
+  it('restores an all-day draft without exposing conflicting timing controls', async () => {
+    const user = userEvent.setup()
+    expect(writeTaskDraft({
+      ...recoveryData,
+      allDay: true,
+      allDayDate: '2026-08-23',
+      startAt: '',
+      deadline: '',
+      plannedDurationMinutes: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    }).status).toBe('saved')
+    await renderEditor()
+
+    await user.click(screen.getByRole('button', { name: 'Восстановить' }))
+
+    expect(screen.getByRole('button', { name: 'Весь день' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('Дата')).toHaveValue('2026-08-23')
+    expect(screen.queryByLabelText('Начало')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Длительность')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Дедлайн')).not.toBeInTheDocument()
+  })
+
+  it('restores selected all-day mode when the required date was cleared before closing', async () => {
+    const user = userEvent.setup()
+    const firstEditor = await mountEditor()
+    await user.click(screen.getByRole('button', { name: 'Весь день' }))
+    await user.clear(screen.getByLabelText('Дата'))
+    await user.click(screen.getByRole('button', { name: 'Закрыть' }))
+
+    expect(firstEditor.onClose).toHaveBeenCalledOnce()
+    expect(readTaskDraft()?.data).toMatchObject({ allDay: true, allDayDate: '' })
+    firstEditor.view.unmount()
+    await renderEditor()
+
+    await user.click(screen.getByRole('button', { name: 'Восстановить' }))
+
+    expect(screen.getByRole('button', { name: 'Весь день' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('Дата')).toHaveValue('')
+    expect(screen.queryByLabelText('Начало')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Длительность')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Дедлайн')).not.toBeInTheDocument()
   })
 
   it('keeps a recovered legacy deadline but requires start before creating the task', async () => {
@@ -797,6 +936,8 @@ describe('TaskEditor recovery journal', () => {
       title: 'Временный текст',
       description: '',
       projectId: 'inbox',
+      allDay: false,
+      allDayDate: '',
       startAt: '',
       deadline: '',
       plannedDurationMinutes: '',
@@ -824,6 +965,8 @@ describe('TaskEditor recovery journal', () => {
       title: 'Старый локальный текст',
       description: '',
       projectId: 'inbox',
+      allDay: false,
+      allDayDate: '',
       startAt: '',
       deadline: '',
       plannedDurationMinutes: '',

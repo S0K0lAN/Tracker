@@ -5,13 +5,14 @@ import { isSameLocalDay } from '../domain/models'
 import { PageHeader } from '../components/PageHeader'
 import { TaskCard } from '../components/TaskCard'
 import { useApp } from '../state/AppContext'
+import { isSameLocalDateKey } from './calendarLayout'
 import './workspace-pages.css'
 
 export function TodayPage({ onEditTask }: { onEditTask: (task: Task | null) => void }) {
   const { state } = useApp()
   const now = new Date()
   const active = state.tasks.filter((task) => task.status === 'active')
-  const scheduled = active.filter((task) => isSameLocalDay(task.startAt, now))
+  const scheduled = active.filter((task) => isSameLocalDay(task.startAt, now) || isSameLocalDateKey(task.allDayDate, now))
   const scheduledIds = new Set(scheduled.map((task) => task.id))
   const deadlines = active.filter((task) => isSameLocalDay(task.deadline, now) && !scheduledIds.has(task.id))
   const total = new Set([...scheduled, ...deadlines].map((task) => task.id)).size

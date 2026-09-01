@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Attachment, Task } from '../domain/models'
-import { getEffectiveUrgencyThreshold, getTaskTiming } from '../domain/models'
+import { getEffectiveUrgencyThreshold, getTaskUrgencySignal } from '../domain/models'
 import { useApp } from '../state/AppContext'
 import { AttachmentViewer } from './AttachmentViewer'
 import { setInert, trapTabKey } from './focusTrap'
@@ -30,11 +30,26 @@ const dateTimeFormatter = new Intl.DateTimeFormat('ru-RU', {
   hour: '2-digit',
   minute: '2-digit',
 })
+const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
 
 const formatDateTime = (value?: string) => {
   if (!value) return undefined
   const timestamp = Date.parse(value)
   return Number.isNaN(timestamp) ? undefined : dateTimeFormatter.format(timestamp)
+}
+
+const formatLocalDate = (value?: string) => {
+  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return undefined
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  if (date.getFullYear() !== Number(match[1])
+    || date.getMonth() !== Number(match[2]) - 1
+    || date.getDate() !== Number(match[3])) return undefined
+  return dateFormatter.format(date)
 }
 
 const formatFileSize = (bytes: number) => {
@@ -68,12 +83,33 @@ export function TaskDetails({
   const returnFocusRef = useRef<HTMLElement | null>(returnFocusTo ?? (document.activeElement as HTMLElement | null))
   const restoreFocusRef = useRef(true)
   const project = state.projects.find((item) => item.id === task.projectId)
-  const timing = getTaskTiming(task, new Date(), project?.urgencyThresholdHours)
+  const urgencySignal = getTaskUrgencySignal(task, new Date(), project?.urgencyThresholdHours)
   const effectiveUrgencyThreshold = getEffectiveUrgencyThreshold(task, project?.urgencyThresholdHours)
   const hasIndividualUrgencyThreshold = task.urgencyThresholdOverrideHours !== undefined
   const completedSubtasks = task.subtasks.filter((item) => item.completed).length
   const startAt = formatDateTime(task.startAt)
   const deadline = formatDateTime(task.deadline)
+  const allDayDate = formatLocalDate(task.allDayDate)
+  const isActive = task.status === 'active'
+  const urgencyLabel = !isActive
+    ? 'Нет срочности'
+    : urgencySignal === 'high'
+    ? 'Срочная'
+    : task.urgencyOverride === 'low'
+      ? 'Не срочная'
+      : 'Нет срочности'
+  const inactiveUrgencyNote = task.status === 'completed'
+    ? 'Задача завершена'
+    : task.status === 'archived'
+      ? 'Задача в архиве'
+      : task.status === 'deleted'
+        ? 'Задача в корзине'
+        : undefined
+  const urgencyTimingNote = inactiveUrgencyNote ?? (task.urgencyOverride
+    ? 'Установлено вручную'
+    : urgencySignal === 'high'
+      ? `${effectiveUrgencyThreshold} ч до дедлайна`
+      : `Станет срочной за ${effectiveUrgencyThreshold} ч до дедлайна`)
 
   useLayoutEffect(() => {
     closeRef.current?.focus()
@@ -205,18 +241,18 @@ export function TaskDetails({
               <div className="task-details__fact">
                 <dt><Clock3 size={16} /> Срочность</dt>
                 <dd className="task-details__urgency-value">
-                  <span className={timing.urgency === 'high' ? 'task-details__urgent' : undefined}>
-                    {timing.urgency === 'high' ? 'Срочная' : 'Не срочная'}
+                  <span className={urgencySignal === 'high' ? 'task-details__urgent' : undefined}>
+                    {urgencyLabel}
                   </span>
                   <small className="task-details__urgency-note">
-                    <span>{effectiveUrgencyThreshold} ч до дедлайна</span>
-                    <span>
+                    <span>{urgencyTimingNote}</span>
+                    {isActive && <span>
                       {hasIndividualUrgencyThreshold
                         ? 'Индивидуальный для задачи'
                         : project
                           ? `Наследуется из проекта «${project.name}»`
                           : 'Системное значение'}
-                    </span>
+                    </span>}
                   </small>
                 </dd>
               </div>
@@ -224,22 +260,33 @@ export function TaskDetails({
             <div className="task-details__fact task-details__fact--schedule">
               <dt><CalendarClock size={16} /> Планирование</dt>
               <dd className="task-details__schedule">
-                <span className="task-details__schedule-item">
-                  <small>Начало</small>
-                  <strong>{startAt ?? 'Не задано'}</strong>
-                </span>
-                {task.plannedDurationMinutes !== undefined && (
+                {allDayDate ? <>
                   <span className="task-details__schedule-item">
-                    <small>Длительность</small>
-                    <strong>{formatDuration(task.plannedDurationMinutes)}</strong>
+                    <small>Дата</small>
+                    <strong>{allDayDate}</strong>
                   </span>
-                )}
-                {deadline && (
                   <span className="task-details__schedule-item">
-                    <small>Дедлайн</small>
-                    <strong>{deadline}</strong>
+                    <small>Режим</small>
+                    <strong>Весь день</strong>
                   </span>
-                )}
+                </> : <>
+                  <span className="task-details__schedule-item">
+                    <small>Начало</small>
+                    <strong>{startAt ?? 'Не задано'}</strong>
+                  </span>
+                  {task.plannedDurationMinutes !== undefined && (
+                    <span className="task-details__schedule-item">
+                      <small>Длительность</small>
+                      <strong>{formatDuration(task.plannedDurationMinutes)}</strong>
+                    </span>
+                  )}
+                  {deadline && (
+                    <span className="task-details__schedule-item">
+                      <small>Дедлайн</small>
+                      <strong>{deadline}</strong>
+                    </span>
+                  )}
+                </>}
               </dd>
             </div>
           </dl>

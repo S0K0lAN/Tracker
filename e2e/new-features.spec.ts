@@ -394,7 +394,7 @@ test('calendar uses a fixed green task palette and a white today frame in every 
 
     const importantTask = page.locator('.calendar-task').filter({ hasText: 'Зелёная важная задача' })
     await expect(importantTask).toHaveAttribute('data-importance', 'high')
-    await expect(importantTask).toHaveAttribute('data-urgency', 'low')
+    await expect(importantTask).not.toHaveAttribute('data-urgency')
     await expect(importantTask).toHaveAccessibleName(/Важная задача/)
     await expect(importantTask).not.toHaveAccessibleName(/Срочная задача/)
     await expect(importantTask.locator('.calendar-task-signal--importance')).toBeVisible()
@@ -923,7 +923,7 @@ test('a project urgency threshold is inherited by its tasks and updates without 
 
   const taskCard = page.locator('.task-card').filter({ hasText: taskTitle })
   await expect(taskCard).toBeVisible()
-  await expect(taskCard.getByText('Не срочно', { exact: true })).toBeVisible()
+  await expect(taskCard.getByText('Не срочно', { exact: true })).toHaveCount(0)
   await taskCard.locator('.task-card__body').click()
   let details = page.getByRole('dialog', { name: taskTitle })
   await expect(details.getByText('24 ч до дедлайна')).toBeVisible()

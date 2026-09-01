@@ -36,9 +36,15 @@ describe('new workspace pages', () => {
         value.setHours(hour, 0, 0, 0)
         return value.toISOString()
       }
+      const todayKey = [
+        new Date().getFullYear(),
+        String(new Date().getMonth() + 1).padStart(2, '0'),
+        String(new Date().getDate()).padStart(2, '0'),
+      ].join('-')
       state.tasks = [
         { ...template, id: 'today-scheduled', title: 'Запланированная задача', startAt: todayAt(9), deadline: todayAt(18) },
         { ...template, id: 'today-deadline', title: 'Только сегодняшний дедлайн', startAt: undefined, deadline: todayAt(17) },
+        { ...template, id: 'today-all-day', title: 'Задача на весь день', startAt: undefined, plannedDurationMinutes: undefined, deadline: undefined, allDayDate: todayKey },
       ]
     })
 
@@ -48,6 +54,7 @@ describe('new workspace pages', () => {
     expect(scheduled).not.toBeNull()
     expect(deadlines).not.toBeNull()
     expect(within(scheduled!).getByText('Запланированная задача')).toBeInTheDocument()
+    expect(within(scheduled!).getByText('Задача на весь день')).toBeInTheDocument()
     expect(within(deadlines!).queryByText('Запланированная задача')).not.toBeInTheDocument()
     expect(within(deadlines!).getByText('Только сегодняшний дедлайн')).toBeInTheDocument()
   })
@@ -316,6 +323,7 @@ describe('task lifecycle', () => {
     renderApp('/inbox', (state) => {
       const completed = state.tasks.find((task) => task.id === 'task-done')!
       completed.projectId = 'inbox'
+      completed.allDayDate = undefined
       completed.startAt = undefined
       completed.deadline = undefined
       const completedInProject = state.tasks.find((task) => task.id === 'task-plan')!

@@ -13,6 +13,8 @@ const draft: TaskDraftData = {
   title: 'Подготовить отчёт',
   description: 'Сверить цифры',
   projectId: 'work',
+  allDay: false,
+  allDayDate: '',
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
   plannedDurationMinutes: '',
@@ -47,7 +49,7 @@ describe('task draft recovery journal', () => {
     expect(writeTaskDraft(inherited).status).toBe('saved')
 
     expect(readTaskDraft()?.data).toEqual(inherited)
-    expect(JSON.parse(localStorage.getItem(getTaskDraftStorageKey())!).version).toBe(4)
+    expect(JSON.parse(localStorage.getItem(getTaskDraftStorageKey())!).version).toBe(5)
   })
 
   it('drops urgency settings from a draft without a deadline', () => {
@@ -157,6 +159,72 @@ describe('task draft recovery journal', () => {
       deadline: draft.deadline,
       plannedDurationMinutes: '',
     })
+  })
+
+  it('migrates a version 4 draft with an empty all-day date', () => {
+    const { allDay: _allDay, allDayDate: _allDayDate, ...version4Data } = draft
+    localStorage.setItem(getTaskDraftStorageKey(), JSON.stringify({
+      version: 4,
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      writeId: 'version-4-write',
+      revision: 1,
+      data: version4Data,
+    }))
+
+    expect(readTaskDraft()?.data).toEqual({ ...draft, allDayDate: '' })
+  })
+
+  it('round-trips a date-only all-day draft', () => {
+    const allDayDraft: TaskDraftData = {
+      ...draft,
+      allDay: true,
+      allDayDate: '2026-08-22',
+      startAt: '',
+      deadline: '',
+      plannedDurationMinutes: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    }
+
+    expect(writeTaskDraft(allDayDraft).status).toBe('saved')
+    expect(readTaskDraft()?.data).toEqual(allDayDraft)
+  })
+
+  it('keeps an unfinished all-day draft selected before its required date is filled', () => {
+    const unfinishedAllDayDraft: TaskDraftData = {
+      ...draft,
+      allDay: true,
+      allDayDate: '',
+      startAt: '',
+      deadline: '',
+      plannedDurationMinutes: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    }
+
+    expect(writeTaskDraft(unfinishedAllDayDraft).status).toBe('saved')
+    expect(readTaskDraft()?.data).toEqual(unfinishedAllDayDraft)
+  })
+
+  it('rejects invalid all-day dates and conflicting timing fields', () => {
+    const allDayDraft: TaskDraftData = {
+      ...draft,
+      allDay: true,
+      allDayDate: '2026-08-22',
+      startAt: '',
+      deadline: '',
+      plannedDurationMinutes: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    }
+
+    expect(writeTaskDraft({ ...allDayDraft, allDayDate: '2026-02-30' }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, allDay: false }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, allDay: 'yes' } as unknown as TaskDraftData).status).toBe('invalid')
+    expect(writeTaskDraft({ ...draft, allDay: true }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, startAt: '2026-08-22T09:00' }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, plannedDurationMinutes: 60 }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, deadline: '2026-08-22T18:00' }).status).toBe('invalid')
   })
 
   it('rejects planned durations outside the supported one-day range', () => {

@@ -48,14 +48,14 @@ Done браузерного MVP. Они честно вынесены в отд�
 | NAV-01 | Отдельная страница «Сегодня» | **Готово** | `/today` есть в desktop/mobile navigation; component-тест проверяет секции и отсутствие дубля scheduled deadline, E2E — direct URL, Back/Forward и heading. |
 | NAV-02 | Доступная навигация на промежуточной ширине | **Готово** | React и CSS используют единый breakpoint 820 px; desktop Sidebar остаётся доступным на 1024 px, а mobile drawer получает dialog/inert semantics. Сценарии покрыты Playwright. |
 | PRJ-01 | Создание и lifecycle проектов | **Готово** | `/projects` поддерживает создание и редактирование названия/цвета/описания, detail и подтверждаемое удаление. Component проверяет menu/edit; reducer при удалении переносит задачи в системный проект «Без проекта» и очищает `projectId` сохранённых фильтров. Датированные задачи не появляются в default-режиме «Неразобранные», но доступны через «Все». Архив/иерархия и duplicate-name UX остаются вне критерия. |
-| PRJ-02 | Порог срочности проекта (#31) | **Готово** | Каждый проект хранит положительный порог; задачи с дедлайном наследуют его, могут выбрать явный override, а manual urgency сохраняет высший приоритет. Без дедлайна эти настройки очищаются и не отображаются. Миграции v1–v6 в текущую v7 сохраняют эффективный порог; domain/component/E2E проверяют расчёт, сохранение и изменение наследуемого значения. |
+| PRJ-02 | Порог и видимый сигнал срочности (#31) | **Готово** | Каждый проект хранит положительный порог; задачи с дедлайном наследуют его, могут выбрать явный override, а manual urgency сохраняет высший приоритет. По умолчанию выбрано «Нет»: без дедлайна и до порога пользовательский сигнал не отображается, хотя эффективное `low` сохраняется для матрицы и фильтров. В all-day режиме настройки срочности запрещены. Domain/component/E2E проверяют расчёт, сохранение и изменение наследуемого значения. |
 | ATT-01 | Просмотр фото и файлов | **Готово** | Viewer открывает image/PDF/text, поддерживает zoom, download, `Escape` и возврат focus; E2E загружает text attachment и повторно открывает после reload в пределах лимита браузерного MVP. |
 | FLT-01 | Составной и сохраняемый фильтр | **Готово** | Есть status/project/importance/urgency/tags ANY/ALL; UI показывает активные условия, сброс; E2E сохраняет и применяет named filter после reload. |
 | SEARCH-01 | Поиск задач, проектов, тегов и фильтров | **Готово** | `/search` регистронезависимо группирует четыре типа результатов; component/E2E подтверждают кириллический поиск, empty state, сохранение и повторное применение фильтра. |
 | TRASH-01 | Корзина удалённых задач | **Готово** | Soft delete → `/trash` → reload → restore проходит E2E; восстановленная неразобранная задача возвращается во Входящие, permanent delete требует и component-тестом проверяет явное второе подтверждение. |
 | POM-01 | Таймер фокуса для задачи | **Готово** | Действие явно подписано «Таймер фокуса · 25 минут»; desktop/mobile E2E проверяют task binding, pause и timestamp persistence после reload, а fake-clock unit — начисление минут, short/long break и каждый четвёртый цикл. |
-| CAL-01 | Дедлайны и навигация календаря (#33, #45) | **Готово** | Каждая задача с дедлайном отображается зелёной непрерывной полосой `startAt → deadline` с иконкой и точным временем в секции «Весь день» week/3-day/day и в месяце без временного или строкового дубля; legacy deadline-only остаётся однодневной. Белая рамка today лежит под задачами, отдельной overdue-индикации нет. |
-| CAL-02 | Длительность задачи (#46) | **Готово** | Schema v9 хранит необязательные 1–1440 целых минут и запрещает duration вместе с deadline; редактор требует сначала очистить один режим, week/3-day/day не переносят блок через полночь, migration/unit/component/E2E проверяют persistence и projection. |
+| CAL-01 | «Весь день», дедлайны и навигация календаря (#33, #44, #45) | **Готово** | Одно нажатие в новом редакторе создаёт обычную задачу с текущим локальным `allDayDate`, без времени, длительности, дедлайна и срочности. Она показана однодневной полосой в week/3-day/day, зелёной строкой месяца и точечным событием года. Каждая дедлайновая задача отдельно отображается зелёной непрерывной полосой `startAt → deadline` с иконкой и точным временем без дубля; legacy deadline-only остаётся однодневной. Белая рамка today лежит под задачами, отдельной overdue-индикации нет. |
+| CAL-02 | Длительность задачи (#46) | **Готово** | Текущая schema v10 хранит необязательные 1–1440 целых минут и запрещает duration вместе с deadline или `allDayDate`; редактор требует сначала очистить конфликтующий режим, week/3-day/day не переносят блок через полночь, migration/unit/component/E2E проверяют persistence и projection. |
 | CAL-03 | Выполненные задачи в календаре | **Готово** | Активные и завершённые задачи отображаются во всех пяти календарных режимах, а архивные и удалённые исключаются; component/E2E проверяют сохранение после completion и reload. |
 | INB-01 | Сортировка входящих | **Готово** | Доступны created desc, nearest deadline, importance и title; для недатированного default-набора nearest deadline сохраняет порядок создания. Component проверяет порядок, E2E — сохранение выбора после reload. |
 | ARC-01 | Архив выполненных задач | **Готово** | Individual/bulk archive, отдельный Archive tab, restore и reload реализованы; массовое действие действует только на видимые завершённые задачи выбранного фильтра, component/E2E проверяют persistence и возврат в completed Inbox. |
@@ -63,7 +63,7 @@ Done браузерного MVP. Они честно вынесены в отд�
 | HAB-02 | Независимое выполнение привычек | **Готово** | Component/E2E отмечают одну привычку, доказывают неизменность другой и persistence после reload. |
 | HAB-03 | 10 векторных иконок привычки | **Готово** | Component проверяет все 10 Lucide radio-options и выбранную «Книгу»; E2E подтверждает иконку после reload. |
 | HAB-04 | Описание и редактирование привычки | **Готово** | Создание, редактирование и reload имени, optional description, иконки и истории покрыты component/E2E. Настройка `targetDays` и цвета в этот критерий не входит и ещё не реализована. |
-| INB-02 | Scope, list/board и отдельный календарь | **Готово** | Domain/component проверяют default-набор `projectId=inbox AND no startAt AND no deadline`, scoped navigation count и возврат полного прежнего набора кнопкой «Все»; windowed list предоставляет keyboard/AT-навигацию по всем диапазонам, list/board сохраняются, `/calendar` остаётся самостоятельным маршрутом. |
+| INB-02 | Scope, list/board и отдельный календарь | **Готово** | Domain/component проверяют default-набор `projectId=inbox AND no allDayDate AND no startAt AND no deadline`, scoped navigation count и возврат полного прежнего набора кнопкой «Все»; windowed list предоставляет keyboard/AT-навигацию по всем диапазонам, list/board сохраняются, `/calendar` остаётся самостоятельным маршрутом. |
 | BG-01 | Встроенные фоны | **Готово** | Presets, «без фона», dim и global application реализованы; E2E проверяет preset/reload, все страницы — light/dark desktop/mobile contrast и overflow. |
 | BG-02 | Собственный фон | **Готово** | MIME/size validation, upload, global application и reload покрыты E2E в честно документированных browser/localStorage лимитах. |
 | TYPE-01 | Настройка шрифта всего приложения | **Готово** | Три локальных системных стека и масштаб 90–120% применяются CSS variables; schema v2 мигрирует в v3, component/E2E проверяют persistence и отсутствие mobile overflow при 120%. |
@@ -72,7 +72,7 @@ Done браузерного MVP. Они честно вынесены в отд�
 | VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет default `startAt`, явные «до»/«дедлайн»/«срок», weekday, time, importance, tags и project; component проверяет, что голосовой дедлайн требует начала и не удаляет его. |
 | DES-01 | Лаконичный дизайн Todoist/Singularity | **Готово** | Общие tokens и progressive disclosure реализованы; независимый аудит desktop 1440×900, intermediate 1024×900 и mobile 390×844 подтвердил layering, focus и отсутствие horizontal overflow. |
 | QA-01 | Независимое покрытие новых функций | **Готово** | Набор содержит unit/component/E2E с наблюдаемыми эффектами, единый automatic browser-error gate, обе темы и desktop/intermediate/mobile loops. GitHub Actions повторяет unit/build и E2E для PR/main. |
-| DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v9, миграциям v1–v8, ограничениям и тестам. |
+| DOC-01 | Синхронизировать документацию | **Готово** | `README.md`, `AGENTS.md`, `docs/business-requirements.md`, `docs/extended-features.md` и эта матрица согласованы по девяти маршрутам, schema v10, миграциям v1–v9, ограничениям и тестам. |
 | SYNC-01 | Подключить Google Drive через OAuth без сохранения token | **Готово** | GIS runtime использует только `drive.appdata`; подключение лишь авторизует и не переносит данные. Unit и mock-browser E2E проверяют connect, повторный вход после reload/401 и отсутствие token в localStorage/remote envelope. Live smoke честно вынесен за scope без credentials. |
 | SYNC-02 | Разделить получение, отправку и согласование данных | **Готово** | «Получить» не пишет remote, при отсутствии файла ничего не меняет, а применение отличающейся копии требует preview/confirm и создаёт rollback backup. «Отправить» не применяет remote локально, использует revision precondition и требует confirm при различии. Ручное «Синхронизировать» и авто-sync используют reconcile; component/unit и mock-browser E2E проверяют наблюдаемые эффекты каждого направления и конфликтов. |
 | SYNC-03 | Задел под новые хранилища | **Готово** | Второй configurable interactive provider полностью подключается через registry descriptor/runtime; component-тест проверяет defaults, required public config, connect и upload без Google-specific ветки. Secret config registry отклоняет. |
@@ -88,24 +88,32 @@ Done браузерного MVP. Они честно вынесены в отд�
   фиксированным `now`, включая Unicode-safe границы кириллических токенов.
 - `src/components/TaskEditor.test.tsx` — применение голосовой даты к началу или
   дедлайну с обязательным сохранением начала, запрет очистки начала до дедлайна,
-  сброс невалидного ручного ввода, наследование проектного порога и возврат с
-  индивидуального порога к наследуемому.
+  one-click режим «Весь день» на текущую локальную дату, взаимоисключающие
+  варианты планирования, default срочность «Нет», сброс невалидного ручного
+  ввода, наследование проектного порога и возврат с индивидуального порога к
+  наследуемому.
 - `src/components/TaskDetails.test.tsx` — read mode, подзадачи, task actions и
-  focus restore; `SettingsTypography.test.tsx` — применение/миграция шрифта.
+  focus restore, date-only представление и отсутствие default-сигнала
+  срочности; `SettingsTypography.test.tsx` — применение/миграция шрифта.
 - `src/pages/ProjectsPage.test.tsx` — menu проекта, редактирование и сохранение
   обновлённого названия/описания/цвета/порога, default нового проекта и
   сохранение эффективного порога задач при удалении проекта.
 - `src/NewFeatures.test.tsx` — Today, Projects, Search, soft delete/restore,
   permanent delete confirmation, archive/restore, сортировка, list/board
-  Входящих и отдельный календарь, Pomodoro, deadline all-day/month ranges без дублей и с legacy-совместимостью, `Escape` внутри `SelectMenu` и
+  Входящих и отдельный календарь, Pomodoro, обычные date-only и дедлайновые
+  all-day/month ranges без дублей и с legacy-совместимостью, `Escape` внутри `SelectMenu` и
   keyboard navigation task action-menu, 42-cell calendar и focus trap/restore
   TaskEditor, AttachmentViewer и mobile Sidebar.
 - `src/pages/HabitsPage.test.tsx` — rhythm/streak, независимый toggle,
   10 иконок и optional description.
 - `src/domain/models.test.ts`, `migrations.test.ts` и `taskFilters.test.ts` —
-  приоритет ручной срочности и task override, проектный порог, миграции
-  schema v1–v8 без изменения эффективных значений, habit history, взаимное
-  исключение duration/deadline и saved-filter projection.
+  приоритет ручной срочности и task override, отсутствие пользовательского
+  сигнала по умолчанию, проектный порог, миграции schema v1–v9 без изменения
+  эффективных значений, habit history, взаимное исключение
+  all-day/duration/deadline и saved-filter projection.
+- `src/domain/seed.test.ts` — schema v10, стабильность базовых fixture ID и
+  воспроизводимые активные/завершённые all-day, timed, deadline и inbox
+  сценарии без конфликтующих полей.
 - `src/core/sync/GoogleDriveAdapter.test.ts` — контрактные сценарии Drive.
 - `src/core/auth/GoogleIdentityAuthorization.test.ts` — GIS scope/session,
   expiry, revoke, retry загрузки script и отмена позднего OAuth callback.
@@ -141,9 +149,9 @@ Done браузерного MVP. Они честно вынесены в отд�
     preview/backup → отдельная отправка local с revision guard → reconcile
     автосинхронизации → reload без сохранения token → восстановление backup до
     импорта.
-14. project threshold 24 ч → задача с дедлайном «Не срочно» → изменение порога
-    проекта на 168 ч → та же наследующая задача «Срочно», без task override в
-    сохранённом snapshot.
+14. project threshold 24 ч → задача с дедлайном без видимого сигнала →
+    изменение порога проекта на 168 ч → та же наследующая задача «Срочно», без
+    task override в сохранённом snapshot.
 
 `e2e/task-details.spec.ts` отдельно проверяет, что карточка открывает просмотр,
 редактирование остаётся явным, а timer/menu actions меняют DOM и persisted state.

@@ -9,6 +9,62 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction((storageKey) => localStorage.getItem(storageKey), STORAGE_KEY)
 })
 
+test('creates an ordinary all-day task with one button and keeps it date-only after reload', async ({ page }) => {
+  const taskTitle = 'Обычная задача на весь день'
+  const todayKey = await page.evaluate(() => {
+    const now = new Date()
+    const pad = (value: number) => String(value).padStart(2, '0')
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  })
+
+  await page.goto('/calendar')
+  await page.locator('.page-header').getByRole('button', { name: 'Запланировать' }).click()
+  await page.getByLabel('Название').fill(taskTitle)
+  const allDayToggle = page.getByRole('button', { name: 'Весь день' })
+  await expect(allDayToggle).toHaveAttribute('aria-pressed', 'false')
+  await allDayToggle.click()
+
+  await expect(allDayToggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByLabel('Дата')).toHaveValue(todayKey)
+  await expect(page.getByRole('textbox', { name: 'Начало', exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('Длительность')).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'Дедлайн', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('combobox', { name: 'Срочность вручную' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
+
+  const weekTask = page.locator('.time-calendar--week .time-calendar__all-day-range').filter({ hasText: taskTitle })
+  await expect(weekTask).toBeVisible()
+  await expect(weekTask).toHaveAttribute('data-all-day-kind', 'task')
+  await expect(weekTask).not.toHaveAttribute('data-urgency')
+  await expect.poll(() => page.evaluate(({ storageKey, title }) => {
+    const raw = localStorage.getItem(storageKey)
+    const task = raw
+      ? JSON.parse(raw).tasks.find((item: { title: string }) => item.title === title)
+      : undefined
+    return task
+      ? {
+          allDayDate: task.allDayDate ?? null,
+          hasStart: Object.hasOwn(task, 'startAt'),
+          hasDuration: Object.hasOwn(task, 'plannedDurationMinutes'),
+          hasDeadline: Object.hasOwn(task, 'deadline'),
+          hasUrgency: Object.hasOwn(task, 'urgencyOverride'),
+        }
+      : undefined
+  }, { storageKey: STORAGE_KEY, title: taskTitle })).toEqual({
+    allDayDate: todayKey,
+    hasStart: false,
+    hasDuration: false,
+    hasDeadline: false,
+    hasUrgency: false,
+  })
+
+  await page.reload()
+  await expect(page.locator('.time-calendar--week .time-calendar__all-day-range').filter({ hasText: taskTitle })).toBeVisible()
+  await page.getByRole('button', { name: 'Месяц', exact: true }).click()
+  await expect(page.locator('.month-day__task--all-day').filter({ hasText: taskTitle })).toHaveCount(1)
+  await expect(page.locator('.month-calendar .deadline-range').filter({ hasText: taskTitle })).toHaveCount(0)
+})
+
 test('planned duration and deadline are mutually exclusive and switch calendar projections', async ({ page }) => {
   const dates = await page.evaluate(() => {
     const now = new Date()

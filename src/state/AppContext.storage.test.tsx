@@ -169,6 +169,14 @@ function TimingPolicyHarness() {
     plannedDurationMinutes: 60,
     deadline: '2026-08-31T15:00:00.000Z',
   }
+  const conflictingAllDay = {
+    ...template,
+    id: 'all-day-with-start',
+    allDayDate: '2026-08-31',
+    startAt: '2026-08-31T12:00:00.000Z',
+    plannedDurationMinutes: undefined,
+    deadline: undefined,
+  }
   const captureSyncResult = (operation: () => void) => {
     try {
       operation()
@@ -182,6 +190,7 @@ function TimingPolicyHarness() {
       <output aria-label="timing result">{result}</output>
       <output aria-label="invalid timing tasks">{state.tasks.filter((task) => task.id === 'deadline-without-start').length}</output>
       <output aria-label="conflicting timing tasks">{state.tasks.filter((task) => task.id === 'duration-and-deadline').length}</output>
+      <output aria-label="conflicting all-day tasks">{state.tasks.filter((task) => task.id === 'all-day-with-start').length}</output>
       <output aria-label="first task start">{template.startAt ?? ''}</output>
       <button
         type="button"
@@ -201,6 +210,23 @@ function TimingPolicyHarness() {
       >save conflicting timing</button>
       <button type="button" onClick={() => captureSyncResult(() => addTask(conflictingTiming))}>add conflicting timing</button>
       <button type="button" onClick={() => captureSyncResult(() => updateTask({ ...template, plannedDurationMinutes: 60 }))}>update conflicting timing</button>
+      <button
+        type="button"
+        onClick={() => void saveTaskDurably(conflictingAllDay).then(
+          () => setResult('saved'),
+          (error: unknown) => setResult(error instanceof Error ? error.message : 'failed'),
+        )}
+      >save conflicting all-day</button>
+      <button type="button" onClick={() => captureSyncResult(() => addTask(conflictingAllDay))}>add conflicting all-day</button>
+      <button
+        type="button"
+        onClick={() => captureSyncResult(() => updateTask({
+          ...template,
+          allDayDate: '2026-08-31',
+          plannedDurationMinutes: undefined,
+          deadline: undefined,
+        }))}
+      >update conflicting all-day</button>
     </div>
   )
 }
@@ -286,6 +312,35 @@ describe('AppProvider storage persistence', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'update conflicting timing' }))
     expect(screen.getByLabelText('timing result')).toHaveTextContent('Task duration and deadline are mutually exclusive')
+    expect(adapter.writes).toHaveLength(1)
+  })
+
+  it('rejects an all-day date combined with timed scheduling in every mutation path', async () => {
+    const adapter = new DelayedStorageAdapter()
+    adapter.loadResult.resolve(loadedState())
+    render(
+      <AppProvider storageAdapter={adapter}>
+        <TimingPolicyHarness />
+      </AppProvider>,
+    )
+
+    await screen.findByLabelText('conflicting all-day tasks')
+    await waitFor(() => expect(adapter.writes).toHaveLength(1))
+    adapter.writes[0].resolve()
+    await waitFor(() => expect(adapter.activeWrites).toBe(0))
+
+    const expected = 'Task all-day date is mutually exclusive with start, duration, and deadline'
+    fireEvent.click(screen.getByRole('button', { name: 'save conflicting all-day' }))
+    await waitFor(() => expect(screen.getByLabelText('timing result')).toHaveTextContent(expected))
+    expect(screen.getByLabelText('conflicting all-day tasks')).toHaveTextContent('0')
+    expect(adapter.writes).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'add conflicting all-day' }))
+    expect(screen.getByLabelText('timing result')).toHaveTextContent(expected)
+    expect(screen.getByLabelText('conflicting all-day tasks')).toHaveTextContent('0')
+
+    fireEvent.click(screen.getByRole('button', { name: 'update conflicting all-day' }))
+    expect(screen.getByLabelText('timing result')).toHaveTextContent(expected)
     expect(adapter.writes).toHaveLength(1)
   })
 

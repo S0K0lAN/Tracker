@@ -35,6 +35,7 @@ export interface Task {
   title: string
   description: string
   projectId: string
+  allDayDate?: string
   startAt?: string
   plannedDurationMinutes?: number
   deadline?: string
@@ -167,6 +168,21 @@ export function getTaskTiming(
 
 export function getTaskUrgency(task: Task, now = new Date(), projectThreshold?: number): Urgency {
   return getTaskTiming(task, now, projectThreshold).urgency
+}
+
+/**
+ * User-visible urgency is a deadline-only signal. The effective low urgency is
+ * still used by filters and the Eisenhower matrix, but it is not a task badge.
+ */
+export function getTaskUrgencySignal(
+  task: Task,
+  now = new Date(),
+  projectThreshold?: number,
+): 'high' | undefined {
+  if (task.status !== 'active') return undefined
+  const parsedDeadline = task.deadline ? Date.parse(task.deadline) : Number.NaN
+  if (!Number.isFinite(parsedDeadline)) return undefined
+  return getTaskUrgency(task, now, projectThreshold) === 'high' ? 'high' : undefined
 }
 
 export function isSameLocalDay(value: string | undefined, date = new Date()): boolean {

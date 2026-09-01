@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from './models'
-import { getEffectiveUrgencyThreshold, getTaskTiming, getTaskUrgency } from './models'
+import { getEffectiveUrgencyThreshold, getTaskTiming, getTaskUrgency, getTaskUrgencySignal } from './models'
 
 const baseTask: Task = {
   id: 'task',
@@ -94,5 +94,25 @@ describe('task urgency', () => {
   it('keeps a past deadline urgent without a separate overdue classification', () => {
     const task = { ...baseTask, deadline: '2026-07-29T12:00:00.000Z' }
     expect(getTaskTiming(task, now)).toEqual({ urgency: 'high' })
+  })
+
+  it('does not expose urgency as a task signal by default', () => {
+    expect(getTaskUrgencySignal(baseTask, now)).toBeUndefined()
+    expect(getTaskUrgencySignal({ ...baseTask, deadline: 'not-a-date' }, now)).toBeUndefined()
+    expect(getTaskUrgencySignal({
+      ...baseTask,
+      deadline: '2026-08-03T12:00:00.000Z',
+    }, now)).toBeUndefined()
+  })
+
+  it('exposes high urgency only for an active task with a valid deadline', () => {
+    const urgentTask = {
+      ...baseTask,
+      deadline: '2026-08-01T12:00:00.000Z',
+    }
+
+    expect(getTaskUrgencySignal(urgentTask, now)).toBe('high')
+    expect(getTaskUrgencySignal({ ...urgentTask, urgencyOverride: 'low' }, now)).toBeUndefined()
+    expect(getTaskUrgencySignal({ ...urgentTask, status: 'completed' }, now)).toBeUndefined()
   })
 })

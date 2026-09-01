@@ -39,6 +39,30 @@ export function sameLocalDate(left: Date, right: Date) {
   return differenceInLocalDays(left, right) === 0
 }
 
+export function toLocalDateKey(value: Date) {
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, '0'),
+    String(value.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+export function dateFromLocalDateKey(value?: string) {
+  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return null
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return date.getFullYear() === Number(match[1])
+    && date.getMonth() === Number(match[2]) - 1
+    && date.getDate() === Number(match[3])
+    ? date
+    : null
+}
+
+export function isSameLocalDateKey(value: string | undefined, date: Date) {
+  const candidate = dateFromLocalDateKey(value)
+  return Boolean(candidate && sameLocalDate(candidate, date))
+}
+
 function validDate(value?: string) {
   if (!value) return null
   const date = new Date(value)
@@ -58,6 +82,11 @@ export interface TaskDateRange {
 }
 
 export function getTaskDateRange(task: Task): TaskDateRange | null {
+  const allDayDate = dateFromLocalDateKey(task.allDayDate)
+  if (allDayDate) {
+    const day = startOfLocalDay(allDayDate)
+    return { start: day, end: day }
+  }
   const plannedStart = validDate(task.startAt)
   const deadline = validDate(task.deadline)
   if (!plannedStart && !deadline) return null
@@ -75,7 +104,8 @@ export function tasksForLocalDate(tasks: Task[], date: Date) {
     const plannedStart = validDate(task.startAt)
     const deadline = validDate(task.deadline)
     return Boolean(
-      (plannedStart && sameLocalDate(plannedStart, date))
+      isSameLocalDateKey(task.allDayDate, date)
+      || (plannedStart && sameLocalDate(plannedStart, date))
       || (deadline && sameLocalDate(deadline, date)),
     )
   })
@@ -188,13 +218,13 @@ export interface PositionedDeadlineRange {
   range: TaskDateRange
 }
 
-export function layoutDeadlineRanges(tasks: Task[], visibleStartValue: Date, visibleEndValue: Date): PositionedDeadlineRange[] {
+function layoutTaskDateRanges(tasks: Task[], visibleStartValue: Date, visibleEndValue: Date): PositionedDeadlineRange[] {
   const visibleStart = startOfLocalDay(visibleStartValue)
   const visibleEnd = startOfLocalDay(visibleEndValue)
   const visibleDayCount = differenceInLocalDays(visibleEnd, visibleStart) + 1
   const candidates = tasks
     .map((task, index) => {
-      const range = validDate(task.deadline) ? getTaskDateRange(task) : null
+      const range = getTaskDateRange(task)
       if (!range || differenceInLocalDays(range.end, visibleStart) < 0 || differenceInLocalDays(range.start, visibleEnd) > 0) return null
       const columnStart = Math.max(0, differenceInLocalDays(range.start, visibleStart))
       const columnEnd = Math.min(visibleDayCount - 1, differenceInLocalDays(range.end, visibleStart))
@@ -230,4 +260,20 @@ export function layoutDeadlineRanges(tasks: Task[], visibleStartValue: Date, vis
     endsAfterView: item.endsAfterView,
     range: item.range,
   }))
+}
+
+export function layoutDeadlineRanges(tasks: Task[], visibleStartValue: Date, visibleEndValue: Date): PositionedDeadlineRange[] {
+  return layoutTaskDateRanges(
+    tasks.filter((task) => validDate(task.deadline) !== null),
+    visibleStartValue,
+    visibleEndValue,
+  )
+}
+
+export function layoutAllDayRanges(tasks: Task[], visibleStartValue: Date, visibleEndValue: Date): PositionedDeadlineRange[] {
+  return layoutTaskDateRanges(
+    tasks.filter((task) => validDate(task.deadline) !== null || dateFromLocalDateKey(task.allDayDate) !== null),
+    visibleStartValue,
+    visibleEndValue,
+  )
 }

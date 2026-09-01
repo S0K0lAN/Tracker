@@ -36,7 +36,9 @@ const minimalTask = (index: number): Task => ({
   focusMinutes: 0,
 })
 
-type PreDurationTask = Omit<Task, 'plannedDurationMinutes'> & { plannedDurationMinutes?: number }
+type PreDurationTask = Omit<Task, 'plannedDurationMinutes' | 'allDayDate'> & {
+  plannedDurationMinutes?: number
+}
 
 type LegacyTask = Omit<PreDurationTask, 'urgencyThresholdOverrideHours'> & {
   urgencyThresholdHours: number
@@ -56,7 +58,7 @@ function createLegacyState(schemaVersion: 1 | 2 | 3 | 4 = 4): LegacyAppState {
   return {
     ...current,
     schemaVersion,
-    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, ...task }) => ({
+    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, allDayDate: _allDayDate, ...task }) => ({
       ...task,
       urgencyThresholdHours: urgencyThresholdOverrideHours ?? current.settings.defaultUrgencyThresholdHours,
     })),
@@ -70,7 +72,7 @@ function createLegacyV5State() {
   return {
     ...current,
     schemaVersion: 5 as const,
-    tasks: current.tasks.map(({ plannedDurationMinutes: _duration, ...task }) => task as PreDurationTask),
+    tasks: current.tasks.map(({ plannedDurationMinutes: _duration, allDayDate: _allDayDate, ...task }) => task as PreDurationTask),
     habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit as LegacyHabit),
   }
 }
@@ -80,7 +82,7 @@ function createLegacyV6State() {
   return {
     ...current,
     schemaVersion: 6 as const,
-    tasks: current.tasks.map(({ plannedDurationMinutes: _duration, ...task }) => task as PreDurationTask),
+    tasks: current.tasks.map(({ plannedDurationMinutes: _duration, allDayDate: _allDayDate, ...task }) => task as PreDurationTask),
     habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit as LegacyHabit),
   }
 }
@@ -90,7 +92,10 @@ function createLegacyV7State() {
   return {
     ...current,
     schemaVersion: 7 as const,
-    tasks: current.tasks.map((task) => ({ ...task, plannedDurationMinutes: task.plannedDurationMinutes ?? 60 })),
+    tasks: current.tasks.map(({ allDayDate: _allDayDate, ...task }) => ({
+      ...task,
+      plannedDurationMinutes: task.plannedDurationMinutes ?? 60,
+    })),
     habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit as LegacyHabit),
   }
 }
@@ -100,7 +105,19 @@ function createLegacyV8State() {
   return {
     ...current,
     schemaVersion: 8 as const,
-    tasks: current.tasks.map((task) => ({ ...task, plannedDurationMinutes: task.plannedDurationMinutes ?? 60 })),
+    tasks: current.tasks.map(({ allDayDate: _allDayDate, ...task }) => ({
+      ...task,
+      plannedDurationMinutes: task.plannedDurationMinutes ?? 60,
+    })),
+  }
+}
+
+function createLegacyV9State() {
+  const current = createSeedState()
+  return {
+    ...current,
+    schemaVersion: 9 as const,
+    tasks: current.tasks.map(({ allDayDate: _allDayDate, ...task }) => task),
   }
 }
 
@@ -261,6 +278,15 @@ describe('state migrations for simplified navigation and habit icons', () => {
     expect(durationTask.plannedDurationMinutes).toBe(90)
   })
 
+  it('migrates schema v9 without inventing an all-day date', () => {
+    const legacy = createLegacyV9State()
+
+    const migrated = parseStoredAppState(legacy)
+
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+    expect(migrated.tasks.every((task) => task.allDayDate === undefined)).toBe(true)
+  })
+
   it('preserves a legacy deadline-only task without inventing a duration', () => {
     const legacy = createLegacyV6State()
     const deadline = '2026-09-03T12:00:00.000Z'
@@ -371,6 +397,90 @@ describe('state migrations for simplified navigation and habit icons', () => {
     invalid.tasks[0].plannedDurationMinutes = 60
 
     expect(() => parseStoredAppState(invalid)).toThrow(/tasks\[0\]\.plannedDurationMinutes/)
+  })
+
+  it('accepts a canonical date-only all-day task in the current schema', () => {
+    const current = createSeedState()
+    current.schemaVersion = CURRENT_SCHEMA_VERSION
+    const candidate = current.tasks[0]
+    candidate.allDayDate = '2026-09-01'
+    candidate.startAt = undefined
+    candidate.plannedDurationMinutes = undefined
+    candidate.deadline = undefined
+    candidate.urgencyThresholdOverrideHours = undefined
+    candidate.urgencyOverride = undefined
+
+    const parsed = parseStoredAppState(current)
+
+    expect(parsed.tasks[0].allDayDate).toBe('2026-09-01')
+    expect(parsed.tasks[0].startAt).toBeUndefined()
+    expect(parsed.tasks[0]).not.toHaveProperty('plannedDurationMinutes')
+    expect(parsed.tasks[0].deadline).toBeUndefined()
+  })
+
+  it.each([
+    ['invalid date', (task: Task) => { task.allDayDate = '2026-02-29' }],
+    ['start', (task: Task) => {
+      task.allDayDate = '2026-09-01'
+      task.startAt = '2026-09-01T09:00:00.000Z'
+      task.deadline = undefined
+    }],
+    ['duration', (task: Task) => {
+      task.allDayDate = '2026-09-01'
+      task.startAt = undefined
+      task.deadline = undefined
+      task.plannedDurationMinutes = 60
+    }],
+    ['deadline', (task: Task) => {
+      task.allDayDate = '2026-09-01'
+      task.startAt = undefined
+      task.plannedDurationMinutes = undefined
+      task.deadline = '2026-09-01T18:00:00.000Z'
+    }],
+    ['urgency override', (task: Task) => {
+      task.allDayDate = '2026-09-01'
+      task.startAt = undefined
+      task.plannedDurationMinutes = undefined
+      task.deadline = undefined
+      task.urgencyOverride = 'high'
+    }],
+    ['urgency threshold', (task: Task) => {
+      task.allDayDate = '2026-09-01'
+      task.startAt = undefined
+      task.plannedDurationMinutes = undefined
+      task.deadline = undefined
+      task.urgencyThresholdOverrideHours = 24
+    }],
+  ] as const)('rejects an all-day task with %s', (_case, mutate) => {
+    const invalid = createSeedState()
+    invalid.schemaVersion = CURRENT_SCHEMA_VERSION
+    mutate(invalid.tasks[0])
+
+    expect(() => parseStoredAppState(invalid)).toThrow(/tasks\[0\]\.allDayDate/)
+  })
+
+  it('repairs conflicting direct input with deadline, then all-day, then timed precedence', () => {
+    const deadlineWins = createSeedState()
+    deadlineWins.schemaVersion = CURRENT_SCHEMA_VERSION
+    deadlineWins.tasks[0].allDayDate = '2026-09-01'
+    deadlineWins.tasks[0].plannedDurationMinutes = 90
+
+    const allDayWins = createSeedState()
+    allDayWins.schemaVersion = CURRENT_SCHEMA_VERSION
+    allDayWins.tasks[1].allDayDate = '2026-09-02'
+    allDayWins.tasks[1].startAt = '2026-09-02T09:00:00.000Z'
+    allDayWins.tasks[1].plannedDurationMinutes = 60
+    allDayWins.tasks[1].deadline = undefined
+
+    const normalizedDeadline = normalizeAppState(deadlineWins).tasks[0]
+    const normalizedAllDay = normalizeAppState(allDayWins).tasks[1]
+
+    expect(normalizedDeadline.deadline).toBe(deadlineWins.tasks[0].deadline)
+    expect(normalizedDeadline).not.toHaveProperty('allDayDate')
+    expect(normalizedDeadline).not.toHaveProperty('plannedDurationMinutes')
+    expect(normalizedAllDay).toMatchObject({ allDayDate: '2026-09-02' })
+    expect(normalizedAllDay.startAt).toBeUndefined()
+    expect(normalizedAllDay).not.toHaveProperty('plannedDurationMinutes')
   })
 
   it('preserves a same-day v6 deadline without deriving a conflicting duration', () => {

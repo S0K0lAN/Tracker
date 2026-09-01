@@ -1,38 +1,46 @@
 import type { AppState, Task } from './models'
 
-export const DEMO_DATA_VERSION = '2026-08-01'
+export const DEMO_DATA_VERSION = '2026-09-01'
 
-const task = (data: Partial<Task> & Pick<Task, 'id' | 'title'>): Task => ({
-  id: data.id,
-  title: data.title,
-  description: data.description ?? '',
-  projectId: data.projectId ?? 'personal',
-  startAt: data.startAt,
-  ...(data.plannedDurationMinutes === undefined
-    ? {}
-    : { plannedDurationMinutes: data.plannedDurationMinutes }),
-  deadline: data.deadline,
-  ...(data.urgencyThresholdOverrideHours === undefined
-    ? {}
-    : { urgencyThresholdOverrideHours: data.urgencyThresholdOverrideHours }),
-  urgencyOverride: data.urgencyOverride,
-  importance: data.importance ?? 'low',
-  tags: data.tags ?? [],
-  subtasks: data.subtasks ?? [],
-  attachments: data.attachments ?? [],
-  reminders: data.reminders ?? [],
-  status: data.status ?? 'active',
-  createdAt: data.createdAt ?? new Date().toISOString(),
-  updatedAt: data.updatedAt ?? new Date().toISOString(),
-  completedAt: data.completedAt,
-  archivedAt: data.archivedAt,
-  deletedAt: data.deletedAt,
-  previousStatus: data.previousStatus,
-  focusMinutes: data.focusMinutes ?? 0,
-})
+type SeedTaskInput = Partial<Task> & Pick<Task, 'id' | 'title'>
+
+const buildTask = (data: SeedTaskInput, fallbackNow: string): Task => {
+  const createdAt = data.createdAt ?? fallbackNow
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description ?? '',
+    projectId: data.projectId ?? 'personal',
+    ...(data.startAt === undefined ? {} : { startAt: data.startAt }),
+    ...(data.allDayDate === undefined ? {} : { allDayDate: data.allDayDate }),
+    ...(data.plannedDurationMinutes === undefined
+      ? {}
+      : { plannedDurationMinutes: data.plannedDurationMinutes }),
+    ...(data.deadline === undefined ? {} : { deadline: data.deadline }),
+    ...(data.urgencyThresholdOverrideHours === undefined
+      ? {}
+      : { urgencyThresholdOverrideHours: data.urgencyThresholdOverrideHours }),
+    ...(data.urgencyOverride === undefined ? {} : { urgencyOverride: data.urgencyOverride }),
+    importance: data.importance ?? 'low',
+    tags: data.tags ?? [],
+    subtasks: data.subtasks ?? [],
+    attachments: data.attachments ?? [],
+    reminders: data.reminders ?? [],
+    status: data.status ?? 'active',
+    createdAt,
+    updatedAt: data.updatedAt ?? data.completedAt ?? data.createdAt ?? fallbackNow,
+    completedAt: data.completedAt,
+    archivedAt: data.archivedAt,
+    deletedAt: data.deletedAt,
+    previousStatus: data.previousStatus,
+    focusMinutes: data.focusMinutes ?? 0,
+  }
+}
 
 export const createSeedState = (): AppState => {
   const reference = new Date()
+  const fallbackNow = reference.toISOString()
+  const task = (data: SeedTaskInput) => buildTask(data, fallbackNow)
   const dateAt = (days: number, hour: number, minutes = 0) => {
     const value = new Date(reference)
     value.setDate(value.getDate() + days)
@@ -61,7 +69,7 @@ export const createSeedState = (): AppState => {
   const everyDay = [1, 2, 3, 4, 5, 6, 0]
 
   return {
-    schemaVersion: 9,
+    schemaVersion: 10,
     projects: [
       { id: 'inbox', name: 'Без проекта', color: '#9ca89c', urgencyThresholdHours: 72, createdAt: dateAt(-100, 9) },
       { id: 'work', name: 'Работа', color: '#778c70', urgencyThresholdHours: 72, description: 'Рабочие задачи и инициативы', createdAt: dateAt(-90, 9) },
@@ -267,11 +275,30 @@ export const createSeedState = (): AppState => {
         createdAt: dateAt(0, 7, 30),
       }),
       task({
+        id: 'task-all-day',
+        title: 'Разобрать личные документы',
+        description: 'Обычная задача на весь день без дедлайна и срочности.',
+        projectId: 'personal',
+        allDayDate: dateKeyAt(0),
+        tags: ['личное', 'порядок'],
+        createdAt: dateAt(-2, 9),
+      }),
+      task({
+        id: 'task-all-day-future',
+        title: 'Навести порядок дома',
+        description: 'Будущая задача на весь день без привязки ко времени.',
+        projectId: 'personal',
+        allDayDate: dateKeyAt(6),
+        tags: ['дом', 'порядок'],
+        createdAt: dateAt(-1, 9),
+      }),
+      task({
         id: 'task-done',
         title: 'Разобрать входящие заметки',
         projectId: 'personal',
+        allDayDate: dateKeyAt(0),
         status: 'completed',
-        completedAt: dateAt(-1, 20),
+        completedAt: dateAt(0, 8),
         tags: ['порядок'],
         focusMinutes: 25,
         createdAt: dateAt(-5, 18),
