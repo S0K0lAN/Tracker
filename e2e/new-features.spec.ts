@@ -4,6 +4,7 @@ import { expect, test, type Page } from './fixtures'
 const STORAGE_KEY = 'focus-flow.state.v1'
 const CALENDAR_GREEN = 'rgb(47, 125, 75)'
 const CALENDAR_GREEN_SOFT = 'rgb(225, 241, 230)'
+const CALENDAR_ACCENT_VIOLET = 'rgb(118, 92, 150)'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/inbox')
@@ -338,7 +339,7 @@ test('calendar views, full month cell list and continuous deadline bands stay co
   await expect(page.getByRole('dialog', { name: /Все задачи дня/ })).toContainText('Диапазон проекта')
 })
 
-test('calendar uses a fixed green task palette and a white today frame in every view', async ({ page }) => {
+test('calendar uses a fixed green task palette and a compact today marker without a white frame', async ({ page }) => {
   await page.goto('/calendar')
   await page.evaluate((storageKey) => {
     const state = JSON.parse(localStorage.getItem(storageKey)!)
@@ -385,12 +386,31 @@ test('calendar uses a fixed green task palette and a white today frame in every 
     await page.getByRole('button', { name: mode, exact: true }).click()
     const currentDate = page.locator('[aria-current="date"]')
     await expect(currentDate).toHaveCount(1)
-    const frame = await currentDate.evaluate((node) => {
+    await expect(currentDate).toHaveClass(/is-today/)
+    expect(await currentDate.locator('strong').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_ACCENT_VIOLET)
+    const todayDecoration = await currentDate.evaluate((node) => {
       const day = node.closest('.week-day')!
-      const style = getComputedStyle(day, '::after')
-      return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth, zIndex: style.zIndex }
+      const surfaceStyle = getComputedStyle(day)
+      const pseudoStyle = getComputedStyle(day, '::after')
+      const sides = ['Top', 'Right', 'Bottom', 'Left'] as const
+      const hasWhitePseudoBorder = pseudoStyle.content !== 'none' && sides.some((side) => {
+        const width = Number.parseFloat(pseudoStyle[`border${side}Width`])
+        return width > 0
+          && pseudoStyle[`border${side}Style`] !== 'none'
+          && pseudoStyle[`border${side}Color`] === 'rgb(255, 255, 255)'
+      })
+      return {
+        hasWhitePseudoBorder,
+        hasWhitePseudoShadow: pseudoStyle.boxShadow.includes('rgb(255, 255, 255)'),
+        hasWhiteInsetSurfaceShadow: surfaceStyle.boxShadow.includes('inset')
+          && surfaceStyle.boxShadow.includes('rgb(255, 255, 255)'),
+      }
     })
-    expect(frame).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px', zIndex: '1' })
+    expect(todayDecoration).toEqual({
+      hasWhitePseudoBorder: false,
+      hasWhitePseudoShadow: false,
+      hasWhiteInsetSurfaceShadow: false,
+    })
 
     const importantTask = page.locator('.calendar-task').filter({ hasText: 'Зелёная важная задача' })
     await expect(importantTask).toHaveAttribute('data-importance', 'high')
@@ -410,35 +430,42 @@ test('calendar uses a fixed green task palette and a white today frame in every 
     await expect(urgentTask).not.toHaveAccessibleName(/Важная задача/)
     await expect(urgentTask.locator('.calendar-task-signal--urgency')).toBeVisible()
     expect(await urgentTask.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
-    const taskLayers = await Promise.all([
-      importantTask.evaluate((node) => Number(getComputedStyle(node).zIndex)),
-      urgentTask.evaluate((node) => Number(getComputedStyle(node.closest('.time-calendar__all-day-ranges')!).zIndex)),
-    ])
-    expect(Number(frame.zIndex)).toBeLessThan(taskLayers[0])
-    expect(Number(frame.zIndex)).toBeLessThan(taskLayers[1])
   }
 
   await page.getByRole('button', { name: 'Месяц', exact: true }).click()
   const monthCurrentDate = page.locator('[aria-current="date"]')
   await expect(monthCurrentDate).toHaveCount(1)
+  expect(await monthCurrentDate.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_ACCENT_VIOLET)
   expect(await monthCurrentDate.evaluate((node) => {
-    const style = getComputedStyle(node.closest('.month-day')!, '::after')
-    return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth, zIndex: style.zIndex }
-  })).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px', zIndex: '1' })
+    const day = node.closest('.month-day')!
+    const surfaceStyle = getComputedStyle(day)
+    const pseudoStyle = getComputedStyle(day, '::after')
+    const sides = ['Top', 'Right', 'Bottom', 'Left'] as const
+    const hasWhitePseudoBorder = pseudoStyle.content !== 'none' && sides.some((side) => {
+      const width = Number.parseFloat(pseudoStyle[`border${side}Width`])
+      return width > 0
+        && pseudoStyle[`border${side}Style`] !== 'none'
+        && pseudoStyle[`border${side}Color`] === 'rgb(255, 255, 255)'
+    })
+    return {
+      hasWhitePseudoBorder,
+      hasWhitePseudoShadow: pseudoStyle.boxShadow.includes('rgb(255, 255, 255)'),
+      hasWhiteInsetSurfaceShadow: surfaceStyle.boxShadow.includes('inset')
+        && surfaceStyle.boxShadow.includes('rgb(255, 255, 255)'),
+    }
+  })).toEqual({
+    hasWhitePseudoBorder: false,
+    hasWhitePseudoShadow: false,
+    hasWhiteInsetSurfaceShadow: false,
+  })
   const monthWeek = monthCurrentDate.locator('xpath=ancestor::div[contains(@class, "month-calendar__week")]')
-  const monthRanges = monthWeek.locator('.month-calendar__ranges')
-  const monthRange = monthRanges.locator('[data-task-id="calendar-green-urgent"]')
-  const monthLayerZIndexes = await Promise.all([
-    monthCurrentDate.evaluate((node) => Number(getComputedStyle(node.closest('.month-day')!, '::after').zIndex)),
-    monthRanges.evaluate((node) => Number(getComputedStyle(node).zIndex)),
-  ])
-  expect(monthLayerZIndexes[0]).toBeLessThan(monthLayerZIndexes[1])
+  const monthRange = monthWeek.locator('.month-calendar__range[data-task-id="calendar-green-urgent"]')
+  await expect(monthRange).toBeVisible()
 
   const monthTask = page.locator('.month-day__task').filter({ hasText: 'Зелёная важная задача' })
   await expect(monthTask).toHaveAccessibleName(/Важная задача/)
   await expect(monthTask.locator('.calendar-task-signal--importance')).toBeVisible()
   expect(await monthTask.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
-  expect(monthLayerZIndexes[0]).toBeLessThan(await monthTask.evaluate((node) => Number(getComputedStyle(node.closest('.month-day__items')!).zIndex)))
   await expect(monthRange).toHaveAccessibleName(/Срочная задача/)
   await expect(monthRange.locator('.calendar-task-signal--urgency')).toBeVisible()
   expect(await monthRange.evaluate((node) => {
@@ -449,7 +476,29 @@ test('calendar uses a fixed green task palette and a white today frame in every 
   await page.getByRole('button', { name: 'Год', exact: true }).click()
   const yearCurrentDate = page.locator('[aria-current="date"]')
   await expect(yearCurrentDate).toHaveCount(1)
-  expect(await yearCurrentDate.evaluate((node) => getComputedStyle(node).boxShadow)).toContain('rgb(255, 255, 255)')
+  const yearTodayStyle = await yearCurrentDate.evaluate((node) => {
+    const style = getComputedStyle(node)
+    const pseudoStyle = getComputedStyle(node, '::after')
+    const sides = ['Top', 'Right', 'Bottom', 'Left'] as const
+    const hasWhitePseudoBorder = pseudoStyle.content !== 'none' && sides.some((side) => {
+      const width = Number.parseFloat(pseudoStyle[`border${side}Width`])
+      return width > 0
+        && pseudoStyle[`border${side}Style`] !== 'none'
+        && pseudoStyle[`border${side}Color`] === 'rgb(255, 255, 255)'
+    })
+    return {
+      background: style.backgroundColor,
+      hasWhiteInsetShadow: style.boxShadow.includes('inset') && style.boxShadow.includes('rgb(255, 255, 255)'),
+      hasWhitePseudoBorder,
+      hasWhitePseudoShadow: pseudoStyle.boxShadow.includes('rgb(255, 255, 255)'),
+    }
+  })
+  expect(yearTodayStyle).toEqual({
+    background: CALENDAR_ACCENT_VIOLET,
+    hasWhiteInsetShadow: false,
+    hasWhitePseudoBorder: false,
+    hasWhitePseudoShadow: false,
+  })
   expect(await yearCurrentDate.locator('i').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN)
 })
 

@@ -67,7 +67,7 @@ function renderCalendarApp(tasks: Task[]) {
 }
 
 describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
-  it('marks the current local date in every calendar mode and keeps the frame on the full day surface', async () => {
+  it('marks the current local date exactly once with a compact marker in every calendar mode', async () => {
     const user = userEvent.setup()
     const { container } = renderCalendar([])
     const todayLabel = new Date().toLocaleDateString('ru-RU')
@@ -81,10 +81,15 @@ describe('CalendarPage GitHub issues #33, #35, #45 and #46', () => {
       expect(currentDates).toHaveLength(1)
       expect(currentDates[0].getAttribute('aria-label')).toContain(todayLabel)
 
-      const framedDay = mode === 'Год'
+      const currentDay = mode === 'Год'
         ? currentDates[0]
         : currentDates[0].closest<HTMLElement>(mode === 'Месяц' ? '.month-day' : '.week-day')
-      expect(framedDay).toHaveClass('is-today')
+      expect(currentDay).toHaveClass('is-today')
+
+      if (mode === 'Месяц') expect(currentDates[0]).toHaveClass('month-day__number')
+      if (mode === 'Неделя' || mode === '3 дня' || mode === 'День') {
+        expect(currentDates[0]).toHaveClass('week-day__header', 'is-today')
+      }
     }
   })
 
