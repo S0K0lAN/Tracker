@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Archive, CalendarClock, Check, Clock3, FileText, Flag, MoreHorizontal, Paperclip, Play, Timer, Trash2 } from 'lucide-react'
+import { Archive, CalendarClock, CalendarDays, Check, Clock3, FileText, Flag, MoreHorizontal, Paperclip, Play, Timer, Trash2 } from 'lucide-react'
 import type { Task } from '../domain/models'
-import { getTaskTiming } from '../domain/models'
+import { getTaskUrgencySignal } from '../domain/models'
 import { useApp } from '../state/AppContext'
 import { startPomodoroForTask } from './PomodoroTimer'
 import './task-card-actions.css'
@@ -18,6 +18,19 @@ export const formatTaskDate = (value: string) => {
   return Number.isFinite(timestamp) ? taskDateFormatter.format(timestamp) : 'Некорректная дата'
 }
 
+const allDayDateFormatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+
+export const formatAllDayTaskDate = (value: string) => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return 'Некорректная дата'
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return date.getFullYear() === Number(match[1])
+    && date.getMonth() === Number(match[2]) - 1
+    && date.getDate() === Number(match[3])
+    ? allDayDateFormatter.format(date)
+    : 'Некорректная дата'
+}
+
 export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
   const { state, toggleTask, archiveTask, removeTask, updatePomodoro } = useApp()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -25,8 +38,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const cardRef = useRef<HTMLElement>(null)
   const project = state.projects.find((item) => item.id === task.projectId)
-  const timing = getTaskTiming(task, undefined, project?.urgencyThresholdHours)
-  const urgency = timing.urgency
+  const urgencySignal = getTaskUrgencySignal(task, undefined, project?.urgencyThresholdHours)
   const doneCount = task.subtasks.filter((item) => item.completed).length
 
   useEffect(() => {
@@ -116,13 +128,18 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
             </span>
           )}
           {task.deadline && (
-            <span className={`meta-item ${timing.overdue ? 'meta-item--danger' : ''}`}>
+            <span className="meta-item">
               <CalendarClock size={13} /> {formatTaskDate(task.deadline)}
             </span>
           )}
-          {task.deadline && (
-            <span className={`meta-item urgency urgency--${urgency}`}>
-              <Clock3 size={13} /> {urgency === 'high' ? 'Срочно' : 'Не срочно'}
+          {task.allDayDate && (
+            <span className="meta-item">
+              <CalendarDays size={13} /> {formatAllDayTaskDate(task.allDayDate)} · весь день
+            </span>
+          )}
+          {task.deadline && (urgencySignal === 'high' || task.urgencyOverride === 'low') && (
+            <span className={`meta-item urgency urgency--${urgencySignal === 'high' ? 'high' : 'low'}`}>
+              <Clock3 size={13} /> {urgencySignal === 'high' ? 'Срочно' : 'Не срочно'}
             </span>
           )}
           <span className={`meta-item importance importance--${task.importance}`}>

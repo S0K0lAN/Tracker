@@ -36,9 +36,15 @@ describe('new workspace pages', () => {
         value.setHours(hour, 0, 0, 0)
         return value.toISOString()
       }
+      const todayKey = [
+        new Date().getFullYear(),
+        String(new Date().getMonth() + 1).padStart(2, '0'),
+        String(new Date().getDate()).padStart(2, '0'),
+      ].join('-')
       state.tasks = [
         { ...template, id: 'today-scheduled', title: 'Запланированная задача', startAt: todayAt(9), deadline: todayAt(18) },
         { ...template, id: 'today-deadline', title: 'Только сегодняшний дедлайн', startAt: undefined, deadline: todayAt(17) },
+        { ...template, id: 'today-all-day', title: 'Задача на весь день', startAt: undefined, plannedDurationMinutes: undefined, deadline: undefined, allDayDate: todayKey },
       ]
     })
 
@@ -48,6 +54,7 @@ describe('new workspace pages', () => {
     expect(scheduled).not.toBeNull()
     expect(deadlines).not.toBeNull()
     expect(within(scheduled!).getByText('Запланированная задача')).toBeInTheDocument()
+    expect(within(scheduled!).getByText('Задача на весь день')).toBeInTheDocument()
     expect(within(deadlines!).queryByText('Запланированная задача')).not.toBeInTheDocument()
     expect(within(deadlines!).getByText('Только сегодняшний дедлайн')).toBeInTheDocument()
   })
@@ -146,7 +153,7 @@ describe('calendar deadline projection', () => {
     expect(layout[0].height).toBeGreaterThan(0)
   })
 
-  it('uses planned duration for event height and keeps a separate monthly deadline range', () => {
+  it('uses planned duration for event height and projects deadline tasks as ranges', () => {
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
     const start = new Date(2026, 7, 3, 9, 0)
     const timedTask = {
@@ -154,7 +161,7 @@ describe('calendar deadline projection', () => {
       id: 'timed',
       startAt: start.toISOString(),
       plannedDurationMinutes: 210,
-      deadline: new Date(2026, 7, 3, 8, 0).toISOString(),
+      deadline: undefined,
     }
     const timedLayout = layoutTimedDayTasks([timedTask], { hourHeight: 40 })
     expect(timedLayout[0].durationMinutes).toBe(210)
@@ -164,7 +171,7 @@ describe('calendar deadline projection', () => {
       ...template,
       id: 'later-deadline',
       startAt: start.toISOString(),
-      plannedDurationMinutes: 60,
+      plannedDurationMinutes: undefined,
       deadline: new Date(2026, 7, 6, 18).toISOString(),
     }
     const outsideView = {
@@ -191,14 +198,24 @@ describe('calendar deadline projection', () => {
     const today = new Date()
     const template = createSeedState().tasks.find((task) => task.status === 'active')!
     const { container } = renderApp('/calendar', (state) => {
-      state.tasks = Array.from({ length: 5 }, (_, index) => ({
-        ...template,
-        id: `month-${index}`,
-        title: `Задача месяца ${index + 1}`,
-        startAt: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9 + index).toISOString(),
-        plannedDurationMinutes: 60,
-        deadline: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 10 + index).toISOString(),
-      }))
+      state.tasks = [
+        {
+          ...template,
+          id: 'timed-day',
+          title: 'Задача с длительностью',
+          startAt: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9).toISOString(),
+          plannedDurationMinutes: 60,
+          deadline: undefined,
+        },
+        ...Array.from({ length: 5 }, (_, index) => ({
+          ...template,
+          id: `month-${index}`,
+          title: `Задача месяца ${index + 1}`,
+          startAt: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9 + index).toISOString(),
+          plannedDurationMinutes: undefined,
+          deadline: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 10 + index).toISOString(),
+        })),
+      ]
     })
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
     for (const name of ['Год', 'Месяц', 'Неделя', '3 дня', 'День']) {
@@ -208,18 +225,19 @@ describe('calendar deadline projection', () => {
 
     await user.click(screen.getByRole('button', { name: 'Месяц' }))
     expect(container.querySelectorAll('.month-day')).toHaveLength(42)
-    expect(container.querySelector('.month-day__task')).not.toBeInTheDocument()
+    expect(container.querySelector('.month-day__task')).toHaveTextContent('Задача с длительностью')
     expect(container.querySelector('[data-task-id="month-0"]')).toHaveAttribute('data-range-span', '1')
     await user.click(screen.getByRole('button', { name: `Показать задачи на ${today.toLocaleDateString('ru-RU')}` }))
     const dialog = screen.getByRole('dialog', { name: /Все задачи дня/i })
     expect(within(dialog).getAllByRole('button', { name: /Задача месяца/ })).toHaveLength(5)
+    expect(within(dialog).getByRole('button', { name: /Задача с длительностью/ })).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Закрыть список задач' }))
 
     await user.click(screen.getByRole('button', { name: 'День' }))
     expect(container.querySelector('.time-calendar--day')).toBeInTheDocument()
     const calendarTask = container.querySelector('.calendar-task')
     expect(calendarTask).toHaveAttribute('data-duration-minutes', '60')
-    expect(calendarTask).toHaveTextContent('Задача месяца 1')
+    expect(calendarTask).toHaveTextContent('Задача с длительностью')
     expect(calendarTask).not.toHaveTextContent(/\d{2}:\d{2}/)
     expect(calendarTask?.getAttribute('aria-label')).toMatch(/\d{2}:\d{2}/)
 
@@ -247,13 +265,13 @@ describe('calendar deadline projection', () => {
     })
     await screen.findByRole('heading', { name: 'Календарь', level: 1 })
 
-    const weekMarker = screen.getByTitle('Дедлайн: Только дедлайн · до 15:00')
+    const weekMarker = container.querySelector<HTMLButtonElement>('[data-task-id="deadline-only"]')!
     expect(weekMarker).toBeInTheDocument()
     expect(screen.getByText('Весь день')).toBeInTheDocument()
     expect(screen.queryByText('Сроки')).not.toBeInTheDocument()
     expect(container.querySelectorAll('.week-day__all-day')).toHaveLength(7)
-    expect(container.querySelectorAll('.week-day__all-day button')).toHaveLength(1)
-    expect(weekMarker).toHaveAccessibleName(/Дедлайн: Только дедлайн, до 15:00/)
+    expect(container.querySelectorAll('.time-calendar__all-day-range')).toHaveLength(1)
+    expect(weekMarker).toHaveAccessibleName(/Дедлайн: Только дедлайн.+до 15:00/)
     expect(within(weekMarker).getByText('до 15:00')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Месяц' }))
@@ -305,6 +323,7 @@ describe('task lifecycle', () => {
     renderApp('/inbox', (state) => {
       const completed = state.tasks.find((task) => task.id === 'task-done')!
       completed.projectId = 'inbox'
+      completed.allDayDate = undefined
       completed.startAt = undefined
       completed.deadline = undefined
       const completedInProject = state.tasks.find((task) => task.id === 'task-plan')!

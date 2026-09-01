@@ -4,7 +4,7 @@ import { getTaskUrgency } from './models'
 type SavedFilterProject = Pick<Project, 'name' | 'urgencyThresholdHours'>
 
 export function isInboxTask(task: Task): boolean {
-  return task.projectId === 'inbox' && !task.startAt && !task.deadline
+  return task.projectId === 'inbox' && !task.allDayDate && !task.startAt && !task.deadline
 }
 
 export function matchesSavedFilter(

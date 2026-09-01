@@ -22,6 +22,7 @@ function renderInbox() {
   task.projectId = 'inbox'
   task.startAt = undefined
   task.deadline = undefined
+  task.plannedDurationMinutes = 60
   localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
   return renderStoredInbox()
 }
@@ -133,6 +134,8 @@ describe('task details', () => {
     inheritedTask.title = 'Наследуемый порог'
     const individualTask = state.tasks.find((item) => item.id === 'task-team-sync')!
     individualTask.title = 'Индивидуальный порог'
+    individualTask.plannedDurationMinutes = undefined
+    individualTask.deadline = inheritedTask.deadline
     individualTask.urgencyThresholdOverrideHours = 168
     localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
     renderStoredInbox()
@@ -151,6 +154,92 @@ describe('task details', () => {
     details = screen.getByRole('dialog', { name: 'Индивидуальный порог' })
     expect(within(details).getByText('168 ч до дедлайна')).toBeInTheDocument()
     expect(within(details).getByText('Индивидуальный для задачи')).toBeInTheDocument()
+  })
+
+  it('shows no urgency before the automatic deadline window and preserves an explicit manual low state', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    const project = state.projects.find((item) => item.id === 'work')!
+    project.urgencyThresholdHours = 24
+    const automatic = state.tasks.find((item) => item.id === 'task-plan')!
+    automatic.title = 'Пока без срочности'
+    automatic.startAt = new Date(Date.now() + 10 * 24 * 60 * 60_000).toISOString()
+    automatic.deadline = new Date(Date.now() + 14 * 24 * 60 * 60_000).toISOString()
+    automatic.urgencyOverride = undefined
+    const manualLow = state.tasks.find((item) => item.id === 'task-workout')!
+    manualLow.title = 'Явно не срочная'
+    manualLow.projectId = 'work'
+    manualLow.urgencyOverride = 'low'
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+    renderStoredInbox()
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    await user.click(screen.getByRole('button', { name: 'Все' }))
+
+    await user.click(taskCard('Пока без срочности').querySelector<HTMLButtonElement>('.task-card__body')!)
+    let details = screen.getByRole('dialog', { name: 'Пока без срочности' })
+    expect(within(details).getByText('Нет срочности')).toBeInTheDocument()
+    expect(within(details).getByText('Станет срочной за 24 ч до дедлайна')).toBeInTheDocument()
+    await user.click(within(details).getByRole('button', { name: 'Закрыть задачу' }))
+
+    await user.click(taskCard('Явно не срочная').querySelector<HTMLButtonElement>('.task-card__body')!)
+    details = screen.getByRole('dialog', { name: 'Явно не срочная' })
+    expect(within(details).getByText('Не срочная')).toBeInTheDocument()
+    expect(within(details).getByText('Установлено вручную')).toBeInTheDocument()
+  })
+
+  it('does not predict future urgency for a completed deadline task', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    const completed = state.tasks.find((item) => item.id === 'task-plan')!
+    completed.title = 'Завершённая задача со сроком'
+    completed.status = 'completed'
+    completed.completedAt = new Date().toISOString()
+    completed.urgencyOverride = undefined
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+    renderStoredInbox()
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    await user.click(screen.getByRole('button', { name: 'Все' }))
+    await user.click(screen.getByRole('button', { name: 'Показать завершённые' }))
+    await user.click(taskCard('Завершённая задача со сроком').querySelector<HTMLButtonElement>('.task-card__body')!)
+
+    const details = screen.getByRole('dialog', { name: 'Завершённая задача со сроком' })
+    expect(within(details).getByText('Нет срочности')).toBeInTheDocument()
+    expect(within(details).getByText('Задача завершена')).toBeInTheDocument()
+    expect(within(details).queryByText(/Станет срочной/)).not.toBeInTheDocument()
+    expect(within(details).queryByText(/до дедлайна/)).not.toBeInTheDocument()
+  })
+
+  it('shows a date-only all-day schedule without empty timed or urgency facts', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    const allDayTask = state.tasks.find((item) => item.id === 'task-plan')!
+    allDayTask.title = 'День без времени'
+    allDayTask.projectId = 'inbox'
+    allDayTask.allDayDate = '2026-08-23'
+    allDayTask.startAt = undefined
+    allDayTask.plannedDurationMinutes = undefined
+    allDayTask.deadline = undefined
+    allDayTask.urgencyThresholdOverrideHours = undefined
+    allDayTask.urgencyOverride = undefined
+    localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+    renderStoredInbox()
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    await user.click(screen.getByRole('button', { name: 'Все' }))
+    await user.click(taskCard('День без времени').querySelector<HTMLButtonElement>('.task-card__body')!)
+
+    const details = screen.getByRole('dialog', { name: 'День без времени' })
+    const schedule = within(details).getByText('Планирование').closest<HTMLElement>('.task-details__fact--schedule')!
+    expect(within(schedule).getByText('Дата')).toBeInTheDocument()
+    expect(within(schedule).getByText(/23 августа 2026/)).toBeInTheDocument()
+    expect(within(schedule).getByText('Режим')).toBeInTheDocument()
+    expect(within(schedule).getByText('Весь день')).toBeInTheDocument()
+    expect(within(schedule).queryByText('Начало')).not.toBeInTheDocument()
+    expect(within(schedule).queryByText('Длительность')).not.toBeInTheDocument()
+    expect(within(schedule).queryByText('Дедлайн')).not.toBeInTheDocument()
+    expect(within(details).queryByText('Срочность')).not.toBeInTheDocument()
   })
 
   it('returns focus to the durable page heading after editing and moving the task to trash', async () => {

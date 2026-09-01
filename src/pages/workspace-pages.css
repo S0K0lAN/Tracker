@@ -41,10 +41,6 @@
   font-style: normal;
 }
 
-.workspace-section--danger > header {
-  color: var(--danger);
-}
-
 .workspace-section__empty {
   margin: 0;
   padding: 13px 16px;

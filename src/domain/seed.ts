@@ -1,37 +1,46 @@
-import { DEFAULT_PLANNED_DURATION_MINUTES } from './models'
 import type { AppState, Task } from './models'
 
-export const DEMO_DATA_VERSION = '2026-08-01'
+export const DEMO_DATA_VERSION = '2026-09-01'
 
-const task = (data: Partial<Task> & Pick<Task, 'id' | 'title'>): Task => ({
-  id: data.id,
-  title: data.title,
-  description: data.description ?? '',
-  projectId: data.projectId ?? 'personal',
-  startAt: data.startAt,
-  plannedDurationMinutes: data.plannedDurationMinutes ?? DEFAULT_PLANNED_DURATION_MINUTES,
-  deadline: data.deadline,
-  ...(data.urgencyThresholdOverrideHours === undefined
-    ? {}
-    : { urgencyThresholdOverrideHours: data.urgencyThresholdOverrideHours }),
-  urgencyOverride: data.urgencyOverride,
-  importance: data.importance ?? 'low',
-  tags: data.tags ?? [],
-  subtasks: data.subtasks ?? [],
-  attachments: data.attachments ?? [],
-  reminders: data.reminders ?? [],
-  status: data.status ?? 'active',
-  createdAt: data.createdAt ?? new Date().toISOString(),
-  updatedAt: data.updatedAt ?? new Date().toISOString(),
-  completedAt: data.completedAt,
-  archivedAt: data.archivedAt,
-  deletedAt: data.deletedAt,
-  previousStatus: data.previousStatus,
-  focusMinutes: data.focusMinutes ?? 0,
-})
+type SeedTaskInput = Partial<Task> & Pick<Task, 'id' | 'title'>
+
+const buildTask = (data: SeedTaskInput, fallbackNow: string): Task => {
+  const createdAt = data.createdAt ?? fallbackNow
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description ?? '',
+    projectId: data.projectId ?? 'personal',
+    ...(data.startAt === undefined ? {} : { startAt: data.startAt }),
+    ...(data.allDayDate === undefined ? {} : { allDayDate: data.allDayDate }),
+    ...(data.plannedDurationMinutes === undefined
+      ? {}
+      : { plannedDurationMinutes: data.plannedDurationMinutes }),
+    ...(data.deadline === undefined ? {} : { deadline: data.deadline }),
+    ...(data.urgencyThresholdOverrideHours === undefined
+      ? {}
+      : { urgencyThresholdOverrideHours: data.urgencyThresholdOverrideHours }),
+    ...(data.urgencyOverride === undefined ? {} : { urgencyOverride: data.urgencyOverride }),
+    importance: data.importance ?? 'low',
+    tags: data.tags ?? [],
+    subtasks: data.subtasks ?? [],
+    attachments: data.attachments ?? [],
+    reminders: data.reminders ?? [],
+    status: data.status ?? 'active',
+    createdAt,
+    updatedAt: data.updatedAt ?? data.completedAt ?? data.createdAt ?? fallbackNow,
+    completedAt: data.completedAt,
+    archivedAt: data.archivedAt,
+    deletedAt: data.deletedAt,
+    previousStatus: data.previousStatus,
+    focusMinutes: data.focusMinutes ?? 0,
+  }
+}
 
 export const createSeedState = (): AppState => {
   const reference = new Date()
+  const fallbackNow = reference.toISOString()
+  const task = (data: SeedTaskInput) => buildTask(data, fallbackNow)
   const dateAt = (days: number, hour: number, minutes = 0) => {
     const value = new Date(reference)
     value.setDate(value.getDate() + days)
@@ -60,7 +69,7 @@ export const createSeedState = (): AppState => {
   const everyDay = [1, 2, 3, 4, 5, 6, 0]
 
   return {
-    schemaVersion: 8,
+    schemaVersion: 10,
     projects: [
       { id: 'inbox', name: 'Без проекта', color: '#9ca89c', urgencyThresholdHours: 72, createdAt: dateAt(-100, 9) },
       { id: 'work', name: 'Работа', color: '#778c70', urgencyThresholdHours: 72, description: 'Рабочие задачи и инициативы', createdAt: dateAt(-90, 9) },
@@ -95,7 +104,6 @@ export const createSeedState = (): AppState => {
         projectId: 'work',
         startAt: dateAt(0, 10),
         plannedDurationMinutes: 30,
-        deadline: dateAt(0, 11),
         tags: ['работа', 'встречи'],
         createdAt: dateAt(-3, 12),
       }),
@@ -106,7 +114,6 @@ export const createSeedState = (): AppState => {
         projectId: 'work',
         startAt: dateAt(0, 10, 30),
         plannedDurationMinutes: 90,
-        deadline: dateAt(0, 12),
         importance: 'high',
         tags: ['продукт', 'дизайн'],
         attachments: [{
@@ -132,7 +139,7 @@ export const createSeedState = (): AppState => {
       task({
         id: 'task-release',
         title: 'Подготовить демонстрационный релиз',
-        description: 'Фокус-слот сегодня и отдельный дедлайн релиза через несколько дней.',
+        description: 'Окно выполнения начинается сегодня, а дедлайн релиза наступает через несколько дней.',
         projectId: 'work',
         startAt: dateAt(-1, 14),
         deadline: dateAt(4, 17),
@@ -173,7 +180,6 @@ export const createSeedState = (): AppState => {
         projectId: 'work',
         startAt: dateAt(1, 9, 30),
         plannedDurationMinutes: 90,
-        deadline: dateAt(1, 11),
         importance: 'high',
         tags: ['работа', 'отчёт'],
         reminders: [{ id: 'reminder-report', at: dateAt(1, 8, 30) }],
@@ -185,7 +191,6 @@ export const createSeedState = (): AppState => {
         projectId: 'health',
         startAt: dateAt(2, 11),
         plannedDurationMinutes: 30,
-        deadline: dateAt(2, 12),
         tags: ['здоровье'],
         reminders: [{ id: 'reminder-doctor', at: dateAt(2, 9) }],
         createdAt: dateAt(-8, 16),
@@ -208,7 +213,6 @@ export const createSeedState = (): AppState => {
         projectId: 'shopping',
         startAt: dateAt(3, 19),
         plannedDurationMinutes: 30,
-        deadline: dateAt(3, 20),
         tags: ['дом', 'покупки'],
         createdAt: dateAt(-1, 17),
       }),
@@ -230,7 +234,6 @@ export const createSeedState = (): AppState => {
         projectId: 'learning',
         startAt: dateAt(6, 19),
         plannedDurationMinutes: 120,
-        deadline: dateAt(6, 21),
         tags: ['обучение', 'аналитика'],
         subtasks: [
           { id: 'sub-course-1', title: 'Посмотреть урок', completed: false },
@@ -241,7 +244,7 @@ export const createSeedState = (): AppState => {
       task({
         id: 'task-trip',
         title: 'Подготовиться к поездке',
-        description: 'Подготовка начинается в календарном слоте, а дедлайн остаётся отдельной датой.',
+        description: 'Окно подготовки начинается заранее и заканчивается дедлайном поездки.',
         projectId: 'personal',
         startAt: dateAt(8, 9),
         deadline: dateAt(12, 20),
@@ -272,11 +275,30 @@ export const createSeedState = (): AppState => {
         createdAt: dateAt(0, 7, 30),
       }),
       task({
+        id: 'task-all-day',
+        title: 'Разобрать личные документы',
+        description: 'Обычная задача на весь день без дедлайна и срочности.',
+        projectId: 'personal',
+        allDayDate: dateKeyAt(0),
+        tags: ['личное', 'порядок'],
+        createdAt: dateAt(-2, 9),
+      }),
+      task({
+        id: 'task-all-day-future',
+        title: 'Навести порядок дома',
+        description: 'Будущая задача на весь день без привязки ко времени.',
+        projectId: 'personal',
+        allDayDate: dateKeyAt(6),
+        tags: ['дом', 'порядок'],
+        createdAt: dateAt(-1, 9),
+      }),
+      task({
         id: 'task-done',
         title: 'Разобрать входящие заметки',
         projectId: 'personal',
+        allDayDate: dateKeyAt(0),
         status: 'completed',
-        completedAt: dateAt(-1, 20),
+        completedAt: dateAt(0, 8),
         tags: ['порядок'],
         focusMinutes: 25,
         createdAt: dateAt(-5, 18),

@@ -13,9 +13,11 @@ const draft: TaskDraftData = {
   title: 'Подготовить отчёт',
   description: 'Сверить цифры',
   projectId: 'work',
+  allDay: false,
+  allDayDate: '',
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
-  plannedDurationMinutes: 90,
+  plannedDurationMinutes: '',
   importance: 'high',
   urgencyThresholdOverrideHours: 24,
   urgencyOverride: 'high',
@@ -47,7 +49,7 @@ describe('task draft recovery journal', () => {
     expect(writeTaskDraft(inherited).status).toBe('saved')
 
     expect(readTaskDraft()?.data).toEqual(inherited)
-    expect(JSON.parse(localStorage.getItem(getTaskDraftStorageKey())!).version).toBe(3)
+    expect(JSON.parse(localStorage.getItem(getTaskDraftStorageKey())!).version).toBe(5)
   })
 
   it('drops urgency settings from a draft without a deadline', () => {
@@ -80,11 +82,11 @@ describe('task draft recovery journal', () => {
     const loaded = readTaskDraft()
 
     expect(loaded?.data.urgencyThresholdOverrideHours).toBe(24)
-    expect(loaded?.data.plannedDurationMinutes).toBe(540)
+    expect(loaded?.data.plannedDurationMinutes).toBe('')
     expect(loaded?.data).not.toHaveProperty('urgencyThresholdHours')
   })
 
-  it('infers a same-day planned duration when migrating a version 2 draft', () => {
+  it('preserves the deadline and drops inferred duration when migrating a version 2 draft', () => {
     const { plannedDurationMinutes: _duration, ...version2Data } = {
       ...draft,
       startAt: '2026-08-21T09:15',
@@ -99,10 +101,13 @@ describe('task draft recovery journal', () => {
       data: version2Data,
     }))
 
-    expect(readTaskDraft()?.data.plannedDurationMinutes).toBe(105)
+    expect(readTaskDraft()?.data).toMatchObject({
+      deadline: '2026-08-21T11:00',
+      plannedDurationMinutes: '',
+    })
   })
 
-  it('uses a same-day fallback for a legacy draft crossing midnight', () => {
+  it('preserves a cross-day deadline instead of deriving a duration', () => {
     const { plannedDurationMinutes: _duration, ...version2Data } = {
       ...draft,
       startAt: '2026-08-21T23:30',
@@ -116,13 +121,126 @@ describe('task draft recovery journal', () => {
       data: version2Data,
     }))
 
+    expect(readTaskDraft()?.data).toMatchObject({
+      deadline: '2026-08-22T00:30',
+      plannedDurationMinutes: '',
+    })
+  })
+
+  it('infers a safe duration for a version 2 draft without a deadline', () => {
+    const { plannedDurationMinutes: _duration, ...version2Data } = {
+      ...draft,
+      startAt: '2026-08-21T23:30',
+      deadline: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '' as const,
+    }
+    localStorage.setItem(getTaskDraftStorageKey(), JSON.stringify({
+      version: 2,
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      writeId: 'version-2-duration-write',
+      revision: 1,
+      data: version2Data,
+    }))
+
     expect(readTaskDraft()?.data.plannedDurationMinutes).toBe(30)
   })
 
+  it('migrates a version 3 conflict by preserving the deadline', () => {
+    localStorage.setItem(getTaskDraftStorageKey(), JSON.stringify({
+      version: 3,
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      writeId: 'version-3-conflict-write',
+      revision: 1,
+      data: { ...draft, plannedDurationMinutes: 90 },
+    }))
+
+    expect(readTaskDraft()?.data).toMatchObject({
+      deadline: draft.deadline,
+      plannedDurationMinutes: '',
+    })
+  })
+
+  it('migrates a version 4 draft with an empty all-day date', () => {
+    const { allDay: _allDay, allDayDate: _allDayDate, ...version4Data } = draft
+    localStorage.setItem(getTaskDraftStorageKey(), JSON.stringify({
+      version: 4,
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      writeId: 'version-4-write',
+      revision: 1,
+      data: version4Data,
+    }))
+
+    expect(readTaskDraft()?.data).toEqual({ ...draft, allDayDate: '' })
+  })
+
+  it('round-trips a date-only all-day draft', () => {
+    const allDayDraft: TaskDraftData = {
+      ...draft,
+      allDay: true,
+      allDayDate: '2026-08-22',
+      startAt: '',
+      deadline: '',
+      plannedDurationMinutes: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    }
+
+    expect(writeTaskDraft(allDayDraft).status).toBe('saved')
+    expect(readTaskDraft()?.data).toEqual(allDayDraft)
+  })
+
+  it('keeps an unfinished all-day draft selected before its required date is filled', () => {
+    const unfinishedAllDayDraft: TaskDraftData = {
+      ...draft,
+      allDay: true,
+      allDayDate: '',
+      startAt: '',
+      deadline: '',
+      plannedDurationMinutes: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    }
+
+    expect(writeTaskDraft(unfinishedAllDayDraft).status).toBe('saved')
+    expect(readTaskDraft()?.data).toEqual(unfinishedAllDayDraft)
+  })
+
+  it('rejects invalid all-day dates and conflicting timing fields', () => {
+    const allDayDraft: TaskDraftData = {
+      ...draft,
+      allDay: true,
+      allDayDate: '2026-08-22',
+      startAt: '',
+      deadline: '',
+      plannedDurationMinutes: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    }
+
+    expect(writeTaskDraft({ ...allDayDraft, allDayDate: '2026-02-30' }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, allDay: false }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, allDay: 'yes' } as unknown as TaskDraftData).status).toBe('invalid')
+    expect(writeTaskDraft({ ...draft, allDay: true }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, startAt: '2026-08-22T09:00' }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, plannedDurationMinutes: 60 }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...allDayDraft, deadline: '2026-08-22T18:00' }).status).toBe('invalid')
+  })
+
   it('rejects planned durations outside the supported one-day range', () => {
-    expect(writeTaskDraft({ ...draft, plannedDurationMinutes: 0 }).status).toBe('invalid')
-    expect(writeTaskDraft({ ...draft, plannedDurationMinutes: 1_441 }).status).toBe('invalid')
-    expect(writeTaskDraft({ ...draft, plannedDurationMinutes: 1.5 }).status).toBe('invalid')
+    const durationDraft = {
+      ...draft,
+      deadline: '',
+      urgencyThresholdOverrideHours: '' as const,
+      urgencyOverride: '' as const,
+    }
+    expect(writeTaskDraft({ ...durationDraft, plannedDurationMinutes: 0 }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...durationDraft, plannedDurationMinutes: 1_441 }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...durationDraft, plannedDurationMinutes: 1.5 }).status).toBe('invalid')
+  })
+
+  it('rejects a new draft that combines duration and deadline', () => {
+    expect(writeTaskDraft({ ...draft, plannedDurationMinutes: 90 }).status).toBe('invalid')
   })
 
   it('rejects and removes corrupt, oversized and stale journals', () => {

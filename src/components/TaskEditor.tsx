@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Bell, Clock3, FileImage, Flag, Folder, Paperclip, Plus, Trash2, X } from 'lucide-react'
+import { Bell, CalendarDays, Clock3, FileImage, Flag, Folder, Paperclip, Plus, Trash2, X } from 'lucide-react'
 import type { Attachment, Importance, Task, Urgency } from '../domain/models'
 import {
-  DEFAULT_PLANNED_DURATION_MINUTES,
   DEFAULT_URGENCY_THRESHOLD_HOURS,
   MAX_PLANNED_DURATION_MINUTES,
 } from '../domain/models'
@@ -28,6 +27,7 @@ import {
 } from './taskDraftJournal'
 import { VoiceCaptureButton, VoiceCaptureFailureNotice, type VoiceCaptureFailure } from './VoiceCaptureButton'
 import './task-editor-enhancements.css'
+import './task-all-day.css'
 
 const localInput = (value?: string) => {
   if (!value) return ''
@@ -36,10 +36,31 @@ const localInput = (value?: string) => {
   return local.toISOString().slice(0, 16)
 }
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined)
+const localDateKey = (value = new Date()) => {
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
+}
+const localDateFromDateTime = (value: string) => {
+  const date = value ? new Date(value) : null
+  return date && Number.isFinite(date.getTime()) ? localDateKey(date) : ''
+}
+const isValidLocalDate = (value: string) => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return false
+  const candidate = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return candidate.getFullYear() === Number(match[1])
+    && candidate.getMonth() === Number(match[2]) - 1
+    && candidate.getDate() === Number(match[3])
+}
 const DURATION_RANGE_ERROR = 'Укажите длительность от 1 минуты до 24 часов'
 const DURATION_DAY_ERROR_PREFIX = 'Длительность выходит за пределы дня.'
 const DEADLINE_REQUIRES_START_ERROR = 'Сначала укажите корректное начало задачи, затем дедлайн'
 const START_REQUIRED_BY_DEADLINE_ERROR = 'Сначала уберите дедлайн, затем очистите начало'
+const DEADLINE_CONFLICTS_DURATION_ERROR = 'Сначала очистите длительность, затем укажите дедлайн'
+const DURATION_CONFLICTS_DEADLINE_ERROR = 'Сначала уберите дедлайн, затем укажите длительность'
+const ALL_DAY_CONFLICTS_DEADLINE_ERROR = 'Сначала уберите дедлайн, затем включите режим «Весь день»'
+const DEADLINE_CONFLICTS_ALL_DAY_ERROR = 'Сначала выключите режим «Весь день», затем укажите дедлайн'
+const ALL_DAY_DATE_ERROR = 'Укажите корректную дату задачи на весь день'
 type DurationUnit = 'minutes' | 'hours'
 
 const parseDurationMinutes = (value: string, unit: DurationUnit): number | '' => {
@@ -77,7 +98,13 @@ const isDurationError = (value: string) => (
   value === DURATION_RANGE_ERROR || value.startsWith(DURATION_DAY_ERROR_PREFIX)
 )
 const isTimingError = (value: string) => (
-  value === DEADLINE_REQUIRES_START_ERROR || value === START_REQUIRED_BY_DEADLINE_ERROR
+  value === DEADLINE_REQUIRES_START_ERROR
+  || value === START_REQUIRED_BY_DEADLINE_ERROR
+  || value === DEADLINE_CONFLICTS_DURATION_ERROR
+  || value === DURATION_CONFLICTS_DEADLINE_ERROR
+  || value === ALL_DAY_CONFLICTS_DEADLINE_ERROR
+  || value === DEADLINE_CONFLICTS_ALL_DAY_ERROR
+  || value === ALL_DAY_DATE_ERROR
 )
 const urgencyThresholdPresets = [
   { value: 1, label: '1 час', description: 'Только перед самым сроком' },
@@ -93,16 +120,22 @@ const formatUrgencyThreshold = (hours: number) => (
 
 function createInitialDraft(
   task: Task | undefined,
-  defaults: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>> | undefined,
+  defaults: Partial<Pick<Task, 'projectId' | 'allDayDate' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>> | undefined,
 ): TaskDraftData {
-  const deadline = localInput(task?.deadline ?? defaults?.deadline)
+  const requestedDeadline = localInput(task?.deadline ?? defaults?.deadline)
+  const allDayDate = requestedDeadline ? '' : task?.allDayDate ?? defaults?.allDayDate ?? ''
+  const allDay = Boolean(allDayDate)
+  const deadline = allDay ? '' : requestedDeadline
+  const plannedDurationMinutes = task?.plannedDurationMinutes ?? defaults?.plannedDurationMinutes ?? ''
   return {
     title: task?.title ?? '',
     description: task?.description ?? '',
     projectId: task?.projectId ?? defaults?.projectId ?? 'inbox',
-    startAt: localInput(task?.startAt ?? defaults?.startAt),
+    allDay,
+    allDayDate,
+    startAt: allDay ? '' : localInput(task?.startAt ?? defaults?.startAt),
     deadline,
-    plannedDurationMinutes: task?.plannedDurationMinutes ?? defaults?.plannedDurationMinutes ?? DEFAULT_PLANNED_DURATION_MINUTES,
+    plannedDurationMinutes: deadline || allDay ? '' : plannedDurationMinutes,
     importance: task?.importance ?? 'low',
     urgencyThresholdOverrideHours: deadline ? task?.urgencyThresholdOverrideHours ?? '' : '',
     urgencyOverride: deadline ? task?.urgencyOverride ?? '' : '',
@@ -119,7 +152,7 @@ export function TaskEditor({
   onClose,
 }: {
   task?: Task
-  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>
+  defaults?: Partial<Pick<Task, 'projectId' | 'allDayDate' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>
   onClose: () => void
 }) {
   const { state, saveTaskDurably, trashTaskDurably } = useApp()
@@ -127,10 +160,16 @@ export function TaskEditor({
   const [title, setTitle] = useState(initialDraft.title)
   const [description, setDescription] = useState(initialDraft.description)
   const [projectId, setProjectId] = useState(initialDraft.projectId)
+  const [allDay, setAllDay] = useState(initialDraft.allDay)
+  const [allDayDate, setAllDayDate] = useState(initialDraft.allDayDate)
   const [startAt, setStartAt] = useState(initialDraft.startAt)
   const [deadline, setDeadline] = useState(initialDraft.deadline)
   const [durationUnit, setDurationUnit] = useState<DurationUnit>('minutes')
-  const [durationInput, setDurationInput] = useState(formatDurationInput(initialDraft.plannedDurationMinutes || DEFAULT_PLANNED_DURATION_MINUTES, 'minutes'))
+  const [durationInput, setDurationInput] = useState(
+    initialDraft.plannedDurationMinutes === ''
+      ? ''
+      : formatDurationInput(initialDraft.plannedDurationMinutes, 'minutes'),
+  )
   const [startAtValid, setStartAtValid] = useState(true)
   const [startAtDraftPresent, setStartAtDraftPresent] = useState(Boolean(initialDraft.startAt))
   const [deadlineValid, setDeadlineValid] = useState(true)
@@ -162,6 +201,7 @@ export function TaskEditor({
   const fileRef = useRef<HTMLInputElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const durationRef = useRef<HTMLInputElement>(null)
+  const allDayDateRef = useRef<HTMLInputElement>(null)
   const restoreDraftRef = useRef<HTMLButtonElement>(null)
   const editorRef = useRef<HTMLElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -172,6 +212,13 @@ export function TaskEditor({
   const mountedRef = useRef(true)
   const stableTaskIdRef = useRef(task?.id ?? crypto.randomUUID())
   const stableCreatedAtRef = useRef(task?.createdAt ?? new Date().toISOString())
+  const timedScheduleRef = useRef({
+    startAt: initialDraft.startAt,
+    durationInput: initialDraft.plannedDurationMinutes === ''
+      ? ''
+      : formatDurationInput(initialDraft.plannedDurationMinutes, 'minutes'),
+    durationUnit: 'minutes' as DurationUnit,
+  })
 
   useLayoutEffect(() => {
     if (recoveryDraft) restoreDraftRef.current?.focus()
@@ -269,23 +316,29 @@ export function TaskEditor({
     ? maxDurationUntilLocalMidnight(startAt)
     : MAX_PLANNED_DURATION_MINUTES
   const durationHasError = isDurationError(error)
-  const deadlineLocked = !startAtValid || (!startAt && !startAtDraftPresent)
+  const durationDraftPresent = Boolean(durationInput.trim())
+  const deadlineLockedByDuration = durationDraftPresent
+  const deadlineLockedByStart = !startAtValid || (!startAt && !startAtDraftPresent)
+  const deadlineLockedByAllDay = allDay
+  const deadlineLocked = deadlineLockedByDuration || deadlineLockedByStart || deadlineLockedByAllDay
 
   const draftData = useMemo<TaskDraftData>(() => ({
     title,
     description,
     projectId,
-    startAt,
-    deadline,
-    plannedDurationMinutes,
+    allDay,
+    allDayDate: allDay ? allDayDate : '',
+    startAt: allDay ? '' : startAt,
+    deadline: allDay ? '' : deadline,
+    plannedDurationMinutes: allDay ? '' : plannedDurationMinutes,
     importance,
-    urgencyThresholdOverrideHours: deadline ? thresholdOverride : '',
-    urgencyOverride: deadline ? urgencyOverride : '',
+    urgencyThresholdOverrideHours: !allDay && deadline ? thresholdOverride : '',
+    urgencyOverride: !allDay && deadline ? urgencyOverride : '',
     tags,
     subtasks,
     pendingSubtaskTitle: subtaskTitle,
     reminders,
-  }), [deadline, description, importance, plannedDurationMinutes, projectId, reminders, startAt, subtasks, subtaskTitle, tags, thresholdOverride, title, urgencyOverride])
+  }), [allDay, allDayDate, deadline, description, importance, plannedDurationMinutes, projectId, reminders, startAt, subtasks, subtaskTitle, tags, thresholdOverride, title, urgencyOverride])
   const draftDataRef = useRef(draftData)
   const recoveryDraftRef = useRef(recoveryDraft)
   const hasUnsavedChanges = !taskDraftsEqual(draftData, initialDraft)
@@ -359,7 +412,53 @@ export function TaskEditor({
     setError((current) => isDurationError(current) || isTimingError(current) ? '' : current)
   }
 
+  const toggleAllDay = () => {
+    if (!allDay && deadline) {
+      setError(ALL_DAY_CONFLICTS_DEADLINE_ERROR)
+      return
+    }
+
+    if (!allDay) {
+      timedScheduleRef.current = { startAt, durationInput, durationUnit }
+      setAllDayDate(localDateFromDateTime(startAt) || localDateKey())
+      setAllDay(true)
+      setStartAt('')
+      setStartAtDraftPresent(false)
+      setStartAtValid(true)
+      setDeadlineValid(true)
+      setDurationInput('')
+      setError((current) => isTimingError(current) || isDurationError(current) ? '' : current)
+      requestAnimationFrame(() => allDayDateRef.current?.focus())
+      return
+    }
+
+    const savedTimed = timedScheduleRef.current
+    const priorTime = savedTimed.startAt.match(/T(\d{2}:\d{2})/)?.[1] ?? '09:00'
+    const restoredStart = savedTimed.startAt && isValidLocalDate(allDayDate)
+      ? `${allDayDate}T${priorTime}`
+      : savedTimed.startAt
+    setAllDay(false)
+    setAllDayDate('')
+    setStartAt(restoredStart)
+    setStartAtDraftPresent(Boolean(restoredStart))
+    setStartAtValid(true)
+    setDurationUnit(savedTimed.durationUnit)
+    setDurationInput(savedTimed.durationInput)
+    setDateInputResetToken((current) => current + 1)
+    setError((current) => isTimingError(current) ? '' : current)
+  }
+
   const updateDeadline = (value: string) => {
+    if (value && deadlineLockedByAllDay) {
+      setError(DEADLINE_CONFLICTS_ALL_DAY_ERROR)
+      allDayDateRef.current?.focus()
+      return
+    }
+    if (value && deadlineLockedByDuration) {
+      setError(DEADLINE_CONFLICTS_DURATION_ERROR)
+      durationRef.current?.focus()
+      return
+    }
     if (value && deadlineLocked) {
       setError(DEADLINE_REQUIRES_START_ERROR)
       editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
@@ -374,8 +473,12 @@ export function TaskEditor({
   }
 
   const updateDurationInput = (value: string) => {
+    if (value.trim() && deadline) {
+      setError(DURATION_CONFLICTS_DEADLINE_ERROR)
+      return
+    }
     setDurationInput(value)
-    setError((current) => isDurationError(current) ? '' : current)
+    setError((current) => isDurationError(current) || isTimingError(current) ? '' : current)
   }
 
   const updateDurationUnit = (unit: DurationUnit) => {
@@ -427,6 +530,8 @@ export function TaskEditor({
     setTitle(recovered.title)
     setDescription(recovered.description)
     setProjectId(state.projects.some((project) => project.id === recovered.projectId) ? recovered.projectId : 'inbox')
+    setAllDay(recovered.allDay)
+    setAllDayDate(recovered.allDayDate)
     setStartAt(recovered.startAt)
     setStartAtDraftPresent(Boolean(recovered.startAt))
     setDeadline(recovered.deadline)
@@ -434,6 +539,13 @@ export function TaskEditor({
     setDurationInput(recovered.plannedDurationMinutes === ''
       ? ''
       : formatDurationInput(recovered.plannedDurationMinutes, 'minutes'))
+    timedScheduleRef.current = {
+      startAt: recovered.startAt,
+      durationInput: recovered.plannedDurationMinutes === ''
+        ? ''
+        : formatDurationInput(recovered.plannedDurationMinutes, 'minutes'),
+      durationUnit: 'minutes',
+    }
     setImportance(recovered.importance)
     setUrgencyOverride(recovered.urgencyOverride)
     setThresholdOverride(recovered.urgencyThresholdOverrideHours)
@@ -487,6 +599,11 @@ export function TaskEditor({
       editorRef.current?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus()
       return
     }
+    if (allDay && !isValidLocalDate(allDayDate)) {
+      setError(ALL_DAY_DATE_ERROR)
+      allDayDateRef.current?.focus()
+      return
+    }
     if (taskTimingMutationRequiresStart(task, {
       startAt: toIso(startAt),
       deadline: toIso(deadline),
@@ -495,16 +612,22 @@ export function TaskEditor({
       editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
       return
     }
-    if (plannedDurationMinutes === ''
-      || !Number.isInteger(plannedDurationMinutes)
+    if (deadline && plannedDurationMinutes !== '') {
+      setError(DEADLINE_CONFLICTS_DURATION_ERROR)
+      durationRef.current?.focus()
+      return
+    }
+    if (plannedDurationMinutes !== '' && (
+      !Number.isInteger(plannedDurationMinutes)
       || plannedDurationMinutes < 1
-      || plannedDurationMinutes > MAX_PLANNED_DURATION_MINUTES) {
+      || plannedDurationMinutes > MAX_PLANNED_DURATION_MINUTES
+    )) {
       setError(DURATION_RANGE_ERROR)
       durationRef.current?.focus()
       return
     }
     const maxDuration = maxDurationUntilLocalMidnight(startAt)
-    if (startAt && plannedDurationMinutes > maxDuration) {
+    if (startAt && plannedDurationMinutes !== '' && plannedDurationMinutes > maxDuration) {
       setError(`${DURATION_DAY_ERROR_PREFIX} Для выбранного начала максимум ${formatDuration(maxDuration)}.`)
       durationRef.current?.focus()
       return
@@ -515,12 +638,13 @@ export function TaskEditor({
       title: title.trim(),
       description: description.trim(),
       projectId,
-      startAt: toIso(startAt),
-      deadline: toIso(deadline),
-      plannedDurationMinutes,
+      ...(allDay ? { allDayDate } : {}),
+      ...(!allDay && startAt ? { startAt: toIso(startAt) } : {}),
+      ...(!allDay && deadline ? { deadline: toIso(deadline) } : {}),
+      ...(!allDay && plannedDurationMinutes !== '' ? { plannedDurationMinutes } : {}),
       importance,
-      ...(deadline && thresholdOverride !== '' ? { urgencyThresholdOverrideHours: thresholdOverride } : {}),
-      ...(deadline && urgencyOverride ? { urgencyOverride } : {}),
+      ...(!allDay && deadline && thresholdOverride !== '' ? { urgencyThresholdOverrideHours: thresholdOverride } : {}),
+      ...(!allDay && deadline && urgencyOverride ? { urgencyOverride } : {}),
       tags: uniqueTags,
       subtasks,
       attachments,
@@ -639,14 +763,25 @@ export function TaskEditor({
     if (!voicePreview) return
     const parsed = voicePreview
     const hasSpokenDate = Boolean(parsed.startAt || parsed.deadline)
-    if (parsed.deadline && deadlineLocked) {
+    if (parsed.deadline && allDay) {
+      setError(DEADLINE_CONFLICTS_ALL_DAY_ERROR)
+      allDayDateRef.current?.focus()
+      return
+    }
+    if (parsed.deadline && deadlineLockedByDuration) {
+      setError(DEADLINE_CONFLICTS_DURATION_ERROR)
+      durationRef.current?.focus()
+      return
+    }
+    if (parsed.deadline && deadlineLockedByStart) {
       setError(DEADLINE_REQUIRES_START_ERROR)
       editorRef.current?.querySelector<HTMLInputElement>('#task-start-at')?.focus()
       return
     }
     if (parsed.title) setTitle(parsed.title)
     if (parsed.startAt) {
-      updateStartAt(localInput(parsed.startAt))
+      if (allDay) setAllDayDate(localDateFromDateTime(parsed.startAt))
+      else updateStartAt(localInput(parsed.startAt))
     }
     if (parsed.deadline) {
       updateDeadline(localInput(parsed.deadline))
@@ -792,71 +927,125 @@ export function TaskEditor({
               ]}
             />
           </div>
-          <DateTimePicker inputId="task-start-at" label="Начало" value={startAt} onChange={updateStartAt} onValidityChange={setStartAtValid} onDraftPresenceChange={setStartAtDraftPresent} defaultTime="09:00" resetToken={dateInputResetToken} />
-          <div className="field">
-            <label htmlFor="task-duration">Длительность</label>
-            <div className="inline-add">
-              <input
-                id="task-duration"
-                ref={durationRef}
-                type="number"
-                inputMode="decimal"
-                min={durationUnit === 'minutes' ? 1 : formatDurationInput(1, 'hours')}
-                max={durationUnit === 'minutes'
-                  ? maxPlannedDurationMinutes
-                  : formatDurationInput(maxPlannedDurationMinutes, 'hours')}
-                step={durationUnit === 'minutes' ? 1 : 'any'}
-                list={`task-duration-${durationUnit}`}
-                value={durationInput}
-                onChange={(event) => updateDurationInput(event.target.value)}
-                aria-invalid={durationHasError}
-                aria-describedby="task-duration-hint"
-                aria-errormessage={durationHasError ? 'task-editor-error' : undefined}
-              />
-              <select
-                aria-label="Единица длительности"
-                value={durationUnit}
-                onChange={(event) => updateDurationUnit(event.target.value as DurationUnit)}
+          <div className="field field--full task-all-day-mode">
+            <div className="task-all-day-mode__row">
+              <span className="task-all-day-mode__label"><CalendarDays size={18} aria-hidden="true" /> Планирование</span>
+              <button
+                type="button"
+                className={`task-all-day-toggle ${allDay ? 'is-selected' : ''}`}
+                aria-pressed={allDay}
+                aria-disabled={!allDay && Boolean(deadline)}
+                aria-describedby="task-all-day-hint"
+                onClick={toggleAllDay}
               >
-                <option value="minutes">минуты</option>
-                <option value="hours">часы</option>
-              </select>
-              <datalist id={`task-duration-${durationUnit}`}>
-                {[15, 30, 45, 60, 90, 120, 240, 480, 720, MAX_PLANNED_DURATION_MINUTES]
-                  .filter((minutes) => minutes <= maxPlannedDurationMinutes)
-                  .map((minutes) => (
-                    <option key={minutes} value={formatDurationInput(minutes, durationUnit)}>{formatDuration(minutes)}</option>
-                  ))}
-              </datalist>
+                <CalendarDays size={17} aria-hidden="true" />
+                Весь день
+              </button>
             </div>
-            <small id="task-duration-hint">
-              {plannedDurationMinutes !== ''
-                && Number.isInteger(plannedDurationMinutes)
-                && plannedDurationMinutes >= 1
-                && plannedDurationMinutes <= MAX_PLANNED_DURATION_MINUTES
-                ? `${formatDuration(plannedDurationMinutes)}. `
-                : ''}
-              {startAt
-                ? `Максимум до полуночи: ${formatDuration(maxPlannedDurationMinutes)}.`
-                : 'От 1 минуты до 24 часов; начало задаёт положение блока в календаре.'}
+            <small id="task-all-day-hint">
+              {!allDay && deadline
+                ? 'Сначала уберите дедлайн, чтобы сделать задачу на весь день.'
+                : allDay
+                  ? 'Без времени, длительности и дедлайна.'
+                  : startAt
+                    ? 'Одним нажатием сделать задачу на весь день на дату начала.'
+                    : 'Одним нажатием запланировать обычную задачу на текущую дату.'}
             </small>
           </div>
-          <DateTimePicker
-            label="Дедлайн"
-            value={deadline}
-            onChange={updateDeadline}
-            onValidityChange={setDeadlineValid}
-            defaultTime="18:00"
-            resetToken={dateInputResetToken}
-            disabled={deadlineLocked}
-            allowClearWhenDisabled={Boolean(deadline)}
-            hint={deadlineLocked
-              ? deadline
-                ? 'Добавьте начало, чтобы изменить дедлайн; существующий срок можно очистить.'
-                : 'Сначала укажите корректное начало задачи.'
-              : undefined}
-          />
-          {deadline && (
+          {allDay ? (
+            <div className="field field--full task-all-day-date">
+              <label htmlFor="task-all-day-date">Дата</label>
+              <input
+                ref={allDayDateRef}
+                id="task-all-day-date"
+                type="date"
+                required
+                value={allDayDate}
+                aria-invalid={error === ALL_DAY_DATE_ERROR}
+                aria-describedby="task-all-day-date-hint"
+                aria-errormessage={error === ALL_DAY_DATE_ERROR ? 'task-editor-error' : undefined}
+                onChange={(event) => {
+                  setAllDayDate(event.currentTarget.value)
+                  setError((current) => current === ALL_DAY_DATE_ERROR ? '' : current)
+                }}
+              />
+              <small id="task-all-day-date-hint">Задача появится в секции «Весь день» выбранной даты.</small>
+            </div>
+          ) : <>
+            <DateTimePicker inputId="task-start-at" label="Начало" value={startAt} onChange={updateStartAt} onValidityChange={setStartAtValid} onDraftPresenceChange={setStartAtDraftPresent} defaultTime="09:00" resetToken={dateInputResetToken} />
+            <div className="field">
+              <label htmlFor="task-duration">Длительность</label>
+              <div className="inline-add">
+                <input
+                  id="task-duration"
+                  ref={durationRef}
+                  type="number"
+                  inputMode="decimal"
+                  min={durationUnit === 'minutes' ? 1 : formatDurationInput(1, 'hours')}
+                  max={durationUnit === 'minutes'
+                    ? maxPlannedDurationMinutes
+                    : formatDurationInput(maxPlannedDurationMinutes, 'hours')}
+                  step={durationUnit === 'minutes' ? 1 : 'any'}
+                  list={`task-duration-${durationUnit}`}
+                  value={durationInput}
+                  onChange={(event) => updateDurationInput(event.target.value)}
+                  disabled={Boolean(deadline)}
+                  aria-invalid={durationHasError}
+                  aria-describedby="task-duration-hint"
+                  aria-errormessage={durationHasError ? 'task-editor-error' : undefined}
+                />
+                <select
+                  aria-label="Единица длительности"
+                  value={durationUnit}
+                  onChange={(event) => updateDurationUnit(event.target.value as DurationUnit)}
+                  disabled={Boolean(deadline)}
+                >
+                  <option value="minutes">минуты</option>
+                  <option value="hours">часы</option>
+                </select>
+                <datalist id={`task-duration-${durationUnit}`}>
+                  {[15, 30, 45, 60, 90, 120, 240, 480, 720, MAX_PLANNED_DURATION_MINUTES]
+                    .filter((minutes) => minutes <= maxPlannedDurationMinutes)
+                    .map((minutes) => (
+                      <option key={minutes} value={formatDurationInput(minutes, durationUnit)}>{formatDuration(minutes)}</option>
+                    ))}
+                </datalist>
+              </div>
+              <small id="task-duration-hint">
+                {deadline
+                  ? 'Сначала уберите дедлайн, чтобы указать длительность.'
+                  : <>
+                    {plannedDurationMinutes !== ''
+                  && Number.isInteger(plannedDurationMinutes)
+                  && plannedDurationMinutes >= 1
+                  && plannedDurationMinutes <= MAX_PLANNED_DURATION_MINUTES
+                  ? `${formatDuration(plannedDurationMinutes)}. `
+                  : ''}
+                    {startAt
+                      ? `Максимум до полуночи: ${formatDuration(maxPlannedDurationMinutes)}.`
+                      : 'Необязательно: от 1 минуты до 24 часов; начало задаёт положение блока в календаре.'}
+                  </>}
+              </small>
+            </div>
+            <DateTimePicker
+              label="Дедлайн"
+              value={deadline}
+              onChange={updateDeadline}
+              onValidityChange={setDeadlineValid}
+              defaultTime="18:00"
+              resetToken={dateInputResetToken}
+              disabled={deadlineLocked}
+              allowClearWhenDisabled={Boolean(deadline)}
+              hint={deadlineLockedByDuration
+                ? 'Сначала очистите длительность, чтобы указать дедлайн.'
+                : deadlineLockedByStart
+                  ? deadline
+                  ? 'Добавьте начало, чтобы изменить дедлайн; существующий срок можно очистить.'
+                  : 'Сначала укажите корректное начало задачи.'
+                  : undefined}
+            />
+          </>}
+          {!allDay && deadline && (
             <>
               <div className="field">
                 <span>Становится срочной за</span>
@@ -875,7 +1064,7 @@ export function TaskEditor({
                   value={urgencyOverride}
                   onChange={setUrgencyOverride}
                   options={[
-                    { value: '', label: 'Автоматически', description: 'Рассчитать по дедлайну', icon: <Clock3 size={17} /> },
+                    { value: '', label: 'Нет', description: 'Появится автоматически при приближении дедлайна', icon: <Clock3 size={17} /> },
                     { value: 'low', label: 'Не срочно', icon: <Clock3 size={17} /> },
                     { value: 'high', label: 'Срочно', description: 'Всегда показывать как срочную', icon: <Clock3 size={17} /> },
                   ]}

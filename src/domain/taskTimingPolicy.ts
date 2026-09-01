@@ -1,6 +1,14 @@
 import type { Task } from './models'
 
-type TaskTiming = Pick<Task, 'startAt' | 'deadline'>
+type TaskTiming = Pick<Task, 'allDayDate' | 'startAt' | 'plannedDurationMinutes' | 'deadline'>
+
+const LOCAL_DATE_KEY_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/
+
+export function isValidLocalDateKey(value: unknown): value is string {
+  if (typeof value !== 'string' || !LOCAL_DATE_KEY_PATTERN.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00.000Z`)
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
 
 function representsSameInstant(left: string | undefined, right: string | undefined) {
   if (left === right) return true
@@ -29,4 +37,48 @@ export function taskTimingMutationRequiresStart(
     && !next.startAt
     && representsSameInstant(previous.deadline, next.deadline)
   )
+}
+
+/** A task can represent either a bounded work block or a deadline range. */
+export function taskHasDurationDeadlineConflict(
+  task: Pick<Task, 'plannedDurationMinutes' | 'deadline'>,
+) {
+  return task.plannedDurationMinutes !== undefined
+    && typeof task.deadline === 'string'
+    && task.deadline.trim().length > 0
+}
+
+/** All-day dates form their own date-only scheduling mode. */
+export function taskHasAllDayTimingConflict(task: TaskTiming) {
+  return task.allDayDate !== undefined
+    && (task.startAt !== undefined
+      || task.plannedDurationMinutes !== undefined
+      || task.deadline !== undefined)
+}
+
+export function getTaskTimingMutationError(
+  previous: TaskTiming | undefined,
+  next: TaskTiming,
+): string | undefined {
+  if (next.allDayDate !== undefined && !isValidLocalDateKey(next.allDayDate)) {
+    return 'Task allDayDate must be a valid YYYY-MM-DD date'
+  }
+  if (taskHasAllDayTimingConflict(next)) {
+    return 'Task all-day date is mutually exclusive with start, duration, and deadline'
+  }
+  if (taskHasDurationDeadlineConflict(next)) {
+    return 'Task duration and deadline are mutually exclusive'
+  }
+  if (taskTimingMutationRequiresStart(previous, next)) {
+    return 'Task deadline requires startAt'
+  }
+  return undefined
+}
+
+export function assertTaskTimingMutation(
+  previous: TaskTiming | undefined,
+  next: TaskTiming,
+): void {
+  const error = getTaskTimingMutationError(previous, next)
+  if (error) throw new Error(error)
 }

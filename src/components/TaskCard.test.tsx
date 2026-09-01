@@ -5,7 +5,7 @@ import { App } from '../App'
 import { RouterProvider } from '../core/router/Router'
 import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
-import { formatTaskDate } from './TaskCard'
+import { formatAllDayTaskDate, formatTaskDate } from './TaskCard'
 
 function renderStoredInbox() {
   return render(
@@ -40,6 +40,30 @@ describe('TaskCard safety and focus', () => {
   it('formats invalid persisted dates without throwing a RangeError', () => {
     expect(() => formatTaskDate('not-a-date')).not.toThrow()
     expect(formatTaskDate('not-a-date')).toBe('Некорректная дата')
+    expect(formatAllDayTaskDate('2026-02-30')).toBe('Некорректная дата')
+  })
+
+  it('shows a date-only task without inventing time, deadline or urgency', async () => {
+    const user = userEvent.setup()
+    storeSingleActiveTask((task) => {
+      task.startAt = undefined
+      task.plannedDurationMinutes = undefined
+      task.deadline = undefined
+      task.allDayDate = '2026-09-01'
+      task.urgencyOverride = undefined
+      task.urgencyThresholdOverrideHours = undefined
+    })
+    renderStoredInbox()
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    await user.click(screen.getByRole('button', { name: 'Все' }))
+
+    const card = screen
+      .getByText('Подготовить план недели', { selector: '.task-card__title' })
+      .closest<HTMLElement>('.task-card')!
+    expect(within(card).getByText(/1 сент. 2026 г. · весь день/)).toBeInTheDocument()
+    expect(within(card).queryByText('Срочно')).not.toBeInTheDocument()
+    expect(within(card).queryByText('Не срочно')).not.toBeInTheDocument()
   })
 
   it('renders urgency from the task project threshold', async () => {
@@ -54,6 +78,7 @@ describe('TaskCard safety and focus', () => {
     state.tasks = [
       { ...base, id: 'card-urgent', title: 'Карточка срочная', projectId: 'work', deadline, urgencyThresholdOverrideHours: undefined, urgencyOverride: undefined },
       { ...base, id: 'card-calm', title: 'Карточка несрочная', projectId: 'personal', deadline, urgencyThresholdOverrideHours: undefined, urgencyOverride: undefined },
+      { ...base, id: 'card-manual-low', title: 'Карточка явно несрочная', projectId: 'work', deadline, urgencyThresholdOverrideHours: undefined, urgencyOverride: 'low' },
     ]
     localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
 
@@ -64,10 +89,12 @@ describe('TaskCard safety and focus', () => {
 
     const urgentCard = (await screen.findByText('Карточка срочная')).closest('.task-card')
     const calmCard = screen.getByText('Карточка несрочная').closest('.task-card')
+    const manualLowCard = screen.getByText('Карточка явно несрочная').closest('.task-card')
     expect(urgentCard).not.toBeNull()
     expect(calmCard).not.toBeNull()
     expect(within(urgentCard as HTMLElement).getByText('Срочно')).toBeInTheDocument()
-    expect(within(calmCard as HTMLElement).getByText('Не срочно')).toBeInTheDocument()
+    expect(within(calmCard as HTMLElement).queryByText('Не срочно')).not.toBeInTheDocument()
+    expect(within(manualLowCard as HTMLElement).getByText('Не срочно')).toBeInTheDocument()
   })
 
   it('does not show urgency for a task without a deadline', async () => {

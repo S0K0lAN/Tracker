@@ -901,10 +901,6 @@ h1, h2, h3, p {
   border-radius: 50%;
 }
 
-.meta-item--danger {
-  color: var(--danger);
-}
-
 .urgency--high {
   color: var(--warning);
 }
@@ -1661,94 +1657,6 @@ h1, h2, h3, p {
 
 .deadline-range.continues-before.continues-after {
   border-radius: 0;
-}
-
-.deadline-range.is-overdue {
-  border-style: dashed;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 42%, transparent);
-}
-
-.deadline-range.is-overdue > i {
-  background: var(--danger);
-}
-
-.deadline-range.is-important {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
-  border-left-color: var(--danger);
-}
-
-.deadline-range.is-important > i {
-  background: var(--danger);
-}
-
-.deadline-track {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 12px;
-}
-
-.deadline-item {
-  min-height: 132px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 15px;
-  text-align: left;
-  background: var(--surface-strong);
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  cursor: pointer;
-  transition: transform var(--transition), box-shadow var(--transition);
-  contain: layout paint style;
-}
-
-.deadline-item:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
-}
-
-.deadline-item__date {
-  color: var(--accent-strong);
-  font-size: calc(12px * var(--app-font-scale));
-  font-weight: 700;
-}
-
-.deadline-item strong {
-  min-height: 36px;
-  margin: 7px 0 12px;
-  font-size: calc(14px * var(--app-font-scale));
-}
-
-.deadline-item__line {
-  width: 100%;
-  height: 4px;
-  margin-bottom: 9px;
-  background: var(--surface-soft);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.deadline-item__line i {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  border-radius: 10px;
-}
-
-.deadline-item small {
-  color: var(--text-faint);
-  font-size: calc(11px * var(--app-font-scale));
-}
-
-.deadline-item--overdue .deadline-item__date {
-  color: var(--danger);
-}
-
-.deadline-item--overdue .deadline-item__line i {
-  background: var(--danger);
 }
 
 .calendar-note {
@@ -3124,7 +3032,6 @@ h1, h2, h3, p {
   .calendar-view-switcher button { flex: 1 0 calc(33.333% - 4px); }
   .date-navigation { flex-wrap: wrap; }
   .date-navigation strong { min-width: 0; }
-  .deadline-track { grid-template-columns: 1fr; }
   .month-day { min-height: 96px; padding: 6px; }
   .month-day__task { min-height: 22px; padding: 3px; font-size: calc(10px * var(--app-font-scale)); }
   .matrix-toolbar { align-items: flex-start; flex-direction: column; }
@@ -3148,7 +3055,7 @@ h1, h2, h3, p {
   .week-calendar__all-day-label svg { width: 10px; height: 10px; }
   .week-day__header span { font-size: calc(10px * var(--app-font-scale)); }
   .time-calendar--week .week-day__all-day { padding-inline: 2px; }
-  .time-calendar--week .calendar-deadline-strip { min-height: 24px; flex-wrap: wrap; align-content: center; gap: 0 1px; padding: 1px; font-size: 0; }
+  .time-calendar--week .time-calendar__all-day-range { min-height: 24px; flex-wrap: wrap; align-content: center; gap: 0 1px; padding: 1px; font-size: 0; }
   .calendar-task { min-height: 34px; padding: 3px; border-left-width: 2px; }
   .calendar-task strong { font-size: calc(10px * var(--app-font-scale)); }
   .time-calendar--day .calendar-task,

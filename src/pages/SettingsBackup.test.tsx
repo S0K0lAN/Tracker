@@ -99,8 +99,8 @@ describe('Settings portable backup', () => {
     rollback.tasks[0].title = 'Существующая rollback-копия'
     localStorage.setItem(STORAGE_KEY, JSON.stringify(local))
     localStorage.setItem(IMPORT_BACKUP_KEY, JSON.stringify(rollback))
-    const originalPrimary = localStorage.getItem(STORAGE_KEY)
-    const originalRollback = localStorage.getItem(IMPORT_BACKUP_KEY)
+    const originalPrimary = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+    const originalRollback = JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!)
 
     render(<AppProvider><SettingsPage /></AppProvider>)
     const input = await screen.findByLabelText('Файл резервной копии')
@@ -110,8 +110,8 @@ describe('Settings portable backup', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Файл содержит некорректный JSON')
     expect(screen.queryByRole('dialog', { name: 'Импортировать резервную копию?' })).not.toBeInTheDocument()
-    expect(localStorage.getItem(STORAGE_KEY)).toBe(originalPrimary)
-    expect(localStorage.getItem(IMPORT_BACKUP_KEY)).toBe(originalRollback)
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual(originalPrimary)
+    expect(JSON.parse(localStorage.getItem(IMPORT_BACKUP_KEY)!)).toEqual(originalRollback)
   })
 
   it('closes the preview with Escape and returns focus to the file button', async () => {

@@ -62,6 +62,7 @@ function invalidPortableStates(): [string, (state: AppState) => void][] {
       state.savedFilters.push({ ...portableFilter('orphan-filter'), projectId: 'missing-project' })
     }],
     ['an orphan Pomodoro task', (state) => { state.pomodoro.taskId = 'missing-task' }],
+    ['a task with duration and deadline', (state) => { state.tasks[0].plannedDurationMinutes = 60 }],
     ['too many entities', (state) => {
       state.projects = Array(SNAPSHOT_LIMITS.projects + 1).fill(state.projects[0])
     }],
@@ -139,7 +140,7 @@ describe('portable Focus Flow backup', () => {
     const legacy = {
       ...current,
       schemaVersion: 2,
-      tasks: current.tasks.map(({ urgencyThresholdOverrideHours, ...task }) => ({
+      tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, allDayDate: _allDayDate, ...task }) => ({
         ...task,
         urgencyThresholdHours: urgencyThresholdOverrideHours ?? current.settings.defaultUrgencyThresholdHours,
       })),

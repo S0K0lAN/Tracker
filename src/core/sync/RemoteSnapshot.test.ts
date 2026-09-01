@@ -44,7 +44,7 @@ function createLegacyV1State() {
   return {
     ...current,
     schemaVersion: 1 as const,
-    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, ...task }) => ({
+    tasks: current.tasks.map(({ urgencyThresholdOverrideHours, plannedDurationMinutes: _duration, allDayDate: _allDayDate, ...task }) => ({
       ...task,
       urgencyThresholdHours: urgencyThresholdOverrideHours ?? 72,
     })),
@@ -53,23 +53,14 @@ function createLegacyV1State() {
   }
 }
 
-function expectedLegacyDuration(startAt?: string, deadline?: string) {
+function expectedLegacyDuration(startAt?: string) {
   if (!startAt) return 60
   const start = new Date(startAt)
   const nextMidnight = new Date(start)
   nextMidnight.setHours(24, 0, 0, 0)
-  const fallback = Math.max(1, Math.min(60, Math.floor(
+  return Math.max(1, Math.min(60, Math.floor(
     (nextMidnight.getTime() - start.getTime()) / 60_000,
   )))
-  if (!deadline) return fallback
-  const end = new Date(deadline)
-  const duration = (end.getTime() - start.getTime()) / 60_000
-  return Number.isInteger(duration)
-    && duration >= 1
-    && duration <= 1_440
-    && end.getTime() <= nextMidnight.getTime()
-    ? duration
-    : fallback
 }
 
 function addDeepRemotePlugin(state: AppState) {
@@ -94,6 +85,8 @@ function invalidRemoteStates(): [string, (state: AppState) => void][] {
       state.savedFilters.push({ ...remoteFilter('orphan-filter'), projectId: 'missing-project' })
     }],
     ['an orphan Pomodoro task', (state) => { state.pomodoro.taskId = 'missing-task' }],
+    ['a task with duration and deadline', (state) => { state.tasks[0].plannedDurationMinutes = 60 }],
+    ['an all-day task with timed scheduling', (state) => { state.tasks[0].allDayDate = '2026-09-01' }],
     ['too many entities', (state) => {
       state.projects = Array(SNAPSHOT_LIMITS.projects + 1).fill(state.projects[0])
     }],
@@ -178,7 +171,9 @@ describe('remote snapshots', () => {
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, urgencyOverride, ...task }) => ({
       ...task,
-      plannedDurationMinutes: expectedLegacyDuration(task.startAt, task.deadline),
+      startAt: task.startAt,
+      deadline: task.deadline,
+      ...(!task.deadline ? { plannedDurationMinutes: expectedLegacyDuration(task.startAt) } : {}),
       ...(task.deadline ? { urgencyThresholdOverrideHours: urgencyThresholdHours } : {}),
       ...(task.deadline && urgencyOverride ? { urgencyOverride } : {}),
     })))
@@ -206,7 +201,9 @@ describe('remote snapshots', () => {
     expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(decoded.tasks).toEqual(legacy.tasks.map(({ urgencyThresholdHours, urgencyOverride, ...task }) => ({
       ...task,
-      plannedDurationMinutes: expectedLegacyDuration(task.startAt, task.deadline),
+      startAt: task.startAt,
+      deadline: task.deadline,
+      ...(!task.deadline ? { plannedDurationMinutes: expectedLegacyDuration(task.startAt) } : {}),
       ...(task.deadline ? { urgencyThresholdOverrideHours: urgencyThresholdHours } : {}),
       ...(task.deadline && urgencyOverride ? { urgencyOverride } : {}),
     })))
