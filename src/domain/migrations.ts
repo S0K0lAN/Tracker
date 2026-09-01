@@ -1,10 +1,14 @@
-import { DEFAULT_URGENCY_THRESHOLD_HOURS } from './models'
+import {
+  DEFAULT_PLANNED_DURATION_MINUTES,
+  DEFAULT_URGENCY_THRESHOLD_HOURS,
+  MAX_PLANNED_DURATION_MINUTES,
+} from './models'
 import type { AppState, Habit, Project, SavedFilter, Task, TaskStatus } from './models'
 import { createSeedState } from './seed'
 import { attachmentDataUrlMimeType, MAX_ATTACHMENT_BYTES, safeAttachmentDataUrl } from './attachments'
 import { safeCustomBackgroundDataUrl } from './backgrounds'
 
-export const CURRENT_SCHEMA_VERSION = 5
+export const CURRENT_SCHEMA_VERSION = 8
 
 const MAX_PAYLOAD_STRING_BYTES = 10 * 1024 * 1024
 // Per-field and known-user-text budgets must not pre-empt a historical v4
@@ -38,6 +42,7 @@ export const SNAPSHOT_LIMITS = {
 const FONT_FAMILIES = ['system', 'humanist', 'readable'] as const
 const FONT_SCALES = [90, 100, 110, 120] as const
 const DEFAULT_ENTITY_COLOR = '#778c70'
+const LEGACY_HABIT_CREATED_AT = '1970-01-01T00:00:00.000Z'
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i
 const UTF8_ENCODER = new TextEncoder()
 
@@ -104,6 +109,7 @@ export function assertSnapshotStateShape(
     strict,
     strictSanitizableValues,
     schemaVersion >= 5,
+    schemaVersion >= 7,
     budget,
     `tasks[${index}]`,
   ))
@@ -115,7 +121,14 @@ export function assertSnapshotStateShape(
     budget,
     `projects[${index}]`,
   ))
-  habits.forEach((habit, index) => assertHabitShape(habit, strict, strictSanitizableValues, budget, `habits[${index}]`))
+  habits.forEach((habit, index) => assertHabitShape(
+    habit,
+    strict,
+    strictSanitizableValues,
+    schemaVersion >= 8,
+    budget,
+    `habits[${index}]`,
+  ))
   savedFilters.forEach((filter, index) => assertFilterShape(filter, strict, strictSanitizableValues, budget, `savedFilters[${index}]`))
 
   const pomodoro = recordField(raw, 'pomodoro', strict)
@@ -149,6 +162,7 @@ function assertTaskShape(
   strict: boolean,
   strictSanitizableValues: boolean,
   useProjectUrgencyThresholds: boolean,
+  requirePlannedDuration: boolean,
   budget: SnapshotValidationBudget,
   path: string,
 ) {
@@ -163,6 +177,7 @@ function assertTaskShape(
     dateStringField(task, key, false, path, strictSanitizableValues)
   }
   if (strictSanitizableValues
+    && !requirePlannedDuration
     && typeof task.startAt === 'string'
     && typeof task.deadline === 'string'
     && Date.parse(task.deadline) < Date.parse(task.startAt)
@@ -173,6 +188,15 @@ function assertTaskShape(
     numberField(task, 'urgencyThresholdOverrideHours', false, path, (value) => value > 0)
   } else {
     numberField(task, 'urgencyThresholdHours', strict, path, (value) => !strictSanitizableValues || value > 0)
+  }
+  if (requirePlannedDuration) {
+    numberField(
+      task,
+      'plannedDurationMinutes',
+      true,
+      path,
+      (value) => Number.isInteger(value) && value >= 1 && value <= MAX_PLANNED_DURATION_MINUTES,
+    )
   }
   numberField(task, 'focusMinutes', strict, path, (value) => value >= 0)
   enumField(task, 'importance', ['low', 'high'], strict, path)
@@ -233,6 +257,7 @@ function assertHabitShape(
   habit: Record<string, unknown>,
   strict: boolean,
   strictSanitizableValues: boolean,
+  requireCreatedAt: boolean,
   budget: SnapshotValidationBudget,
   path: string,
 ) {
@@ -240,6 +265,7 @@ function assertHabitShape(
   userTextField(habit, 'name', strict, path, budget, SNAPSHOT_LIMITS.shortTextBytes)
   boundedStringField(habit, 'icon', strict, path, SNAPSHOT_LIMITS.identifierBytes)
   colorField(habit, 'color', strict, path, strictSanitizableValues)
+  dateStringField(habit, 'createdAt', requireCreatedAt, path, true)
   userTextField(habit, 'description', false, path, budget, SNAPSHOT_LIMITS.longTextBytes)
   numberArray(
     habit,
@@ -841,13 +867,16 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
   const allowedStatuses: TaskStatus[] = ['active', 'completed', 'archived', 'deleted']
   const status = value.status && allowedStatuses.includes(value.status) ? value.status : 'active'
   const startAt = normalizedDate(value.startAt)
-  const candidateDeadline = normalizedDate(value.deadline)
-  const deadline = candidateDeadline && (!startAt || Date.parse(candidateDeadline) >= Date.parse(startAt))
-    ? candidateDeadline
-    : undefined
+  const deadline = normalizedDate(value.deadline)
+  const plannedDurationMinutes = sourceSchemaVersion < 7
+    ? inferLegacyPlannedDuration(startAt, deadline)
+    : validPlannedDuration(value.plannedDurationMinutes)
+      ? value.plannedDurationMinutes
+      : DEFAULT_PLANNED_DURATION_MINUTES
   const {
     urgencyThresholdHours: legacyUrgencyThresholdHours,
     urgencyThresholdOverrideHours,
+    urgencyOverride,
     ...preservedValue
   } = value
   const normalizedThresholdOverride = sourceSchemaVersion < 5
@@ -860,10 +889,14 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
     description: value.description ?? '',
     projectId: value.projectId ?? 'inbox',
     startAt,
+    plannedDurationMinutes,
     deadline,
-    ...(normalizedThresholdOverride === undefined
+    ...(deadline === undefined || normalizedThresholdOverride === undefined
       ? {}
       : { urgencyThresholdOverrideHours: normalizedThresholdOverride }),
+    ...(deadline !== undefined && (urgencyOverride === 'low' || urgencyOverride === 'high')
+      ? { urgencyOverride }
+      : {}),
     importance: value.importance === 'high' ? 'high' : 'low',
     tags: Array.isArray(value.tags) ? value.tags : [],
     subtasks: Array.isArray(value.subtasks) ? value.subtasks : [],
@@ -882,6 +915,43 @@ function normalizeTask(value: LegacyTaskInput, now: string, sourceSchemaVersion:
     deletedAt: normalizedDate(value.deletedAt),
     focusMinutes: Number(value.focusMinutes) || 0,
   }
+}
+
+function inferLegacyPlannedDuration(startAt?: string, deadline?: string): number {
+  const fallbackDuration = legacyFallbackDuration(startAt)
+  if (!startAt || !deadline) return fallbackDuration
+
+  const startTime = Date.parse(startAt)
+  const deadlineTime = Date.parse(deadline)
+  const durationMinutes = (deadlineTime - startTime) / 60_000
+  if (!Number.isInteger(durationMinutes)
+    || durationMinutes < 1
+    || durationMinutes > MAX_PLANNED_DURATION_MINUTES
+  ) {
+    return fallbackDuration
+  }
+
+  const nextLocalMidnight = new Date(startTime)
+  nextLocalMidnight.setHours(24, 0, 0, 0)
+  return deadlineTime <= nextLocalMidnight.getTime()
+    ? durationMinutes
+    : fallbackDuration
+}
+
+function legacyFallbackDuration(startAt?: string): number {
+  if (!startAt) return DEFAULT_PLANNED_DURATION_MINUTES
+  const startTime = Date.parse(startAt)
+  const nextLocalMidnight = new Date(startTime)
+  nextLocalMidnight.setHours(24, 0, 0, 0)
+  const wholeMinutesRemaining = Math.floor((nextLocalMidnight.getTime() - startTime) / 60_000)
+  return Math.max(1, Math.min(DEFAULT_PLANNED_DURATION_MINUTES, wholeMinutesRemaining))
+}
+
+function validPlannedDuration(value: unknown): value is number {
+  return typeof value === 'number'
+    && Number.isInteger(value)
+    && value >= 1
+    && value <= MAX_PLANNED_DURATION_MINUTES
 }
 
 function normalizeReminder(value: unknown): Task['reminders'][number] | undefined {
@@ -936,6 +1006,7 @@ function normalizeHabit(value: Partial<Habit>): Habit {
     targetDays: Array.isArray(value.targetDays) ? value.targetDays : [1, 2, 3, 4, 5],
     completions: Array.isArray(value.completions) ? value.completions : [],
     color: safeColor(value.color, DEFAULT_ENTITY_COLOR),
+    createdAt: normalizedDate(value.createdAt) ?? LEGACY_HABIT_CREATED_AT,
   }
 }
 

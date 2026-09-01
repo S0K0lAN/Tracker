@@ -1,4 +1,11 @@
-import type { Importance, Reminder, Subtask, Urgency } from '../domain/models'
+import {
+  DEFAULT_PLANNED_DURATION_MINUTES,
+  MAX_PLANNED_DURATION_MINUTES,
+  type Importance,
+  type Reminder,
+  type Subtask,
+  type Urgency,
+} from '../domain/models'
 import { clearTaskDraftStorage, taskDraftStorageKey } from '../core/storage/TaskDraftStorage'
 
 export const TASK_DRAFT_DEBOUNCE_MS = 600
@@ -17,6 +24,7 @@ export interface TaskDraftData {
   projectId: string
   startAt: string
   deadline: string
+  plannedDurationMinutes: number | ''
   importance: Importance
   urgencyThresholdOverrideHours: number | ''
   urgencyOverride: Urgency | ''
@@ -27,7 +35,7 @@ export interface TaskDraftData {
 }
 
 interface StoredTaskDraft {
-  version: 1 | 2
+  version: 1 | 2 | 3
   taskId?: string
   baseTaskUpdatedAt?: string
   updatedAt: string
@@ -112,6 +120,7 @@ function normalizeReminder(value: unknown): Reminder | null {
 function normalizeTaskDraftFields(
   value: Record<string, unknown>,
   urgencyThresholdOverrideHours: number | '',
+  plannedDurationMinutes: number | '',
 ): TaskDraftData | null {
   try {
     if (!isBoundedString(value.title, MAX_TITLE_LENGTH)
@@ -131,15 +140,17 @@ function normalizeTaskDraftFields(
     const subtasks = value.subtasks.map(normalizeSubtask)
     const reminders = value.reminders.map(normalizeReminder)
     if (subtasks.some((item) => item === null) || reminders.some((item) => item === null)) return null
+    const hasDeadline = value.deadline !== ''
     return {
       title: value.title,
       description: value.description,
       projectId: value.projectId,
       startAt: value.startAt,
       deadline: value.deadline,
+      plannedDurationMinutes,
       importance: value.importance,
-      urgencyThresholdOverrideHours,
-      urgencyOverride: value.urgencyOverride,
+      urgencyThresholdOverrideHours: hasDeadline ? urgencyThresholdOverrideHours : '',
+      urgencyOverride: hasDeadline ? value.urgencyOverride : '',
       tags: value.tags,
       subtasks: subtasks as Subtask[],
       pendingSubtaskTitle: value.pendingSubtaskTitle,
@@ -159,7 +170,37 @@ export function normalizeTaskDraftData(value: unknown): TaskDraftData | null {
     || !Number.isFinite(threshold)
     || threshold <= 0
   )) return null
-  return normalizeTaskDraftFields(value, threshold)
+  const plannedDurationMinutes = value.plannedDurationMinutes
+  if (plannedDurationMinutes !== '' && (
+    typeof plannedDurationMinutes !== 'number'
+    || !Number.isInteger(plannedDurationMinutes)
+    || plannedDurationMinutes < 1
+    || plannedDurationMinutes > 1_440
+  )) return null
+  return normalizeTaskDraftFields(value, threshold, plannedDurationMinutes)
+}
+
+function inferLegacyDraftDuration(startAt: unknown, deadline: unknown) {
+  if (!isLocalDateTime(startAt) || startAt === '') return DEFAULT_PLANNED_DURATION_MINUTES
+
+  const start = new Date(startAt)
+  const nextLocalMidnight = new Date(start)
+  nextLocalMidnight.setHours(24, 0, 0, 0)
+  const minutesUntilMidnight = Math.floor((nextLocalMidnight.getTime() - start.getTime()) / 60_000)
+  const fallback = Math.max(
+    1,
+    Math.min(DEFAULT_PLANNED_DURATION_MINUTES, minutesUntilMidnight),
+  )
+  if (!isLocalDateTime(deadline) || deadline === '') return fallback
+
+  const end = new Date(deadline)
+  const duration = (end.getTime() - start.getTime()) / 60_000
+  return Number.isInteger(duration)
+    && duration >= 1
+    && duration <= MAX_PLANNED_DURATION_MINUTES
+    && end.getTime() <= nextLocalMidnight.getTime()
+    ? duration
+    : fallback
 }
 
 function normalizeLegacyTaskDraftData(value: unknown): TaskDraftData | null {
@@ -169,12 +210,31 @@ function normalizeLegacyTaskDraftData(value: unknown): TaskDraftData | null {
     || value.urgencyThresholdHours <= 0) return null
   // Version 1 stored the effective threshold on every task, so preserving it
   // as an individual override is the only lossless mapping.
-  return normalizeTaskDraftFields(value, value.urgencyThresholdHours)
+  return normalizeTaskDraftFields(
+    value,
+    value.urgencyThresholdHours,
+    inferLegacyDraftDuration(value.startAt, value.deadline),
+  )
+}
+
+function normalizeVersion2TaskDraftData(value: unknown): TaskDraftData | null {
+  if (!isRecord(value)) return null
+  const threshold = value.urgencyThresholdOverrideHours
+  if (threshold !== '' && (
+    typeof threshold !== 'number'
+    || !Number.isFinite(threshold)
+    || threshold <= 0
+  )) return null
+  return normalizeTaskDraftFields(
+    value,
+    threshold,
+    inferLegacyDraftDuration(value.startAt, value.deadline),
+  )
 }
 
 function normalizeStoredTaskDraft(value: unknown, taskId: string | undefined): StoredTaskDraft | null {
   if (!isRecord(value)
-    || (value.version !== 1 && value.version !== 2)
+    || (value.version !== 1 && value.version !== 2 && value.version !== 3)
     || value.taskId !== taskId
     || (taskId ? !isIsoDate(value.baseTaskUpdatedAt) : value.baseTaskUpdatedAt !== undefined)
     || !isIsoDate(value.updatedAt)
@@ -184,7 +244,9 @@ function normalizeStoredTaskDraft(value: unknown, taskId: string | undefined): S
   const version = value.version
   const data = version === 1
     ? normalizeLegacyTaskDraftData(value.data)
-    : normalizeTaskDraftData(value.data)
+    : version === 2
+      ? normalizeVersion2TaskDraftData(value.data)
+      : normalizeTaskDraftData(value.data)
   if (!data) return null
   return {
     version,
@@ -301,7 +363,7 @@ export function writeTaskDraft(
     revision: nextRevision(storage, key),
   }
   const draft: StoredTaskDraft = {
-    version: 2,
+    version: 3,
     taskId,
     baseTaskUpdatedAt,
     updatedAt: new Date(Math.max(safeNow, Number.isFinite(baseTimestamp) ? baseTimestamp + 1 : safeNow)).toISOString(),

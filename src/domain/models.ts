@@ -8,6 +8,8 @@ export type AppFontFamily = 'system' | 'humanist' | 'readable'
 export type AppFontScale = 90 | 100 | 110 | 120
 
 export const DEFAULT_URGENCY_THRESHOLD_HOURS = 72
+export const DEFAULT_PLANNED_DURATION_MINUTES = 60
+export const MAX_PLANNED_DURATION_MINUTES = 24 * 60
 
 export interface Subtask {
   id: string
@@ -34,6 +36,7 @@ export interface Task {
   description: string
   projectId: string
   startAt?: string
+  plannedDurationMinutes: number
   deadline?: string
   urgencyThresholdOverrideHours?: number
   urgencyOverride?: Urgency
@@ -69,6 +72,7 @@ export interface Habit {
   targetDays: number[]
   completions: string[]
   color: string
+  createdAt: string
 }
 
 export interface AppSettings {
@@ -154,8 +158,10 @@ export function getTaskTiming(
   const deadlineAt = Number.isFinite(parsedDeadline) ? parsedDeadline : undefined
   const nowAt = now.getTime()
   const urgencyThresholdHours = getEffectiveUrgencyThreshold(task, projectThreshold)
-  const urgency = task.urgencyOverride
-    ?? (deadlineAt !== undefined && (deadlineAt - nowAt) / 3_600_000 <= urgencyThresholdHours ? 'high' : 'low')
+  const urgency = deadlineAt === undefined
+    ? 'low'
+    : task.urgencyOverride
+      ?? ((deadlineAt - nowAt) / 3_600_000 <= urgencyThresholdHours ? 'high' : 'low')
   return {
     urgency,
     overdue: Boolean(deadlineAt !== undefined && task.status === 'active' && deadlineAt < nowAt),

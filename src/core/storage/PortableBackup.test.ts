@@ -28,6 +28,7 @@ const portableMinimalTask = (index: number): Task => ({
   title: 't',
   description: '',
   projectId: 'inbox',
+  plannedDurationMinutes: 60,
   importance: 'low',
   tags: [],
   subtasks: [],
@@ -50,6 +51,7 @@ function invalidPortableStates(): [string, (state: AppState) => void][] {
     ['duplicate task IDs', (state) => state.tasks.push(structuredClone(state.tasks[0]))],
     ['duplicate project IDs', (state) => state.projects.push(structuredClone(state.projects[0]))],
     ['duplicate habit IDs', (state) => state.habits.push(structuredClone(state.habits[0]))],
+    ['an invalid habit creation time', (state) => { state.habits[0].createdAt = 'not-a-date' }],
     ['duplicate filter IDs', (state) => state.savedFilters.push(portableFilter('same'), portableFilter('same'))],
     ['a missing inbox', (state) => {
       state.projects = state.projects.filter(({ id }) => id !== 'inbox')
@@ -142,6 +144,7 @@ describe('portable Focus Flow backup', () => {
         urgencyThresholdHours: urgencyThresholdOverrideHours ?? current.settings.defaultUrgencyThresholdHours,
       })),
       projects: current.projects.map(({ urgencyThresholdHours: _threshold, ...project }) => project),
+      habits: current.habits.map(({ createdAt: _createdAt, ...habit }) => habit),
     }
     const legacySettings = legacy.settings as unknown as Record<string, unknown>
     delete legacySettings.fontFamily
@@ -156,6 +159,7 @@ describe('portable Focus Flow backup', () => {
     expect(parsed.state.settings.fontScale).toBe(100)
     expect(parsed.state.savedFilters[0].projectId).toBeUndefined()
     expect(parsed.state.pomodoro.taskId).toBeUndefined()
+    expect(parsed.state.habits[0].createdAt).toBe('1970-01-01T00:00:00.000Z')
   })
 
   it.each([
@@ -245,7 +249,7 @@ describe('portable Focus Flow backup', () => {
     }
   })
 
-  it.each(invalidPortableStates())('rejects exporting schema v5 data with %s', (_label, mutate) => {
+  it.each(invalidPortableStates())('rejects exporting current-schema data with %s', (_label, mutate) => {
     const state = createSeedState()
     mutate(state)
 
@@ -261,7 +265,7 @@ describe('portable Focus Flow backup', () => {
     'an oversized user string',
     'too much cumulative user text',
   ].includes(label)))(
-    'rejects imported schema v5 data with %s',
+    'rejects imported current-schema data with %s',
     (_label, mutate) => {
       const envelope = createRemoteEnvelope(createSeedState())
       mutate(envelope.data as unknown as AppState)
@@ -279,7 +283,7 @@ describe('portable Focus Flow backup', () => {
     'an oversized user string',
     'too much cumulative user text',
   ].includes(label)))(
-    'rejects imported schema v5 data with %s at the transport boundary',
+    'rejects imported current-schema data with %s at the transport boundary',
     (_label, mutate) => {
       const envelope = createRemoteEnvelope(createSeedState())
       mutate(envelope.data as unknown as AppState)

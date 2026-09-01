@@ -120,9 +120,11 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: (task: Task) =>
               <CalendarClock size={13} /> {formatTaskDate(task.deadline)}
             </span>
           )}
-          <span className={`meta-item urgency urgency--${urgency}`}>
-            <Clock3 size={13} /> {urgency === 'high' ? 'Срочно' : 'Не срочно'}
-          </span>
+          {task.deadline && (
+            <span className={`meta-item urgency urgency--${urgency}`}>
+              <Clock3 size={13} /> {urgency === 'high' ? 'Срочно' : 'Не срочно'}
+            </span>
+          )}
           <span className={`meta-item importance importance--${task.importance}`}>
             <Flag size={13} fill={task.importance === 'high' ? 'currentColor' : 'none'} /> {task.importance === 'high' ? 'Важно' : 'Обычно'}
           </span>

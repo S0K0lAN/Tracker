@@ -1,11 +1,8 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
 
 test.beforeEach(async ({ page }) => {
-  page.on('pageerror', (error) => {
-    throw error
-  })
   await page.goto('/inbox')
   await page.evaluate(() => localStorage.clear())
   await page.reload()

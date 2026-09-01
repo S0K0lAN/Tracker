@@ -26,6 +26,10 @@
   border-color: var(--danger);
 }
 
+.date-time-field__control.is-disabled {
+  background: var(--surface-soft);
+}
+
 .date-time-field__control > input {
   min-width: 0;
   min-height: 42px;
@@ -35,6 +39,13 @@
   border: 0;
   outline: 0;
   font-size: calc(14px * var(--app-font-scale));
+}
+
+.date-time-field__control > input:disabled {
+  color: var(--text-soft);
+  -webkit-text-fill-color: var(--text-soft);
+  cursor: not-allowed;
+  opacity: 1;
 }
 
 .date-time-field__clear,
@@ -51,10 +62,16 @@
   cursor: pointer;
 }
 
-.date-time-field__clear:hover,
-.date-time-field__toggle:hover {
+.date-time-field__clear:not(:disabled):hover,
+.date-time-field__toggle:not(:disabled):hover {
   color: var(--accent-strong);
   background: var(--accent-soft);
+}
+
+.date-time-field__clear:disabled,
+.date-time-field__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .date-time-field__toggle svg {

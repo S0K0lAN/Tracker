@@ -7,6 +7,7 @@ const baseTask: Task = {
   title: 'Проверить срочность',
   description: '',
   projectId: 'inbox',
+  plannedDurationMinutes: 60,
   importance: 'low',
   tags: [],
   subtasks: [],
@@ -23,6 +24,11 @@ describe('task urgency', () => {
 
   it('is low without a deadline', () => {
     expect(getTaskUrgency(baseTask, now)).toBe('low')
+  })
+
+  it('ignores a stale manual override without a valid deadline', () => {
+    expect(getTaskUrgency({ ...baseTask, urgencyOverride: 'high' }, now)).toBe('low')
+    expect(getTaskUrgency({ ...baseTask, deadline: 'not-a-date', urgencyOverride: 'high' }, now)).toBe('low')
   })
 
   it('becomes high three days before the deadline', () => {

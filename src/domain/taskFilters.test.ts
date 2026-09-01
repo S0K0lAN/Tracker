@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, SavedFilter, Task } from './models'
-import { matchesSavedFilter } from './taskFilters'
+import { createSeedState } from './seed'
+import { isInboxTask, matchesSavedFilter } from './taskFilters'
 
 const now = new Date('2026-08-21T09:00:00.000Z')
 
@@ -10,6 +11,7 @@ const task: Task = {
   description: '',
   projectId: 'work',
   deadline: '2026-08-22T09:00:00.000Z',
+  plannedDurationMinutes: 60,
   importance: 'low',
   tags: [],
   subtasks: [],
@@ -49,8 +51,12 @@ describe('matchesSavedFilter', () => {
   it('keeps task threshold and manual urgency overrides authoritative', () => {
     expect(matchesSavedFilter({ ...task, urgencyThresholdOverrideHours: 6 }, urgentFilter, project(48), now)).toBe(false)
     expect(matchesSavedFilter({ ...task, urgencyOverride: 'high' }, urgentFilter, project(12), now)).toBe(true)
-import { createSeedState } from './seed'
-import { isInboxTask } from './taskFilters'
+  })
+
+  it('does not match a stale manual urgency override without a deadline', () => {
+    expect(matchesSavedFilter({ ...task, deadline: undefined, urgencyOverride: 'high' }, urgentFilter, project(48), now)).toBe(false)
+  })
+})
 
 describe('isInboxTask', () => {
   const makeTask = () => ({

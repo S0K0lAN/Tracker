@@ -15,6 +15,7 @@ const draft: TaskDraftData = {
   projectId: 'work',
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
+  plannedDurationMinutes: 90,
   importance: 'high',
   urgencyThresholdOverrideHours: 24,
   urgencyOverride: 'high',
@@ -46,11 +47,27 @@ describe('task draft recovery journal', () => {
     expect(writeTaskDraft(inherited).status).toBe('saved')
 
     expect(readTaskDraft()?.data).toEqual(inherited)
-    expect(JSON.parse(localStorage.getItem(getTaskDraftStorageKey())!).version).toBe(2)
+    expect(JSON.parse(localStorage.getItem(getTaskDraftStorageKey())!).version).toBe(3)
+  })
+
+  it('drops urgency settings from a draft without a deadline', () => {
+    const withoutDeadline: TaskDraftData = { ...draft, deadline: '' }
+
+    expect(writeTaskDraft(withoutDeadline).status).toBe('saved')
+
+    expect(readTaskDraft()?.data).toMatchObject({
+      deadline: '',
+      urgencyThresholdOverrideHours: '',
+      urgencyOverride: '',
+    })
   })
 
   it('recovers a version 1 threshold as an individual override', () => {
-    const { urgencyThresholdOverrideHours: _override, ...legacyData } = draft
+    const {
+      urgencyThresholdOverrideHours: _override,
+      plannedDurationMinutes: _duration,
+      ...legacyData
+    } = draft
     const key = getTaskDraftStorageKey()
     localStorage.setItem(key, JSON.stringify({
       version: 1,
@@ -63,7 +80,49 @@ describe('task draft recovery journal', () => {
     const loaded = readTaskDraft()
 
     expect(loaded?.data.urgencyThresholdOverrideHours).toBe(24)
+    expect(loaded?.data.plannedDurationMinutes).toBe(540)
     expect(loaded?.data).not.toHaveProperty('urgencyThresholdHours')
+  })
+
+  it('infers a same-day planned duration when migrating a version 2 draft', () => {
+    const { plannedDurationMinutes: _duration, ...version2Data } = {
+      ...draft,
+      startAt: '2026-08-21T09:15',
+      deadline: '2026-08-21T11:00',
+    }
+    const key = getTaskDraftStorageKey()
+    localStorage.setItem(key, JSON.stringify({
+      version: 2,
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      writeId: 'version-2-write',
+      revision: 1,
+      data: version2Data,
+    }))
+
+    expect(readTaskDraft()?.data.plannedDurationMinutes).toBe(105)
+  })
+
+  it('uses a same-day fallback for a legacy draft crossing midnight', () => {
+    const { plannedDurationMinutes: _duration, ...version2Data } = {
+      ...draft,
+      startAt: '2026-08-21T23:30',
+      deadline: '2026-08-22T00:30',
+    }
+    localStorage.setItem(getTaskDraftStorageKey(), JSON.stringify({
+      version: 2,
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      writeId: 'version-2-midnight-write',
+      revision: 1,
+      data: version2Data,
+    }))
+
+    expect(readTaskDraft()?.data.plannedDurationMinutes).toBe(30)
+  })
+
+  it('rejects planned durations outside the supported one-day range', () => {
+    expect(writeTaskDraft({ ...draft, plannedDurationMinutes: 0 }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...draft, plannedDurationMinutes: 1_441 }).status).toBe('invalid')
+    expect(writeTaskDraft({ ...draft, plannedDurationMinutes: 1.5 }).status).toBe('invalid')
   })
 
   it('rejects and removes corrupt, oversized and stale journals', () => {

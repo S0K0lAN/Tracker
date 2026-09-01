@@ -1,20 +1,21 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Habit } from '../domain/models'
 import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
-import { getCompletionTrend, getHabitRhythm, HabitsPage, HABIT_ICONS, toDateKey } from './HabitsPage'
+import { getCompletionTrend, getHabitRhythm, HabitsPage, HABIT_CHECK_DAYS, HABIT_ICONS, toDateKey } from './HabitsPage'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
+const EXISTING_HABIT_CREATED_AT = '2020-01-01T12:00:00.000Z'
 
 afterEach(() => vi.useRealTimers())
 
-function rollingWeek(now: Date) {
-  return Array.from({ length: 7 }, (_, index) => {
+function rollingDays(now: Date, count = 7) {
+  return Array.from({ length: count }, (_, index) => {
     const day = new Date(now)
     day.setHours(0, 0, 0, 0)
-    day.setDate(day.getDate() - 6 + index)
+    day.setDate(day.getDate() - count + 1 + index)
     return day
   })
 }
@@ -42,8 +43,9 @@ describe('habit rhythm', () => {
       name: 'Вода',
       icon: '💧',
       targetDays: [0, 1, 2, 3, 4, 5, 6],
-      completions: ['2026-07-31'],
+      completions: ['2026-07-30', '2026-07-31'],
       color: '#75a8b5',
+      createdAt: new Date(2026, 6, 31, 18).toISOString(),
     }]
     state.tasks = state.tasks.slice(0, 1).map((task) => ({
       ...task,
@@ -59,7 +61,7 @@ describe('habit rhythm', () => {
 
   it('calculates progress and streak from each habit schedule independently', () => {
     const now = new Date(2026, 6, 31, 12)
-    const days = rollingWeek(now)
+    const days = rollingDays(now)
     const weekdays: Habit = {
       id: 'weekdays',
       name: 'Чтение',
@@ -67,6 +69,7 @@ describe('habit rhythm', () => {
       targetDays: [1, 2, 3, 4, 5],
       completions: ['2026-07-27', '2026-07-29', '2026-07-31'],
       color: '#9b7fbd',
+      createdAt: EXISTING_HABIT_CREATED_AT,
     }
     const daily: Habit = {
       id: 'daily',
@@ -75,6 +78,7 @@ describe('habit rhythm', () => {
       targetDays: [0, 1, 2, 3, 4, 5, 6],
       completions: [],
       color: '#75a8b5',
+      createdAt: EXISTING_HABIT_CREATED_AT,
     }
 
     expect(getHabitRhythm(weekdays, days, now)).toEqual({
@@ -97,7 +101,7 @@ describe('habit rhythm', () => {
 
   it('renders completion and progress separately for every habit', async () => {
     const now = new Date()
-    const days = rollingWeek(now)
+    const days = rollingDays(now, HABIT_CHECK_DAYS)
     const allDays = [0, 1, 2, 3, 4, 5, 6]
     renderHabits([
       {
@@ -107,6 +111,7 @@ describe('habit rhythm', () => {
         targetDays: allDays,
         completions: days.map(toDateKey),
         color: '#778c70',
+        createdAt: EXISTING_HABIT_CREATED_AT,
       },
       {
         id: 'empty',
@@ -115,6 +120,7 @@ describe('habit rhythm', () => {
         targetDays: allDays,
         completions: [],
         color: '#75a8b5',
+        createdAt: EXISTING_HABIT_CREATED_AT,
       },
     ])
 
@@ -127,11 +133,13 @@ describe('habit rhythm', () => {
 
     const firstRow = screen.getByRole('article', { name: 'Привычка Первая привычка' })
     const secondRow = screen.getByRole('article', { name: 'Привычка Вторая привычка' })
-    expect(within(firstRow).getByText('7 из 7 плановых дней')).toBeInTheDocument()
-    expect(within(secondRow).getByText('0 из 7 плановых дней')).toBeInTheDocument()
+    expect(within(firstRow).getByText('14 из 14 плановых дней')).toBeInTheDocument()
+    expect(within(secondRow).getByText('0 из 14 плановых дней')).toBeInTheDocument()
+    expect(firstRow.querySelectorAll('.habit-checks button')).toHaveLength(HABIT_CHECK_DAYS)
+    expect(secondRow.querySelectorAll('.habit-checks button')).toHaveLength(HABIT_CHECK_DAYS)
     expect(screen.getByRole('img', { name: /График выполненных привычек и задач/ })).toBeInTheDocument()
     expect(screen.getByRole('table', { name: /Выполнения привычек и задач за период .*\(30 дней\)/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Последние 7 дней' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Последние 14 дней' })).toBeInTheDocument()
     expect(screen.getByText('Серия', { selector: '.habit-list__streak-label' })).toBeInTheDocument()
   })
 
@@ -145,6 +153,7 @@ describe('habit rhythm', () => {
       targetDays: [0, 1, 2, 3, 4, 5, 6],
       completions: [],
       color: '#778c70',
+      createdAt: EXISTING_HABIT_CREATED_AT,
     }])
     await act(async () => { await Promise.resolve() })
 
@@ -172,6 +181,7 @@ describe('habit rhythm', () => {
         targetDays: allDays,
         completions: [],
         color: '#778c70',
+        createdAt: EXISTING_HABIT_CREATED_AT,
       },
       {
         id: 'second',
@@ -180,6 +190,7 @@ describe('habit rhythm', () => {
         targetDays: allDays,
         completions: [],
         color: '#9b7fbd',
+        createdAt: EXISTING_HABIT_CREATED_AT,
       },
     ])
 
@@ -187,7 +198,7 @@ describe('habit rhythm', () => {
 
     expect(screen.getByRole('button', { name: `Отменить Зарядка ${dayLabel}` })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: `Отметить Медитация ${dayLabel}` })).toBeInTheDocument()
-    expect(within(screen.getByRole('article', { name: 'Ритм привычки Зарядка' })).getByText('14%')).toBeInTheDocument()
+    expect(within(screen.getByRole('article', { name: 'Ритм привычки Зарядка' })).getByText('7%')).toBeInTheDocument()
     expect(within(screen.getByRole('article', { name: 'Ритм привычки Медитация' })).getByText('0%')).toBeInTheDocument()
   })
 })
@@ -287,6 +298,29 @@ describe('habit completion trend range', () => {
 })
 
 describe('habit creation', () => {
+  it('stores the fixed creation instant and disables earlier local days', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const now = new Date(2026, 7, 21, 12, 0, 0)
+    vi.setSystemTime(now)
+    const user = userEvent.setup()
+    renderHabits([])
+    await act(async () => { await Promise.resolve() })
+
+    await user.click(screen.getByRole('button', { name: 'Новая привычка' }))
+    await user.type(screen.getByLabelText('Название привычки'), 'Новая с сегодня')
+    await user.click(screen.getByRole('button', { name: 'Создать' }))
+
+    const row = screen.getByRole('article', { name: 'Привычка Новая с сегодня' })
+    expect(within(row).getByText('0 из 1 плановых дней')).toBeInTheDocument()
+    expect(within(row).getByRole('button', {
+      name: `Новая с сегодня не запланирована ${new Date(2026, 7, 20).toLocaleDateString('ru-RU')}`,
+    })).toBeDisabled()
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as ReturnType<typeof createSeedState>
+      expect(stored.habits.find((habit) => habit.name === 'Новая с сегодня')?.createdAt).toBe(now.toISOString())
+    })
+  })
+
   it('offers ten icons and saves the selected icon with an optional description', async () => {
     const user = userEvent.setup()
     renderHabits()
@@ -318,6 +352,7 @@ describe('habit creation', () => {
       targetDays: [0, 1, 2, 3, 4, 5, 6],
       completions: [today],
       color: '#75a8b5',
+      createdAt: EXISTING_HABIT_CREATED_AT,
     }])
 
     await user.click(await screen.findByRole('button', { name: 'Редактировать привычку Старая привычка' }))
@@ -330,5 +365,9 @@ describe('habit creation', () => {
     const row = screen.getByRole('article', { name: 'Привычка Вода утром' })
     expect(row.querySelector('[data-habit-icon="sun"]')).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: `Отменить Вода утром ${new Date().toLocaleDateString('ru-RU')}` })).toBeInTheDocument()
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as ReturnType<typeof createSeedState>
+      expect(stored.habits.find((habit) => habit.id === 'editable')?.createdAt).toBe(EXISTING_HABIT_CREATED_AT)
+    })
   })
 })

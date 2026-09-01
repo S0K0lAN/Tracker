@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Archive, CheckCircle2, Columns3, Filter, LayoutList, ListFilter, Plus, Search, SlidersHorizontal, X } from 'lucide-react'
 import type { InboxSort, InboxView, Task } from '../domain/models'
 import { getTaskUrgency, isSameLocalDay } from '../domain/models'
@@ -12,6 +12,28 @@ import './inbox-layouts.css'
 
 type FilterMode = 'inbox' | 'all' | 'today' | 'important' | 'urgent'
 const VIRTUAL_LIST_THRESHOLD = 150
+const VIRTUAL_LIST_OVERSCAN = 3
+
+type VirtualWindow = {
+  start: number
+  end: number
+  rowHeight: number
+  viewportStart: number
+  viewportRows: number
+}
+
+function getVirtualRowHeight() {
+  return window.innerWidth <= 600 ? 210 : 152
+}
+
+function getVirtualWindow(viewportStart: number, taskCount: number, rowHeight: number): VirtualWindow {
+  const viewportRows = Math.max(1, Math.ceil(window.innerHeight / rowHeight))
+  const maxViewportStart = Math.max(0, taskCount - viewportRows)
+  const boundedViewportStart = Math.min(Math.max(0, viewportStart), maxViewportStart)
+  const start = Math.max(0, boundedViewportStart - VIRTUAL_LIST_OVERSCAN)
+  const end = Math.min(taskCount, boundedViewportStart + viewportRows + VIRTUAL_LIST_OVERSCAN)
+  return { start, end, rowHeight, viewportStart: boundedViewportStart, viewportRows }
+}
 
 export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => void }) {
   const { state, updateSettings, archiveCompletedTasks } = useApp()
@@ -23,7 +45,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
   const [tagMode, setTagMode] = useState<'any' | 'all'>('any')
   const [filtersOpen, setFiltersOpen] = useState(false)
 
-  const tags = useMemo(() => [...new Set(state.tasks.flatMap((task) => task.tags))].sort(), [state.tasks])
   const projectUrgencyThresholds = useMemo(
     () => new Map(state.projects.map((project) => [project.id, project.urgencyThresholdHours])),
     [state.projects],
@@ -40,8 +61,6 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         if (filter === 'today' && !isSameLocalDay(task.startAt, now) && !isSameLocalDay(task.deadline, now)) return false
         if (filter === 'important' && task.importance !== 'high') return false
         if (filter === 'urgent' && getTaskUrgency(task, now, projectUrgencyThresholds.get(task.projectId)) !== 'high') return false
-        if (projectId && task.projectId !== projectId) return false
-        if (filter === 'urgent' && getTaskUrgency(task, now) !== 'high') return false
         if (selectedTags.length > 0) {
           const tagMatch = tagMode === 'all'
             ? selectedTags.every((tag) => task.tags.includes(tag))
@@ -50,31 +69,11 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
         }
         return true
       }), state.settings.inboxSort),
-    [filter, now, projectId, projectUrgencyThresholds, query, selectedTags, showCompleted, state.settings.inboxSort, state.tasks, tagMode],
-  )
-
-  const summary = useMemo(() => {
-    const result = { active: 0, completed: 0, today: 0, urgent: 0, important: 0 }
-    for (const task of state.tasks) {
-      if (task.status === 'completed') {
-        result.completed += 1
-        continue
-      }
-      if (task.status !== 'active') continue
-      result.active += 1
-      if (isSameLocalDay(task.startAt, now) || isSameLocalDay(task.deadline, now)) result.today += 1
-      if (getTaskUrgency(task, now, projectUrgencyThresholds.get(task.projectId)) === 'high') result.urgent += 1
-      if (task.importance === 'high') result.important += 1
-    }
-    return result
-  }, [now, projectUrgencyThresholds, state.tasks])
-  const activeCount = summary.active
-  const completedCount = summary.completed
-    [filter, now, query, scopeTasks, selectedTags, showCompleted, state.settings.inboxSort, tagMode],
+    [filter, now, projectUrgencyThresholds, query, scopeTasks, selectedTags, showCompleted, state.settings.inboxSort, tagMode],
   )
 
   const activeCount = scopeTasks.filter((task) => task.status === 'active').length
-  const completedTasks = scopeTasks.filter((task) => task.status === 'completed')
+  const completedTasks = visibleTasks.filter((task) => task.status === 'completed')
   const completedCount = completedTasks.length
   const view = state.settings.inboxView
 
@@ -127,7 +126,14 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
                 ['important', 'Важные'],
                 ['urgent', 'Срочные'],
               ] as const).map(([value, label]) => (
-                <button key={value} className={filter === value ? 'is-selected' : ''} onClick={() => setFilter(value)}>{label}</button>
+                <button
+                  key={value}
+                  className={filter === value ? 'is-selected' : ''}
+                  aria-pressed={filter === value}
+                  onClick={() => setFilter(value)}
+                >
+                  {label}
+                </button>
               ))}
             </div>
           </div>
@@ -137,6 +143,7 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
               {tags.map((tag) => (
                 <button
                   className={`tag tag--button ${selectedTags.includes(tag) ? 'tag--selected' : ''}`}
+                  aria-pressed={selectedTags.includes(tag)}
                   onClick={() => setSelectedTags(selectedTags.includes(tag) ? selectedTags.filter((item) => item !== tag) : [...selectedTags, tag])}
                   key={tag}
                 >#{tag}</button>
@@ -146,8 +153,8 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
           {selectedTags.length > 1 && (
             <div className="tag-mode">
               <span>Совпадение:</span>
-              <button className={tagMode === 'any' ? 'is-selected' : ''} onClick={() => setTagMode('any')}>любой тег</button>
-              <button className={tagMode === 'all' ? 'is-selected' : ''} onClick={() => setTagMode('all')}>все теги</button>
+              <button aria-pressed={tagMode === 'any'} className={tagMode === 'any' ? 'is-selected' : ''} onClick={() => setTagMode('any')}>любой тег</button>
+              <button aria-pressed={tagMode === 'all'} className={tagMode === 'all' ? 'is-selected' : ''} onClick={() => setTagMode('all')}>все теги</button>
             </div>
           )}
           {(selectedTags.length > 0 || filter !== 'inbox') && (
@@ -164,7 +171,14 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
             ['list', 'Список', LayoutList],
             ['board', 'Доска', Columns3],
           ] as const).map(([value, label, Icon]) => (
-            <button key={value} className={view === value ? 'is-selected' : ''} onClick={() => updateSettings({ inboxView: value as InboxView })} aria-label={`Вид: ${label}`} title={label}>
+            <button
+              key={value}
+              className={view === value ? 'is-selected' : ''}
+              aria-label={`Вид: ${label}`}
+              aria-pressed={view === value}
+              title={label}
+              onClick={() => updateSettings({ inboxView: value as InboxView })}
+            >
               <Icon size={16} /><span>{label}</span>
             </button>
           ))}
@@ -194,62 +208,147 @@ export function InboxPage({ onEditTask }: { onEditTask: (task: Task | null) => v
 
 function VirtualTaskList({ tasks, onOpen }: { tasks: Task[]; onOpen(task: Task): void }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [windowState, setWindowState] = useState({ start: 0, end: 16, rowHeight: 152 })
+  const pinnedWindowRef = useRef(false)
+  const rangeId = useId()
+  const instructionsId = useId()
+  const listId = useId()
+  const [windowState, setWindowState] = useState<VirtualWindow>({
+    start: 0,
+    end: Math.min(tasks.length, 16),
+    rowHeight: 152,
+    viewportStart: 0,
+    viewportRows: 10,
+  })
+  const [navigationAnnouncement, setNavigationAnnouncement] = useState('')
 
   useEffect(() => {
+    pinnedWindowRef.current = false
     let frame = 0
     const updateWindow = () => {
       frame = 0
+      if (pinnedWindowRef.current) return
       const container = containerRef.current
       if (!container) return
-      const rowHeight = window.innerWidth <= 600 ? 210 : 152
+      const rowHeight = getVirtualRowHeight()
       const containerTop = container.getBoundingClientRect().top + window.scrollY
       const relativeScroll = Math.max(0, window.scrollY - containerTop)
-      const overscan = 3
-      const start = Math.max(0, Math.floor(relativeScroll / rowHeight) - overscan)
-      const visibleRows = Math.ceil(window.innerHeight / rowHeight) + overscan * 2
-      const end = Math.min(tasks.length, start + visibleRows)
+      const nextWindow = getVirtualWindow(Math.floor(relativeScroll / rowHeight), tasks.length, rowHeight)
       setWindowState((current) => (
-        current.start === start && current.end === end && current.rowHeight === rowHeight
+        current.start === nextWindow.start
+          && current.end === nextWindow.end
+          && current.rowHeight === nextWindow.rowHeight
+          && current.viewportStart === nextWindow.viewportStart
+          && current.viewportRows === nextWindow.viewportRows
           ? current
-          : { start, end, rowHeight }
+          : nextWindow
       ))
     }
     const scheduleUpdate = () => {
       if (!frame) frame = requestAnimationFrame(updateWindow)
     }
+    const releasePinnedWindow = () => {
+      if (!pinnedWindowRef.current) return
+      pinnedWindowRef.current = false
+      scheduleUpdate()
+    }
+    const releasePinnedWindowForKey = (event: KeyboardEvent) => {
+      if (['ArrowDown', 'ArrowUp', 'End', 'Home', 'PageDown', 'PageUp', ' '].includes(event.key)) {
+        releasePinnedWindow()
+      }
+    }
     updateWindow()
     window.addEventListener('scroll', scheduleUpdate, { passive: true })
-    window.addEventListener('resize', scheduleUpdate)
+    window.addEventListener('resize', releasePinnedWindow)
+    window.addEventListener('wheel', releasePinnedWindow, { passive: true })
+    window.addEventListener('touchstart', releasePinnedWindow, { passive: true })
+    window.addEventListener('pointerdown', releasePinnedWindow, { passive: true })
+    window.addEventListener('keydown', releasePinnedWindowForKey)
     return () => {
       if (frame) cancelAnimationFrame(frame)
       window.removeEventListener('scroll', scheduleUpdate)
-      window.removeEventListener('resize', scheduleUpdate)
+      window.removeEventListener('resize', releasePinnedWindow)
+      window.removeEventListener('wheel', releasePinnedWindow)
+      window.removeEventListener('touchstart', releasePinnedWindow)
+      window.removeEventListener('pointerdown', releasePinnedWindow)
+      window.removeEventListener('keydown', releasePinnedWindowForKey)
     }
   }, [tasks.length])
 
+  const lastViewportStart = Math.max(0, tasks.length - windowState.viewportRows)
+  const atStart = windowState.viewportStart === 0
+  const atEnd = windowState.viewportStart >= lastViewportStart
+  const rangeLabel = `Доступны задачи ${windowState.start + 1}–${windowState.end} из ${tasks.length}`
+
+  const moveViewport = (direction: -1 | 1) => {
+    const boundaryReached = direction < 0 ? atStart : atEnd
+    if (boundaryReached) return
+    const targetViewportStart = direction < 0
+      ? Math.max(0, windowState.viewportStart - windowState.viewportRows)
+      : Math.min(lastViewportStart, windowState.viewportStart + windowState.viewportRows)
+    const rowHeight = getVirtualRowHeight()
+    const nextWindow = getVirtualWindow(targetViewportStart, tasks.length, rowHeight)
+    const container = containerRef.current
+    if (!container) return
+    const containerTop = container.getBoundingClientRect().top + window.scrollY
+    pinnedWindowRef.current = true
+    setWindowState(nextWindow)
+    setNavigationAnnouncement(`Перейдено к диапазону. Доступны задачи ${nextWindow.start + 1}–${nextWindow.end} из ${tasks.length}`)
+    window.scrollTo({ top: Math.max(0, containerTop + nextWindow.viewportStart * rowHeight), behavior: 'auto' })
+  }
+
   return (
-    <div
-      ref={containerRef}
-      className="virtual-task-list"
-      style={{ height: tasks.length * windowState.rowHeight }}
-      role="list"
-      aria-label={`${tasks.length} задач`}
-    >
-      {tasks.slice(windowState.start, windowState.end).map((task, offset) => {
-        const index = windowState.start + offset
-        return (
-          <div
-            className="virtual-task-list__row"
-            style={{ height: windowState.rowHeight, transform: `translateY(${index * windowState.rowHeight}px)` }}
-            key={task.id}
-            role="listitem"
+    <>
+      <div className="virtual-task-list__navigation" role="group" aria-label="Навигация по длинному списку задач">
+        <p className="virtual-task-list__range" id={rangeId}>{rangeLabel}</p>
+        <div className="virtual-task-list__controls">
+          <button
+            type="button"
+            aria-controls={listId}
+            aria-disabled={atStart}
+            onClick={() => moveViewport(-1)}
           >
-            <TaskCard task={task} onOpen={onOpen} />
-          </div>
-        )
-      })}
-    </div>
+            Предыдущие
+          </button>
+          <button
+            type="button"
+            aria-controls={listId}
+            aria-disabled={atEnd}
+            onClick={() => moveViewport(1)}
+          >
+            Следующие
+          </button>
+        </div>
+      </div>
+      <p className="visually-hidden" id={instructionsId}>
+        Используйте кнопки предыдущего и следующего диапазона. После последнего диапазона перейдите клавишей Tab к доступным карточкам задач.
+      </p>
+      <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{navigationAnnouncement}</p>
+      <div
+        ref={containerRef}
+        className="virtual-task-list"
+        id={listId}
+        style={{ height: tasks.length * windowState.rowHeight }}
+        role="list"
+        aria-label="Виртуальный список задач"
+        aria-describedby={`${rangeId} ${instructionsId}`}
+      >
+        {tasks.slice(windowState.start, windowState.end).map((task, offset) => {
+          const index = windowState.start + offset
+          return (
+            <div
+              className="virtual-task-list__row"
+              style={{ height: windowState.rowHeight, transform: `translateY(${index * windowState.rowHeight}px)` }}
+              key={task.id}
+              role="listitem"
+              aria-posinset={index + 1}
+              aria-setsize={tasks.length}
+            >
+              <TaskCard task={task} onOpen={onOpen} />
+            </div>
+          )
+        })}
+      </div>
+    </>
   )
 }
 

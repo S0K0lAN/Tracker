@@ -1,23 +1,12 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
-const runtimeErrors = new WeakMap<Page, string[]>()
 
 test.beforeEach(async ({ page }) => {
-  const errors: string[] = []
-  runtimeErrors.set(page, errors)
-  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(`console.error: ${message.text()}`)
-  })
   await page.goto('/inbox')
   await page.evaluate(() => localStorage.clear())
   await page.reload()
   await page.waitForFunction((storageKey) => localStorage.getItem(storageKey), STORAGE_KEY)
-})
-
-test.afterEach(async ({ page }) => {
-  expect(runtimeErrors.get(page) ?? [], 'browser runtime errors').toEqual([])
 })
 
 test('the visible sidebar remains clickable and keyboard-operable at 1024px', async ({ page }) => {
@@ -96,6 +85,62 @@ test('an unknown project detail URL returns to the project overview without a st
 
   await expect(page).toHaveURL(/\/projects$/)
   await expect(page.getByRole('heading', { name: 'Проекты', level: 1 })).toBeVisible()
+})
+
+test('bulk archive persists only completed tasks visible through the selected filter', async ({ page }) => {
+  await page.evaluate((storageKey) => {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) throw new Error('Local state was not initialized')
+    const state = JSON.parse(raw)
+    const template = state.tasks.find((task: { status: string }) => task.status === 'active')
+    const today = new Date()
+    today.setHours(10, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    state.tasks = [
+      {
+        ...template,
+        id: 'bulk-today',
+        title: 'Завершена сегодня E2E',
+        status: 'completed',
+        startAt: today.toISOString(),
+        deadline: undefined,
+        completedAt: today.toISOString(),
+      },
+      {
+        ...template,
+        id: 'bulk-tomorrow',
+        title: 'Завершена завтра E2E',
+        status: 'completed',
+        startAt: tomorrow.toISOString(),
+        deadline: undefined,
+        completedAt: today.toISOString(),
+      },
+    ]
+    localStorage.setItem(storageKey, JSON.stringify(state))
+  }, STORAGE_KEY)
+  await page.reload()
+
+  await page.getByRole('button', { name: 'Фильтры', exact: true }).click()
+  await page.getByRole('button', { name: 'Сегодня', exact: true }).click()
+  await page.getByRole('button', { name: 'Показать завершённые', exact: true }).click()
+  await expect(page.getByText('Завершена сегодня E2E', { exact: true })).toBeVisible()
+  await expect(page.getByText('Завершена завтра E2E', { exact: true })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Архивировать', exact: true }).click()
+  const persistedStatuses = () => page.evaluate((storageKey) => {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return undefined
+    const tasks = JSON.parse(raw).tasks as Array<{ id: string; status: string }>
+    return {
+      today: tasks.find((task) => task.id === 'bulk-today')?.status,
+      tomorrow: tasks.find((task) => task.id === 'bulk-tomorrow')?.status,
+    }
+  }, STORAGE_KEY)
+  await expect.poll(persistedStatuses).toEqual({ today: 'archived', tomorrow: 'completed' })
+
+  await page.reload()
+  await expect.poll(persistedStatuses).toEqual({ today: 'archived', tomorrow: 'completed' })
 })
 
 test('searchable project menu preserves logical Tab order inside TaskEditor', async ({ page }) => {

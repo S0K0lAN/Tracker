@@ -91,12 +91,9 @@
 
 .task-details__facts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 10px;
   margin: 0;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  overflow: visible;
 }
 
 .task-details__facts > div {
@@ -105,16 +102,13 @@
   flex-direction: column;
   gap: 7px;
   padding: 13px 14px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 
-.task-details__facts > div:nth-child(3n) {
-  border-right: 0;
-}
-
-.task-details__facts > div:nth-last-child(-n + 3) {
-  border-bottom: 0;
+.task-details__fact--schedule {
+  grid-column: 1 / -1;
 }
 
 .task-details__facts dt {
@@ -144,12 +138,62 @@
   border-radius: 50%;
 }
 
-.task-details__facts dd small {
+.task-details__urgency-value {
+  flex-direction: column;
+  align-items: flex-start !important;
+}
+
+.task-details__urgency-value > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.task-details__overdue {
   padding: 2px 5px;
   color: var(--danger);
   background: var(--danger-soft);
   border-radius: 6px;
   font-size: calc(10px * var(--app-font-scale));
+}
+
+.task-details__urgency-note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-soft);
+  font-size: calc(10px * var(--app-font-scale));
+  font-weight: 600;
+}
+
+.task-details__schedule {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px !important;
+}
+
+.task-details__schedule-item {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 10px;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.task-details__schedule-item small {
+  color: var(--text-soft);
+  font-size: calc(10px * var(--app-font-scale));
+  font-weight: 650;
+}
+
+.task-details__schedule-item strong {
+  font-size: calc(12px * var(--app-font-scale));
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .task-details__urgent {
@@ -330,25 +374,6 @@
     padding: 16px 17px;
   }
 
-  .task-details__facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .task-details__facts > div,
-  .task-details__facts > div:nth-child(3n),
-  .task-details__facts > div:nth-last-child(-n + 3) {
-    border-right: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .task-details__facts > div:nth-child(2n) {
-    border-right: 0;
-  }
-
-  .task-details__facts > div:nth-last-child(-n + 2) {
-    border-bottom: 0;
-  }
-
   .task-details__description,
   .task-details__facts,
   .task-details__section,
@@ -362,5 +387,11 @@
 
   .task-details__footer {
     padding: 12px 17px;
+  }
+}
+
+@media (max-width: 520px) {
+  .task-details__schedule {
+    grid-template-columns: 1fr;
   }
 }

@@ -114,15 +114,25 @@ export function DateTimePicker({
   value,
   onChange,
   onValidityChange,
+  onDraftPresenceChange,
   defaultTime = '09:00',
   resetToken = 0,
+  disabled = false,
+  allowClearWhenDisabled = false,
+  hint,
+  inputId,
 }: {
   label: string
   value: string
   onChange(value: string): void
   onValidityChange?(valid: boolean): void
+  onDraftPresenceChange?(present: boolean): void
   defaultTime?: string
   resetToken?: number
+  disabled?: boolean
+  allowClearWhenDisabled?: boolean
+  hint?: string
+  inputId?: string
 }) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(() => formatDateTimeInput(value))
@@ -152,6 +162,10 @@ export function DateTimePicker({
       setTimeDraft(defaultTime)
     }
   }, [defaultTime, resetToken, value])
+
+  useEffect(() => {
+    if (disabled) setOpen(false)
+  }, [disabled])
 
   useEffect(() => {
     if (!open) return
@@ -204,10 +218,12 @@ export function DateTimePicker({
   }, [anchor])
 
   const setValue = (next: Date) => {
+    if (disabled) return
     if (!Number.isFinite(next.getTime())) return
     const nextValue = toLocalDateTimeValue(next)
     if (!nextValue) return
     onChange(nextValue)
+    onDraftPresenceChange?.(true)
     setDraft(formatDateTimeInput(nextValue))
     setTimeDraft(`${pad(next.getHours())}:${pad(next.getMinutes())}`)
     setInvalid(false)
@@ -233,6 +249,7 @@ export function DateTimePicker({
       return false
     }
     onChange(parsed)
+    onDraftPresenceChange?.(Boolean(parsed))
     setDraft(formatDateTimeInput(parsed))
     setInvalid(false)
     onValidityChange?.(true)
@@ -250,6 +267,7 @@ export function DateTimePicker({
 
   const clear = () => {
     onChange('')
+    onDraftPresenceChange?.(false)
     setDraft('')
     setInvalid(false)
     onValidityChange?.(true)
@@ -258,19 +276,22 @@ export function DateTimePicker({
   return (
     <div className="field date-time-field" ref={rootRef}>
       <span id={labelId}>{label}</span>
-      <div className={`date-time-field__control ${invalid ? 'is-invalid' : ''}`}>
+      <div className={`date-time-field__control ${invalid ? 'is-invalid' : ''} ${disabled ? 'is-disabled' : ''}`}>
         <CalendarDays size={17} aria-hidden="true" />
         <input
+          id={inputId}
           ref={inputRef}
           aria-labelledby={labelId}
           aria-invalid={invalid}
           aria-describedby={invalid ? `${labelId}-error` : `${labelId}-hint`}
           value={draft}
+          disabled={disabled}
           inputMode="numeric"
           placeholder="ДД.ММ.ГГГГ, ЧЧ:ММ"
           onChange={(event) => {
             const nextDraft = formatNumericDateTimeDraft(event.target.value)
             setDraft(nextDraft)
+            onDraftPresenceChange?.(Boolean(nextDraft.trim()))
             setInvalid(false)
             if (!nextDraft.trim()) {
               onChange('')
@@ -287,17 +308,18 @@ export function DateTimePicker({
             }
           }}
         />
-        {value && <button type="button" className="date-time-field__clear" onClick={clear} aria-label={`Очистить дату ${fieldNoun}`}><X size={14} /></button>}
+        {value && <button type="button" className="date-time-field__clear" disabled={disabled && !allowClearWhenDisabled} onClick={clear} aria-label={`Очистить дату ${fieldNoun}`}><X size={14} /></button>}
         <button
           ref={triggerRef}
           type="button"
           className="date-time-field__toggle"
           aria-label={`Открыть календарь ${fieldNoun}`}
           aria-expanded={open}
+          disabled={disabled}
           onClick={() => setOpen((current) => !current)}
         ><ChevronRight size={16} /></button>
       </div>
-      <small id={`${labelId}-hint`} className="date-time-field__hint">Например: 31.07.2026, 18:30</small>
+      <small id={`${labelId}-hint`} className="date-time-field__hint">{hint ?? 'Например: 31.07.2026, 18:30'}</small>
       {invalid && <small id={`${labelId}-error`} className="date-time-field__error" role="alert">Проверьте дату и время</small>}
 
       {open && createPortal(

@@ -1,25 +1,53 @@
-.week-day__deadlines {
-  height: var(--week-deadline-height);
-  min-height: var(--week-deadline-height);
+.calendar-swipe-viewport,
+.calendar-day-dialog {
+  --calendar-task-green: #2f7d4b;
+  --calendar-task-green-strong: #1f6338;
+  --calendar-task-green-soft: #e1f1e6;
+  --calendar-task-green-line: #76aa86;
+  --calendar-today-frame: #fff;
+  --calendar-today-frame-shadow: rgb(31 55 38 / 38%);
+}
+
+:root[data-theme='dark'] .calendar-swipe-viewport,
+:root[data-theme='dark'] .calendar-day-dialog {
+  --calendar-task-green-strong: #b8e3c4;
+  --calendar-task-green-soft: #1e3b29;
+  --calendar-task-green-line: #548f66;
+  --calendar-today-frame-shadow: rgb(0 0 0 / 72%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'] .calendar-swipe-viewport,
+  :root[data-theme='system'] .calendar-day-dialog {
+    --calendar-task-green-strong: #b8e3c4;
+    --calendar-task-green-soft: #1e3b29;
+    --calendar-task-green-line: #548f66;
+    --calendar-today-frame-shadow: rgb(0 0 0 / 72%);
+  }
+}
+
+.week-day__all-day {
+  height: var(--week-all-day-height);
+  min-height: var(--week-all-day-height);
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 5px 4px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--danger-soft) 52%, var(--surface));
+  background: color-mix(in srgb, var(--calendar-task-green-soft) 52%, var(--surface));
   border-bottom: 1px solid var(--line);
 }
 
-.week-day__deadlines button {
+.week-day__all-day button {
   overflow: hidden;
-  min-height: 21px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   gap: 3px;
   padding: 0 5px;
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--calendar-task-green-strong);
+  background: var(--calendar-task-green-soft);
+  border: 1px solid color-mix(in srgb, var(--calendar-task-green-line) 56%, transparent);
   border-radius: 5px;
   font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
@@ -29,62 +57,67 @@
   cursor: pointer;
 }
 
-.week-day__deadlines small {
-  color: var(--danger);
+.week-day__all-day small {
+  color: var(--calendar-task-green-strong);
   font-size: calc(10px * var(--app-font-scale));
   font-weight: 700;
   line-height: 12px;
 }
 
-.week-day__deadlines .week-day__deadlines-more {
+.week-day__all-day .week-day__all-day-more {
   min-height: 24px;
   justify-content: flex-start;
   padding: 0 3px;
-  color: var(--danger);
+  color: var(--calendar-task-green-strong);
   background: transparent;
   border: 0;
   font-size: calc(10px * var(--app-font-scale));
   line-height: 12px;
 }
 
-.week-day__deadlines .week-day__deadlines-more:hover {
-  color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+.week-day__all-day .week-day__all-day-more:hover {
+  color: var(--calendar-task-green-strong);
+  background: color-mix(in srgb, var(--calendar-task-green-soft) 72%, transparent);
 }
 
 .month-day .month-day__deadline {
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--calendar-task-green-strong);
+  background: var(--calendar-task-green-soft);
+  border: 1px solid color-mix(in srgb, var(--calendar-task-green-line) 56%, transparent);
 }
 
-.calendar-deadline-strip > i {
-  width: 3px;
-  height: 12px;
-  flex: 0 0 auto;
-  background: var(--accent);
-  border-radius: 3px;
-}
-
-.week-day__deadlines .calendar-deadline-strip--important,
-.month-day .calendar-deadline-strip--important {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border-color: color-mix(in srgb, var(--danger) 22%, transparent);
-}
-
-.calendar-deadline-strip--important > i {
-  background: var(--danger);
-}
-
-.calendar-deadline-strip > span {
+.calendar-deadline-strip__title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.week-day__deadlines-empty {
+.calendar-deadline-strip > .calendar-task-signals {
+  min-width: auto;
+  overflow: visible;
+  white-space: normal;
+}
+
+.calendar-deadline-strip__time {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--calendar-task-green-strong);
+  font-size: calc(9px * var(--app-font-scale));
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.calendar-deadline-strip__glyph {
+  width: 12px;
+  height: 12px;
+  display: block;
+  flex: 0 0 12px;
+  color: var(--calendar-task-green-strong);
+}
+
+.week-day__all-day-empty {
   min-height: 1px;
 }
 
@@ -126,10 +159,170 @@
   pointer-events: auto;
 }
 
+.month-calendar__deadline-glyph {
+  width: 11px;
+  height: 11px;
+  display: block;
+  flex: 0 0 11px;
+  color: var(--calendar-task-green-strong);
+}
+
 .month-day .month-day__deadline-more {
   min-height: 24px;
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger-soft) 58%, transparent);
+  color: var(--calendar-task-green-strong);
+  background: color-mix(in srgb, var(--calendar-task-green-soft) 58%, transparent);
+}
+
+.calendar-task-signals {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  color: var(--calendar-task-green-strong);
+  line-height: 1;
+}
+
+.calendar-task-signal {
+  width: 13px;
+  height: 13px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 13px;
+}
+
+.calendar-task-signal > svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.week-calendar .week-calendar__all-day-label {
+  color: var(--calendar-task-green-strong);
+  background: color-mix(in srgb, var(--calendar-task-green-soft) 52%, var(--surface));
+}
+
+.week-calendar .calendar-task,
+.week-calendar .calendar-task.calendar-task--important {
+  color: var(--calendar-task-green-strong);
+  background: var(--calendar-task-green-soft);
+  border-color: color-mix(in srgb, var(--calendar-task-green-line) 64%, var(--line));
+  border-left-color: var(--calendar-task-green);
+}
+
+.week-calendar .calendar-task strong,
+.week-calendar .calendar-task.calendar-task--important strong {
+  color: var(--calendar-task-green-strong);
+}
+
+.calendar-task__content {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.week-calendar .calendar-task__content > strong {
+  width: auto;
+  flex: 1 1 auto;
+}
+
+.month-calendar .month-day__task {
+  color: var(--calendar-task-green-strong);
+  background: var(--calendar-task-green-soft);
+  border: 1px solid color-mix(in srgb, var(--calendar-task-green-line) 48%, transparent);
+}
+
+.month-calendar .month-day__task:hover {
+  border-color: var(--calendar-task-green-line);
+  filter: brightness(0.98);
+}
+
+.month-calendar .month-day__task > .calendar-task-signals {
+  min-width: auto;
+  overflow: visible;
+}
+
+.month-calendar .deadline-range,
+.month-calendar .deadline-range.is-important {
+  color: var(--calendar-task-green-strong);
+  background: var(--calendar-task-green-soft);
+  border-color: color-mix(in srgb, var(--calendar-task-green-line) 64%, var(--line));
+  border-left-color: var(--calendar-task-green);
+}
+
+.month-calendar .deadline-range.is-overdue,
+.month-calendar .deadline-range.is-important.is-overdue {
+  border-color: var(--calendar-task-green-line);
+  border-left-color: var(--calendar-task-green);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--calendar-task-green-line) 52%, transparent);
+}
+
+.month-calendar .deadline-range > .calendar-task-signals {
+  min-width: auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.calendar-day-dialog .calendar-day-dialog__task {
+  background: color-mix(in srgb, var(--calendar-task-green-soft) 78%, var(--surface-soft));
+  border-color: color-mix(in srgb, var(--calendar-task-green-line) 32%, transparent);
+}
+
+.calendar-day-dialog .calendar-day-dialog__task:hover {
+  background: var(--calendar-task-green-soft);
+  border-color: var(--calendar-task-green-line);
+}
+
+.calendar-day-dialog .calendar-day-dialog__task > .calendar-day-dialog__task-marker {
+  background: var(--calendar-task-green);
+}
+
+.calendar-day-dialog__task > strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.calendar-day-dialog__task > strong > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.year-calendar .year-month__days > button.has-tasks {
+  color: var(--calendar-task-green-strong);
+  background: var(--calendar-task-green-soft);
+}
+
+.year-calendar .year-month__days i,
+.year-calendar .year-month__days > button.is-today i {
+  color: #fff;
+  background: var(--calendar-task-green);
+}
+
+.week-day,
+.month-day {
+  position: relative;
+}
+
+.week-day.is-today::after,
+.month-day.is-today::after {
+  content: '';
+  position: absolute;
+  z-index: 6;
+  inset: 2px;
+  border: 2px solid var(--calendar-today-frame);
+  border-radius: 9px;
+  box-shadow: 0 0 0 1px var(--calendar-today-frame-shadow);
+  pointer-events: none;
+}
+
+.year-calendar .year-month__days > button.is-today {
+  box-shadow:
+    inset 0 0 0 2px var(--calendar-today-frame),
+    inset 0 0 0 3px var(--calendar-today-frame-shadow);
 }
 
 @media (max-width: 820px) {
@@ -150,9 +343,75 @@
     font-size: min(calc(9px * var(--app-font-scale)), 10px);
   }
 
-  .week-day__deadlines .week-day__deadlines-more {
+  .week-day__all-day .week-day__all-day-more {
     min-height: 24px;
     padding-inline: 1px;
     font-size: calc(9px * var(--app-font-scale));
+  }
+
+  .time-calendar--week .week-day__all-day .calendar-deadline-strip {
+    justify-content: center;
+    gap: 1px;
+  }
+
+  .week-day__all-day .calendar-task-signals {
+    gap: 1px;
+    margin: 0;
+  }
+
+  .week-day__all-day .calendar-deadline-strip__glyph {
+    width: 9px;
+    height: 9px;
+    flex-basis: 9px;
+  }
+
+  .week-day__all-day .calendar-task-signal,
+  .week-day__all-day .calendar-task-signal > svg {
+    width: 9px;
+    height: 9px;
+    flex-basis: 9px;
+  }
+
+  .time-calendar--week .calendar-deadline-strip__time {
+    display: block;
+    order: 2;
+    margin-left: 0;
+    flex: 0 0 100%;
+    font-size: calc(8px * var(--app-font-scale));
+    line-height: 8px;
+    text-align: center;
+  }
+
+  .calendar-task__content {
+    gap: 2px;
+  }
+
+  .calendar-task__content .calendar-task-signals {
+    gap: 0;
+  }
+
+  .calendar-task__content .calendar-task-signal,
+  .calendar-task__content .calendar-task-signal > svg {
+    width: 10px;
+    height: 10px;
+    flex-basis: 10px;
+  }
+
+  .month-calendar .month-day__task {
+    gap: 1px;
+  }
+
+  .month-calendar .month-day__task .calendar-task-signals,
+  .month-calendar .deadline-range .calendar-task-signals {
+    gap: 0;
+  }
+
+  .month-calendar .month-day__task .calendar-task-signal,
+  .month-calendar .month-day__task .calendar-task-signal > svg,
+  .month-calendar .deadline-range .calendar-task-signal,
+  .month-calendar .deadline-range .calendar-task-signal > svg {
+    width: 9px;
+    height: 9px;
+    flex-basis: 9px;
   }
 }

@@ -17,9 +17,15 @@ import {
 
 const STORAGE_KEY = 'focus-flow.state.v1'
 
+function formatExpectedLocalDateTime(value: string) {
+  const date = new Date(value)
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}, ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 async function mountEditor(
   task?: Task,
-  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>,
+  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
   storageAdapter?: StorageAdapter,
 ) {
   const onClose = vi.fn()
@@ -79,7 +85,7 @@ class ControlledTaskStorage implements StorageAdapter {
 
 async function renderEditor(
   task?: Task,
-  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline'>>,
+  defaults?: Partial<Pick<Task, 'projectId' | 'startAt' | 'deadline' | 'plannedDurationMinutes'>>,
 ) {
   const { onClose } = await mountEditor(task, defaults)
   return onClose
@@ -90,7 +96,7 @@ function ProjectRemovalHarness({ onClose }: { onClose: () => void }) {
   return (
     <>
       <button data-testid="remove-project-during-edit" onClick={() => removeProject('work')}>Удалить проект</button>
-      <TaskEditor defaults={{ projectId: 'work' }} onClose={onClose} />
+      <TaskEditor defaults={{ projectId: 'work', startAt: '2026-08-31T09:00:00.000Z' }} onClose={onClose} />
     </>
   )
 }
@@ -117,7 +123,14 @@ describe('TaskEditor defaults and date validation', () => {
     state.projects.find((project) => project.id === 'work')!.urgencyThresholdHours = 24
     state.projects.find((project) => project.id === 'personal')!.urgencyThresholdHours = 168
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    const onClose = await renderEditor(undefined, { projectId: 'work' })
+    const onClose = await renderEditor(undefined, {
+      projectId: 'work',
+      startAt: '2026-08-31T09:00:00.000Z',
+    })
+    expect(screen.queryByRole('combobox', { name: 'Порог срочности' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Срочность вручную' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Дедлайн'), '31.08.2026, 18:00')
+    await user.tab()
     const threshold = screen.getByRole('combobox', { name: 'Порог срочности' })
 
     await waitFor(() => expect(threshold).toHaveTextContent('Из проекта · 1 день'))
@@ -144,7 +157,12 @@ describe('TaskEditor defaults and date validation', () => {
     const state = createSeedState()
     state.projects.find((project) => project.id === 'work')!.urgencyThresholdHours = 24
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    const onClose = await renderEditor(undefined, { projectId: 'work' })
+    const onClose = await renderEditor(undefined, {
+      projectId: 'work',
+      startAt: '2026-08-31T09:00:00.000Z',
+    })
+    await user.type(screen.getByLabelText('Дедлайн'), '31.08.2026, 18:00')
+    await user.tab()
     const threshold = screen.getByRole('combobox', { name: 'Порог срочности' })
     await waitFor(() => expect(threshold).toHaveTextContent('Из проекта · 1 день'))
 
@@ -204,6 +222,8 @@ describe('TaskEditor defaults and date validation', () => {
     )
     await screen.findByRole('dialog', { name: 'Что нужно сделать?' })
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Проект' })).toHaveTextContent('Работа'))
+    await user.type(screen.getByLabelText('Дедлайн'), '31.08.2026, 18:00')
+    await user.tab()
 
     fireEvent.click(screen.getByTestId('remove-project-during-edit'))
 
@@ -222,10 +242,39 @@ describe('TaskEditor defaults and date validation', () => {
     })
   })
 
-  it('blocks a deadline earlier than the start, announces the error and focuses the deadline', async () => {
+  it('removes urgency settings when the deadline is cleared', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor(undefined, {
+      startAt: '2026-08-31T09:00:00.000Z',
+      deadline: '2026-08-31T15:00:00.000Z',
+    })
+
+    await user.click(screen.getByRole('combobox', { name: 'Порог срочности' }))
+    await user.click(screen.getByRole('option', { name: /^1 день / }))
+    await user.click(screen.getByRole('combobox', { name: 'Срочность вручную' }))
+    await user.click(screen.getByRole('option', { name: /^Срочно/ }))
+
+    await user.clear(screen.getByLabelText('Дедлайн'))
+
+    expect(screen.queryByRole('combobox', { name: 'Порог срочности' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Срочность вручную' })).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Название'), 'Задача без срочности')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const created = saved.tasks.find((item: Task) => item.title === 'Задача без срочности')
+      expect(created).not.toHaveProperty('deadline')
+      expect(created).not.toHaveProperty('urgencyThresholdOverrideHours')
+      expect(created).not.toHaveProperty('urgencyOverride')
+    })
+  })
+
+  it('allows a deadline before the planned start once a start exists', async () => {
     const user = userEvent.setup()
     const onClose = await renderEditor()
-    await user.type(screen.getByLabelText('Название'), 'Задача с неверным сроком')
+    await user.type(screen.getByLabelText('Название'), 'Задача с независимым дедлайном')
     await user.type(screen.getByLabelText('Начало'), '21.08.2026, 12:00')
     await user.tab()
     await user.type(screen.getByLabelText('Дедлайн'), '21.08.2026, 11:00')
@@ -233,8 +282,145 @@ describe('TaskEditor defaults and date validation', () => {
 
     await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Дедлайн не может быть раньше начала')
-    expect(screen.getByLabelText('Дедлайн')).toHaveFocus()
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const task = saved.tasks.find((item: Task) => item.title === 'Задача с независимым дедлайном')
+      expect(task.startAt).toBe(new Date(2026, 7, 21, 12, 0).toISOString())
+      expect(task.deadline).toBe(new Date(2026, 7, 21, 11, 0).toISOString())
+    })
+  })
+
+  it('locks the deadline until start is valid and prevents removing a required start', async () => {
+    const user = userEvent.setup()
+    await renderEditor()
+    const start = screen.getByLabelText('Начало')
+    const deadline = screen.getByLabelText('Дедлайн')
+
+    expect(deadline).toBeDisabled()
+    expect(screen.getByText('Сначала укажите корректное начало задачи.')).toBeInTheDocument()
+
+    await user.type(start, '31.08.2026, 09:00')
+    expect(deadline).toBeEnabled()
+    await user.tab()
+    await user.type(deadline, '31.08.2026, 18:00')
+    await user.tab()
+
+    await user.click(screen.getByRole('button', { name: 'Очистить дату начала' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Сначала уберите дедлайн')
+    expect(start).toHaveValue('31.08.2026, 09:00')
+    expect(deadline).toHaveValue('31.08.2026, 18:00')
+
+    await user.click(screen.getByRole('button', { name: 'Очистить дату дедлайна' }))
+    await user.click(screen.getByRole('button', { name: 'Очистить дату начала' }))
+    expect(start).toHaveValue('')
+    expect(deadline).toBeDisabled()
+  })
+
+  it('preserves a legacy deadline-only task and lets the user clear its deadline', async () => {
+    const user = userEvent.setup()
+    const state = createSeedState()
+    const legacyTask = {
+      ...state.tasks[0],
+      startAt: undefined,
+      deadline: '2026-08-31T15:00:00.000Z',
+    }
+    state.tasks = state.tasks.map((task) => task.id === legacyTask.id ? legacyTask : task)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    const onClose = await renderEditor(legacyTask)
+    const deadline = screen.getByLabelText('Дедлайн')
+
+    expect(deadline).toBeDisabled()
+    expect(deadline).toHaveValue(formatExpectedLocalDateTime(legacyTask.deadline))
+    expect(screen.getByText(/Добавьте начало, чтобы изменить дедлайн/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Очистить дату дедлайна' })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: 'Очистить дату дедлайна' }))
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      expect(saved.tasks.find((task: Task) => task.id === legacyTask.id)).not.toHaveProperty('deadline')
+    })
+  })
+
+  it('saves duration in hours and reloads it as minutes', async () => {
+    const user = userEvent.setup()
+    const { onClose, view } = await mountEditor()
+    await user.type(screen.getByLabelText('Название'), 'Полуторачасовой блок')
+    await user.selectOptions(screen.getByLabelText('Единица длительности'), 'hours')
+    const duration = screen.getByLabelText('Длительность')
+    await user.clear(duration)
+    await user.type(duration, '1.5')
+
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    const saved = await waitFor(() => {
+      const state = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      const task = state.tasks.find((item: Task) => item.title === 'Полуторачасовой блок') as Task | undefined
+      expect(task?.plannedDurationMinutes).toBe(90)
+      return task!
+    })
+    view.unmount()
+
+    await mountEditor(saved)
+    expect(screen.getByLabelText('Длительность')).toHaveValue(90)
+    expect(screen.getByText(/^1 ч 30 мин\./)).toBeInTheDocument()
+  })
+
+  it.each([1, 1_439])('keeps %s canonical minutes when switching duration units', async (minutes) => {
+    const user = userEvent.setup()
+    await renderEditor(undefined, { plannedDurationMinutes: minutes })
+
+    await user.selectOptions(screen.getByLabelText('Единица длительности'), 'hours')
+    await user.selectOptions(screen.getByLabelText('Единица длительности'), 'minutes')
+
+    expect(screen.getByLabelText('Длительность')).toHaveValue(minutes)
+  })
+
+  it('keeps a timed block within its local day and allows it to end exactly at midnight', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor()
+    await user.type(screen.getByLabelText('Название'), 'Вечерний блок')
+    await user.type(screen.getByLabelText('Начало'), '21.08.2026, 23:30')
+    await user.tab()
+    const duration = screen.getByLabelText('Длительность')
+    await user.clear(duration)
+    await user.type(duration, '31')
+
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Длительность выходит за пределы дня')
+    expect(screen.getByRole('alert')).toHaveTextContent('максимум 30 мин')
+    expect(duration).toHaveFocus()
+    expect(duration).toHaveAttribute('aria-invalid', 'true')
+    expect(onClose).not.toHaveBeenCalled()
+
+    await user.clear(duration)
+    await user.type(duration, '30')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
+      expect(saved.tasks.find((item: Task) => item.title === 'Вечерний блок')?.plannedDurationMinutes).toBe(30)
+    })
+  })
+
+  it('rejects duration outside the one-day storage range even without a start', async () => {
+    const user = userEvent.setup()
+    const onClose = await renderEditor()
+    await user.type(screen.getByLabelText('Название'), 'Слишком длинная задача')
+    const duration = screen.getByLabelText('Длительность')
+    await user.clear(duration)
+    await user.type(duration, '1441')
+
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('от 1 минуты до 24 часов')
+    expect(duration).toHaveFocus()
     expect(onClose).not.toHaveBeenCalled()
   })
 })
@@ -245,6 +431,7 @@ const recoveryData: TaskDraftData = {
   projectId: 'work',
   startAt: '2026-08-21T09:00',
   deadline: '2026-08-21T18:00',
+  plannedDurationMinutes: 90,
   importance: 'high',
   urgencyThresholdOverrideHours: 24,
   urgencyOverride: 'high',
@@ -292,11 +479,32 @@ describe('TaskEditor recovery journal', () => {
     expect(screen.getByRole('combobox', { name: 'Срочность вручную' })).toHaveTextContent('Срочно')
     expect(screen.getByLabelText('Начало')).toHaveValue('21.08.2026, 09:00')
     expect(screen.getByLabelText('Дедлайн')).toHaveValue('21.08.2026, 18:00')
+    expect(screen.getByLabelText('Длительность')).toHaveValue(90)
+    expect(screen.getByText(/^1 ч 30 мин\./)).toBeInTheDocument()
     expect(screen.getByLabelText('Теги через запятую')).toHaveValue(recoveryData.tags)
     expect(screen.getByText('Проверить цифры')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Добавить подзадачу')).toHaveValue('Отправить письмо')
     expect(screen.getByLabelText('Время напоминания')).not.toHaveValue('')
     expect(screen.getByRole('status')).toHaveTextContent('Черновик восстановлен')
+  })
+
+  it('keeps a recovered legacy deadline but requires start before creating the task', async () => {
+    const user = userEvent.setup()
+    expect(writeTaskDraft({ ...recoveryData, startAt: '' }).status).toBe('saved')
+    const onClose = await renderEditor()
+
+    await user.click(screen.getByRole('button', { name: 'Восстановить' }))
+    expect(screen.getByLabelText('Дедлайн')).toBeDisabled()
+    expect(screen.getByLabelText('Дедлайн')).toHaveValue('21.08.2026, 18:00')
+
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Сначала укажите корректное начало задачи')
+    expect(screen.getByLabelText('Начало')).toHaveFocus()
+
+    await user.type(screen.getByLabelText('Начало'), '21.08.2026, 09:00')
+    await user.click(screen.getByRole('button', { name: 'Создать задачу' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
   })
 
   it('ignores and removes a corrupt journal', async () => {
@@ -392,7 +600,7 @@ describe('TaskEditor recovery journal', () => {
   })
 
   it('commits a focused date field before saving with the keyboard shortcut', async () => {
-    const onClose = await renderEditor()
+    const onClose = await renderEditor(undefined, { startAt: '2026-08-21T09:00:00.000Z' })
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Срок через shortcut' } })
     const deadline = screen.getByLabelText('Дедлайн')
     fireEvent.change(deadline, { target: { value: '21.08.2026, 18:00' } })
@@ -505,6 +713,7 @@ describe('TaskEditor recovery journal', () => {
       projectId: 'inbox',
       startAt: '',
       deadline: '',
+      plannedDurationMinutes: 60,
       importance: 'low',
       urgencyThresholdOverrideHours: '',
       urgencyOverride: '',
@@ -531,6 +740,7 @@ describe('TaskEditor recovery journal', () => {
       projectId: 'inbox',
       startAt: '',
       deadline: '',
+      plannedDurationMinutes: 60,
       importance: 'low',
       urgencyThresholdOverrideHours: '',
       urgencyOverride: '',
@@ -586,6 +796,21 @@ async function previewAndApply(transcript: string) {
 }
 
 describe('TaskEditor voice input', () => {
+  it('keeps the manual fallback phrase available after cancelling its preview', async () => {
+    const user = userEvent.setup()
+    await renderEditor()
+
+    await user.click(screen.getByRole('button', { name: 'Надиктовать задачу' }))
+    const command = screen.getByLabelText('Фраза для разбора задачи')
+    await user.type(command, 'Позвонить врачу завтра в 10')
+    await user.click(screen.getByRole('button', { name: 'Разобрать' }))
+    await user.click(screen.getByRole('button', { name: 'Отмена' }))
+
+    expect(command).toHaveValue('Позвонить врачу завтра в 10')
+    expect(screen.getByText('Голосовой ввод не поддерживается этим браузером')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Применить' })).not.toBeInTheDocument()
+  })
+
   it('applies an unmarked spoken date to the start and leaves the deadline empty', async () => {
     await renderEditor()
     await previewAndApply('Запланировать встречу завтра в 10')
@@ -594,15 +819,18 @@ describe('TaskEditor voice input', () => {
     expect(screen.getByLabelText('Дедлайн')).toHaveValue('')
   })
 
-  it('applies a date with a deadline marker only to the deadline field', async () => {
+  it('requires an existing start before applying a spoken deadline', async () => {
     await renderEditor()
     await previewAndApply('Сдать отчёт дедлайн завтра в 12:30')
 
     expect(screen.getByLabelText('Начало')).toHaveValue('')
-    await waitFor(() => expect((screen.getByLabelText('Дедлайн') as HTMLInputElement).value).toMatch(/12:30$/))
+    expect(screen.getByLabelText('Дедлайн')).toHaveValue('')
+    expect(screen.getByRole('alert')).toHaveTextContent('Сначала укажите корректное начало задачи')
+    expect(screen.getByLabelText('Начало')).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Применить' })).toBeInTheDocument()
   })
 
-  it('clears an existing deadline when an unmarked spoken date becomes the start', async () => {
+  it('preserves an existing deadline when an unmarked spoken date changes the start', async () => {
     const task = {
       ...createSeedState().tasks[0],
       startAt: '2026-08-01T08:00:00.000Z',
@@ -612,25 +840,26 @@ describe('TaskEditor voice input', () => {
     await previewAndApply('Перенести встречу завтра в 11')
 
     await waitFor(() => expect((screen.getByLabelText('Начало') as HTMLInputElement).value).toMatch(/11:00$/))
-    expect(screen.getByLabelText('Дедлайн')).toHaveValue('')
+    expect(screen.getByLabelText('Дедлайн')).toHaveValue(formatExpectedLocalDateTime(task.deadline))
   })
 
-  it('clears an existing start when the spoken date is explicitly a deadline', async () => {
+  it('preserves an existing start when the spoken date changes the deadline', async () => {
     const task = {
       ...createSeedState().tasks[0],
       startAt: '2026-08-01T08:00:00.000Z',
       deadline: '2026-08-03T15:00:00.000Z',
     }
     await renderEditor(task)
+    const initialStart = (screen.getByLabelText('Начало') as HTMLInputElement).value
     await previewAndApply('Перенести встречу дедлайн завтра в 16')
 
-    expect(screen.getByLabelText('Начало')).toHaveValue('')
+    expect(screen.getByLabelText('Начало')).toHaveValue(initialStart)
     await waitFor(() => expect((screen.getByLabelText('Дедлайн') as HTMLInputElement).value).toMatch(/16:00$/))
   })
 
   it('resets stale date validation when voice input replaces an invalid manual value', async () => {
     const user = userEvent.setup()
-    const onClose = await renderEditor()
+    const onClose = await renderEditor(undefined, { startAt: '2026-02-28T09:00:00.000Z' })
     const deadline = screen.getByLabelText('Дедлайн')
     await user.type(deadline, '31.02.2026, 18:00')
     await user.tab()

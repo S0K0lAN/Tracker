@@ -7,6 +7,16 @@ import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 import { formatTaskDate } from './TaskCard'
 
+function renderStoredInbox() {
+  return render(
+    <RouterProvider initialPath="/inbox">
+      <AppProvider>
+        <App />
+      </AppProvider>
+    </RouterProvider>,
+  )
+}
+
 function renderInbox(onlyTask = false) {
   const state = createSeedState()
   const task = state.tasks.find((item) => item.id === 'task-plan')!
@@ -15,13 +25,7 @@ function renderInbox(onlyTask = false) {
   task.deadline = undefined
   if (onlyTask) state.tasks = [task]
   localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
-  return render(
-    <RouterProvider initialPath="/inbox">
-      <AppProvider>
-        <App />
-      </AppProvider>
-    </RouterProvider>,
-  )
+  return renderStoredInbox()
 }
 
 function storeSingleActiveTask(configure: (task: ReturnType<typeof createSeedState>['tasks'][number]) => void) {
@@ -39,6 +43,7 @@ describe('TaskCard safety and focus', () => {
   })
 
   it('renders urgency from the task project threshold', async () => {
+    const user = userEvent.setup()
     const state = createSeedState()
     const base = state.tasks.find((item) => item.id === 'task-plan')!
     const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
@@ -52,7 +57,10 @@ describe('TaskCard safety and focus', () => {
     ]
     localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
 
-    renderInbox()
+    renderStoredInbox()
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    await user.click(screen.getByRole('button', { name: 'Все' }))
 
     const urgentCard = (await screen.findByText('Карточка срочная')).closest('.task-card')
     const calmCard = screen.getByText('Карточка несрочная').closest('.task-card')
@@ -60,6 +68,15 @@ describe('TaskCard safety and focus', () => {
     expect(calmCard).not.toBeNull()
     expect(within(urgentCard as HTMLElement).getByText('Срочно')).toBeInTheDocument()
     expect(within(calmCard as HTMLElement).getByText('Не срочно')).toBeInTheDocument()
+  })
+
+  it('does not show urgency for a task without a deadline', async () => {
+    renderInbox(true)
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+
+    const card = screen.getByText('Подготовить план недели', { selector: '.task-card__title' }).closest('.task-card')!
+    expect(within(card as HTMLElement).queryByText('Срочно')).not.toBeInTheDocument()
+    expect(within(card as HTMLElement).queryByText('Не срочно')).not.toBeInTheDocument()
   })
 
   it('moves focus to the Pomodoro primary action after starting it from the menu', async () => {

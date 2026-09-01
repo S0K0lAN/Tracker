@@ -3,6 +3,10 @@ import { getTaskUrgency } from './models'
 
 type SavedFilterProject = Pick<Project, 'name' | 'urgencyThresholdHours'>
 
+export function isInboxTask(task: Task): boolean {
+  return task.projectId === 'inbox' && !task.startAt && !task.deadline
+}
+
 export function matchesSavedFilter(
   task: Task,
   filter: SavedFilter,
@@ -11,11 +15,6 @@ export function matchesSavedFilter(
 ): boolean {
   const projectName = typeof project === 'string' ? project : project?.name ?? ''
   const projectThreshold = typeof project === 'string' ? undefined : project?.urgencyThresholdHours
-export function isInboxTask(task: Task): boolean {
-  return task.projectId === 'inbox' && !task.startAt && !task.deadline
-}
-
-export function matchesSavedFilter(task: Task, filter: SavedFilter, projectName = ''): boolean {
   if (task.status === 'archived' || task.status === 'deleted') return false
   if (filter.status !== 'all' && task.status !== filter.status) return false
   if (filter.projectId && task.projectId !== filter.projectId) return false

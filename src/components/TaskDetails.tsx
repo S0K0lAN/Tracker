@@ -42,6 +42,14 @@ const formatFileSize = (bytes: number) => {
   return `${Math.max(0.1, bytes / 1024).toFixed(1)} КБ`
 }
 
+const formatDuration = (minutes: number) => {
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  if (hours && remainder) return `${hours} ч ${remainder} мин`
+  if (hours) return `${hours} ч`
+  return `${remainder} мин`
+}
+
 export function TaskDetails({
   task,
   onClose,
@@ -185,40 +193,50 @@ export function TaskDetails({
           </section>
 
           <dl className="task-details__facts">
-            <div>
+            <div className="task-details__fact">
               <dt><Folder size={16} /> Проект</dt>
               <dd><i style={{ background: project?.color }} />{project?.name ?? 'Без проекта'}</dd>
             </div>
-            <div>
+            <div className="task-details__fact">
               <dt><Flag size={16} /> Важность</dt>
               <dd className={`importance importance--${task.importance}`}>{task.importance === 'high' ? 'Важная' : 'Обычная'}</dd>
             </div>
-            <div>
-              <dt><Clock3 size={16} /> Срочность</dt>
-              <dd className={timing.urgency === 'high' ? 'task-details__urgent' : undefined}>
-                {timing.urgency === 'high' ? 'Срочная' : 'Не срочная'}
-                {timing.overdue && <small>Просрочена</small>}
-              </dd>
-            </div>
-            <div>
-              <dt><CalendarClock size={16} /> Начало</dt>
-              <dd>{startAt ?? 'Не задано'}</dd>
-            </div>
-            <div>
-              <dt><CalendarClock size={16} /> Дедлайн</dt>
-              <dd>{deadline ?? 'Без дедлайна'}</dd>
-            </div>
-            <div>
-              <dt><Clock3 size={16} /> Порог срочности</dt>
-              <dd>
-                {effectiveUrgencyThreshold} ч до дедлайна
-                <small>
-                  {hasIndividualUrgencyThreshold
-                    ? 'Индивидуальный для задачи'
-                    : project
-                      ? `Наследуется из проекта «${project.name}»`
-                      : 'Системное значение'}
-                </small>
+            {deadline && (
+              <div className="task-details__fact">
+                <dt><Clock3 size={16} /> Срочность</dt>
+                <dd className="task-details__urgency-value">
+                  <span className={timing.urgency === 'high' ? 'task-details__urgent' : undefined}>
+                    {timing.urgency === 'high' ? 'Срочная' : 'Не срочная'}
+                    {timing.overdue && <small className="task-details__overdue">Просрочена</small>}
+                  </span>
+                  <small className="task-details__urgency-note">
+                    <span>{effectiveUrgencyThreshold} ч до дедлайна</span>
+                    <span>
+                      {hasIndividualUrgencyThreshold
+                        ? 'Индивидуальный для задачи'
+                        : project
+                          ? `Наследуется из проекта «${project.name}»`
+                          : 'Системное значение'}
+                    </span>
+                  </small>
+                </dd>
+              </div>
+            )}
+            <div className="task-details__fact task-details__fact--schedule">
+              <dt><CalendarClock size={16} /> Планирование</dt>
+              <dd className="task-details__schedule">
+                <span className="task-details__schedule-item">
+                  <small>Начало</small>
+                  <strong>{startAt ?? 'Не задано'}</strong>
+                </span>
+                <span className="task-details__schedule-item">
+                  <small>Длительность</small>
+                  <strong>{formatDuration(task.plannedDurationMinutes)}</strong>
+                </span>
+                <span className="task-details__schedule-item">
+                  <small>Дедлайн</small>
+                  <strong>{deadline ?? 'Без дедлайна'}</strong>
+                </span>
               </dd>
             </div>
           </dl>

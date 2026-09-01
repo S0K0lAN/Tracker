@@ -1,25 +1,15 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 
 const STORAGE_KEY = 'focus-flow.state.v1'
-const runtimeErrors = new WeakMap<Page, string[]>()
+const CALENDAR_GREEN = 'rgb(47, 125, 75)'
+const CALENDAR_GREEN_SOFT = 'rgb(225, 241, 230)'
 
 test.beforeEach(async ({ page }) => {
-  const errors: string[] = []
-  runtimeErrors.set(page, errors)
-  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(`console.error: ${message.text()}`)
-  })
-
   await page.goto('/inbox')
   await page.evaluate(() => localStorage.clear())
   await page.reload()
   await page.waitForFunction((storageKey) => localStorage.getItem(storageKey), STORAGE_KEY)
-})
-
-test.afterEach(async ({ page }) => {
-  expect(runtimeErrors.get(page) ?? [], 'browser runtime errors').toEqual([])
 })
 
 async function expectStoredTaskStatus(page: Page, title: string, status: string) {
@@ -73,7 +63,7 @@ test('new workspace routes support direct URLs and browser history', async ({ pa
   await expect(page.getByRole('heading', { name: 'Проекты', level: 1 })).toBeVisible()
 })
 
-test('manual date entry keeps the week aligned and deadlines stack as strips without calendar scrollbars', async ({ page }) => {
+test('manual date entry keeps the week aligned and deadlines stack in the all-day lane without calendar scrollbars', async ({ page }) => {
   await page.goto('/calendar')
   const localDate = await page.evaluate(() => {
     const date = new Date()
@@ -83,13 +73,26 @@ test('manual date entry keeps the week aligned and deadlines stack as strips wit
 
   await page.locator('.page-header').getByRole('button', { name: 'Запланировать' }).click()
   await page.getByLabel('Название').fill('Ручная дата E2E')
-  await page.getByRole('textbox', { name: 'Начало', exact: true }).fill(`${localDate}, 11:30`)
-  await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill(`${localDate}, 18:45`)
+  const startInput = page.getByRole('textbox', { name: 'Начало', exact: true })
+  const deadlineInput = page.getByRole('textbox', { name: 'Дедлайн', exact: true })
+  await expect(deadlineInput).toBeDisabled()
+  await startInput.fill(`${localDate}, 11:30`)
+  await expect(deadlineInput).toBeEnabled()
+  await deadlineInput.fill(`${localDate}, 13:45`)
+  await page.getByRole('button', { name: 'Очистить дату начала' }).click()
+  await expect(page.getByRole('alert')).toContainText('Сначала уберите дедлайн')
+  await expect(startInput).toHaveValue(`${localDate}, 11:30`)
+  await expect(deadlineInput).toHaveValue(`${localDate}, 13:45`)
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
 
   const week = page.locator('.week-calendar')
-  await expect(week.locator('.week-day__deadlines')).toHaveCount(7)
-  await expect(week.getByTitle('Дедлайн: Ручная дата E2E')).toBeVisible()
+  await expect(week.getByText('Весь день', { exact: true })).toBeVisible()
+  await expect(week.getByText('Сроки', { exact: true })).toHaveCount(0)
+  await expect(week.locator('.week-day__all-day')).toHaveCount(7)
+  const deadlineStrip = week.getByTitle('Дедлайн: Ручная дата E2E · до 13:45')
+  await expect(deadlineStrip).toBeVisible()
+  await expect(deadlineStrip).toHaveAccessibleName(/до 13:45/)
+  await expect(deadlineStrip.locator('time')).toBeVisible()
   await expect(week.getByText('Ручная дата E2E', { exact: true })).toHaveCount(2)
   const gridTops = await week.locator('.week-day__grid').evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)))
   expect(new Set(gridTops).size).toBe(1)
@@ -109,6 +112,7 @@ test('manual date entry keeps the week aligned and deadlines stack as strips wit
 
   await page.getByRole('button', { name: 'Создать новую задачу' }).click()
   await page.getByLabel('Название').fill('Невалидная дата E2E')
+  await page.getByRole('textbox', { name: 'Начало', exact: true }).fill(`${localDate}, 09:00`)
   await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill('31.02.2026, 18:00')
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -194,20 +198,22 @@ test('calendar changes period by horizontal mouse drag', async ({ page }) => {
   await expect(period).not.toHaveText(previousPeriod)
 })
 
-test('calendar views, full month cell list and deadline ranges stay connected', async ({ page }) => {
+test('calendar views, full month cell list and continuous deadline bands stay connected', async ({ page }) => {
   await page.goto('/calendar')
-  const localDate = await page.evaluate((storageKey) => {
+  const localDates = await page.evaluate((storageKey) => {
     const state = JSON.parse(localStorage.getItem(storageKey))
     const template = state.tasks.find((task: { status: string }) => task.status === 'active')
     const now = new Date()
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0)
     const pad = (value: number) => String(value).padStart(2, '0')
+    const localDate = (date: Date) => `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`
     state.tasks = state.tasks.filter((task: { id: string }) => task.id === 'task-plan')
     state.tasks.push({
       ...template,
       id: 'long-day-slot',
       title: 'Длинный дневной слот',
       startAt: dayStart.toISOString(),
+      plannedDurationMinutes: 210,
       deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 30).toISOString(),
     })
     state.tasks.push({
@@ -215,6 +221,7 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
       id: 'wrapping-week-slot',
       title: 'Подготовить подробный план презентации для общей встречи',
       startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0).toISOString(),
+      plannedDurationMinutes: 180,
       deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0).toISOString(),
     })
     state.tasks.push({
@@ -222,6 +229,7 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
       id: 'project-range',
       title: 'Диапазон проекта',
       startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 14, 0).toISOString(),
+      plannedDurationMinutes: 60,
       deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 3, 16, 0).toISOString(),
     })
     for (let index = 0; index < 5; index++) {
@@ -230,11 +238,15 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
         id: `full-list-${index}`,
         title: `Полный список ${index + 1}`,
         startAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15 + index, 0).toISOString(),
+        plannedDurationMinutes: 30,
         deadline: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15 + index, 30).toISOString(),
       })
     }
     localStorage.setItem(storageKey, JSON.stringify(state))
-    return `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()}`
+    return {
+      today: localDate(now),
+      intermediate: localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2)),
+    }
   }, STORAGE_KEY)
   await page.reload()
 
@@ -279,26 +291,143 @@ test('calendar views, full month cell list and deadline ranges stay connected', 
   await expect(page.locator('.year-month')).toHaveCount(12)
 
   await page.getByRole('button', { name: 'Месяц', exact: true }).click()
-  await page.getByRole('button', { name: `Показать задачи на ${localDate}` }).click()
+  await page.getByRole('button', { name: `Показать задачи на ${localDates.today}` }).click()
   const dialog = page.getByRole('dialog', { name: /Все задачи дня/ })
   await expect(dialog).toBeVisible()
   for (let index = 1; index <= 5; index++) await expect(dialog.getByText(`Полный список ${index}`, { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Закрыть список задач' }).click()
 
-  const monthRange = page.locator('.month-calendar__range').filter({ hasText: 'Диапазон проекта' })
-  await expect(monthRange.first()).toBeVisible()
-  const monthSpans = await monthRange.evaluateAll((nodes) =>
+  const scheduledRow = page.locator('.month-day__task').filter({ hasText: 'Диапазон проекта' })
+  await expect(scheduledRow).toHaveCount(0)
+  const deadlineBand = page.locator('.month-calendar__range').filter({ hasText: 'Диапазон проекта' })
+  await expect(deadlineBand.first()).toBeVisible()
+  const monthSpans = await deadlineBand.evaluateAll((nodes) =>
     nodes.map((node) => Number(node.getAttribute('data-range-span'))),
   )
   expect(monthSpans.reduce((total, span) => total + span, 0)).toBe(3)
+
+  await page.getByRole('button', { name: `Показать задачи на ${localDates.intermediate}` }).click()
+  await expect(page.getByRole('dialog', { name: /Все задачи дня/ })).toContainText('Диапазон проекта')
 })
 
-test('month deadline range updates its color when importance changes', async ({ page }) => {
+test('calendar uses a fixed green task palette and a white today frame in every view', async ({ page }) => {
+  await page.goto('/calendar')
+  await page.evaluate((storageKey) => {
+    const state = JSON.parse(localStorage.getItem(storageKey)!)
+    const template = state.tasks.find((task: { status: string }) => task.status === 'active')
+    const workProject = state.projects.find((project: { id: string }) => project.id === 'work')
+    const today = new Date()
+    const startOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 13, 0)
+    const urgentStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 14, 0)
+    const urgentDeadline = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 15, 0)
+
+    state.settings.accent = 'violet'
+    workProject.urgencyThresholdHours = 48
+    state.tasks = [
+      {
+        ...template,
+        id: 'calendar-green-important',
+        title: 'Зелёная важная задача',
+        projectId: 'work',
+        startAt: startOnly.toISOString(),
+        deadline: undefined,
+        importance: 'high',
+        urgencyOverride: 'low',
+        urgencyThresholdOverrideHours: undefined,
+      },
+      {
+        ...template,
+        id: 'calendar-green-urgent',
+        title: 'Зелёная вычисленно срочная задача',
+        projectId: 'work',
+        startAt: urgentStart.toISOString(),
+        deadline: urgentDeadline.toISOString(),
+        importance: 'low',
+        urgencyOverride: undefined,
+        urgencyThresholdOverrideHours: undefined,
+      },
+    ]
+    localStorage.setItem(storageKey, JSON.stringify(state))
+  }, STORAGE_KEY)
+  await page.reload()
+
+  for (const mode of ['Неделя', '3 дня', 'День'] as const) {
+    await page.getByRole('button', { name: mode, exact: true }).click()
+    const currentDate = page.locator('[aria-current="date"]')
+    await expect(currentDate).toHaveCount(1)
+    const frame = await currentDate.evaluate((node) => {
+      const day = node.closest('.week-day')!
+      const style = getComputedStyle(day, '::after')
+      return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth }
+    })
+    expect(frame).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px' })
+
+    const importantTask = page.locator('.calendar-task').filter({ hasText: 'Зелёная важная задача' })
+    await expect(importantTask).toHaveAttribute('data-importance', 'high')
+    await expect(importantTask).toHaveAttribute('data-urgency', 'low')
+    await expect(importantTask).toHaveAccessibleName(/Важная задача/)
+    await expect(importantTask).not.toHaveAccessibleName(/Срочная задача/)
+    await expect(importantTask.locator('.calendar-task-signal--importance')).toBeVisible()
+    expect(await importantTask.evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { background: style.backgroundColor, border: style.borderLeftColor }
+    })).toEqual({ background: CALENDAR_GREEN_SOFT, border: CALENDAR_GREEN })
+
+    const urgentTask = page.locator('.calendar-task').filter({ hasText: 'Зелёная вычисленно срочная задача' })
+    await expect(urgentTask).toHaveAttribute('data-importance', 'low')
+    await expect(urgentTask).toHaveAttribute('data-urgency', 'high')
+    await expect(urgentTask).toHaveAccessibleName(/Срочная задача/)
+    await expect(urgentTask).not.toHaveAccessibleName(/Важная задача/)
+    await expect(urgentTask.locator('.calendar-task-signal--urgency')).toBeVisible()
+    expect(await urgentTask.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
+
+    const deadlineStrip = page.locator('.calendar-deadline-strip').filter({ hasText: 'Зелёная вычисленно срочная задача' })
+    await expect(deadlineStrip).toHaveAttribute('data-urgency', 'high')
+    expect(await deadlineStrip.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
+  }
+
+  await page.getByRole('button', { name: 'Месяц', exact: true }).click()
+  const monthCurrentDate = page.locator('[aria-current="date"]')
+  await expect(monthCurrentDate).toHaveCount(1)
+  expect(await monthCurrentDate.evaluate((node) => {
+    const style = getComputedStyle(node.closest('.month-day')!, '::after')
+    return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth }
+  })).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px' })
+
+  const monthTask = page.locator('.month-day__task').filter({ hasText: 'Зелёная важная задача' })
+  await expect(monthTask).toHaveAccessibleName(/Важная задача/)
+  await expect(monthTask.locator('.calendar-task-signal--importance')).toBeVisible()
+  expect(await monthTask.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
+  const monthRange = page.locator('[data-task-id="calendar-green-urgent"]')
+  await expect(monthRange).toHaveAccessibleName(/Срочная задача/)
+  await expect(monthRange.locator('.calendar-task-signal--urgency')).toBeVisible()
+  expect(await monthRange.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { background: style.backgroundColor, border: style.borderLeftColor }
+  })).toEqual({ background: CALENDAR_GREEN_SOFT, border: CALENDAR_GREEN })
+
+  await page.getByRole('button', { name: 'Год', exact: true }).click()
+  const yearCurrentDate = page.locator('[aria-current="date"]')
+  await expect(yearCurrentDate).toHaveCount(1)
+  expect(await yearCurrentDate.evaluate((node) => getComputedStyle(node).boxShadow)).toContain('rgb(255, 255, 255)')
+  expect(await yearCurrentDate.locator('i').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN)
+})
+
+test('month deadline point stays green and adds an importance icon when importance changes', async ({ page }) => {
   await page.goto('/calendar')
   await page.getByRole('button', { name: 'Месяц', exact: true }).click()
   const range = page.locator('.month-calendar__range').filter({ hasText: 'Купить продукты на неделю' })
   await expect(range).toHaveAttribute('data-importance', 'low')
-  const lowColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
+  await expect(range).toHaveAttribute('data-urgency', 'high')
+  await expect(range).toHaveAccessibleName(/Срочная задача/)
+  await expect(range).not.toHaveAccessibleName(/Важная задача/)
+  await expect(range.locator('.calendar-task-signal--urgency')).toBeVisible()
+  await expect(range.locator('.calendar-task-signal--importance')).toHaveCount(0)
+  const lowStyle = await range.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { background: style.backgroundColor, border: style.borderLeftColor }
+  })
+  expect(lowStyle).toEqual({ background: CALENDAR_GREEN_SOFT, border: CALENDAR_GREEN })
 
   await range.click()
   const details = page.getByRole('dialog', { name: 'Купить продукты на неделю' })
@@ -309,9 +438,16 @@ test('month deadline range updates its color when importance changes', async ({ 
   await page.getByRole('button', { name: 'Закрыть задачу' }).click()
 
   await expect(range).toHaveAttribute('data-importance', 'high')
-  const highColor = await range.evaluate((node) => getComputedStyle(node).backgroundColor)
-  expect(highColor).not.toBe(lowColor)
-  await expect(range).toHaveClass(/is-important/)
+  await expect(range).toHaveAttribute('data-urgency', 'high')
+  await expect(range).toHaveAccessibleName(/Важная задача/)
+  await expect(range).toHaveAccessibleName(/Срочная задача/)
+  await expect(range.locator('.calendar-task-signal--importance')).toBeVisible()
+  await expect(range.locator('.calendar-task-signal--urgency')).toBeVisible()
+  const highStyle = await range.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { background: style.backgroundColor, border: style.borderLeftColor }
+  })
+  expect(highStyle).toEqual(lowStyle)
 })
 
 test('search exposes its own new-task action and archive omits the redundant bulk action', async ({ page }) => {
@@ -558,8 +694,13 @@ test('Google OAuth loads a remote snapshot, keeps tokens ephemeral and auto-sync
 })
 
 test('habit dates align with checks, icons are centered and the daily completion chart is visible', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 })
   await page.goto('/habits')
   await expect(page.getByRole('img', { name: /График выполненных привычек и задач/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Последние 14 дней' })).toBeVisible()
+  await page.locator('.habit-list').scrollIntoViewIfNeeded()
+  await expect(page.locator('.week-labels > span')).toHaveCount(14)
+  await expect(page.locator('.habit-row').first().locator('.habit-checks > button')).toHaveCount(14)
   const alignment = await page.evaluate(() => {
     const labels = [...document.querySelectorAll('.week-labels > span')]
     const checks = [...document.querySelectorAll('.habit-row:first-of-type .habit-checks > button')]
@@ -603,7 +744,20 @@ test('mobile task actions launch a Pomodoro without clipping or pointer intercep
 test('mobile calendar keeps deadline markers and compact controls usable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/calendar')
+  const allDayOverflow = page.locator('.week-day__all-day-more').first()
+  await expect(allDayOverflow).toBeVisible()
+  await expect(allDayOverflow).toContainText(/Ещё \d+/)
+  const overflowMetrics = await allDayOverflow.evaluate((node) => ({
+    fontSize: Number.parseFloat(getComputedStyle(node).fontSize),
+    height: node.getBoundingClientRect().height,
+  }))
+  expect(overflowMetrics.fontSize).toBeGreaterThan(0)
+  expect(overflowMetrics.height + 0.01).toBeGreaterThanOrEqual(24)
+  const mobileDeadlineStrip = page.locator('.calendar-deadline-strip').first()
+  await expect(mobileDeadlineStrip.locator('time')).toBeVisible()
+  expect((await mobileDeadlineStrip.boundingBox())!.height + 0.01).toBeGreaterThanOrEqual(24)
   await page.getByRole('button', { name: 'Месяц' }).click()
+  await expect(page.getByText('Весь день', { exact: true })).toHaveCount(0)
   await expect(page.locator('.month-day')).toHaveCount(42)
   await expect(page.getByRole('button', { name: 'Дедлайн: Подготовить план недели' })).toBeVisible()
 
@@ -706,14 +860,21 @@ test('a project urgency threshold is inherited by its tasks and updates without 
   await expect(page.getByRole('heading', { name: projectName, level: 1 })).toBeVisible()
   await expect(page.getByText('Срочность за 1 день до дедлайна')).toBeVisible()
   await page.getByRole('button', { name: 'Задача', exact: true }).click()
-  await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toContainText('Из проекта · 1 день')
+  await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toHaveCount(0)
   await page.getByLabel('Название').fill(taskTitle)
-  const deadline = await page.evaluate(() => {
-    const value = new Date(Date.now() + 96 * 60 * 60 * 1000)
+  const schedule = await page.evaluate(() => {
     const pad = (part: number) => String(part).padStart(2, '0')
-    return `${pad(value.getDate())}.${pad(value.getMonth() + 1)}.${value.getFullYear()}, ${pad(value.getHours())}:${pad(value.getMinutes())}`
+    const format = (value: Date) => `${pad(value.getDate())}.${pad(value.getMonth() + 1)}.${value.getFullYear()}, ${pad(value.getHours())}:${pad(value.getMinutes())}`
+    return {
+      start: format(new Date(Date.now() + 95 * 60 * 60 * 1000)),
+      deadline: format(new Date(Date.now() + 96 * 60 * 60 * 1000)),
+    }
   })
-  await page.getByRole('textbox', { name: 'Дедлайн', exact: true }).fill(deadline)
+  await page.getByRole('textbox', { name: 'Начало', exact: true }).fill(schedule.start)
+  const deadlineInput = page.getByRole('textbox', { name: 'Дедлайн', exact: true })
+  await deadlineInput.fill(schedule.deadline)
+  await deadlineInput.press('Tab')
+  await expect(page.getByRole('combobox', { name: 'Порог срочности' })).toContainText('Из проекта · 1 день')
   await page.getByRole('button', { name: 'Создать задачу', exact: true }).click()
 
   const taskCard = page.locator('.task-card').filter({ hasText: taskTitle })

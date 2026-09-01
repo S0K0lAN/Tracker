@@ -556,6 +556,19 @@
   }
 }
 
+@media (max-width: 1200px) {
+  .habit-list .week-labels,
+  .habit-list .habit-checks {
+    grid-template-columns: repeat(7, 40px);
+    gap: 5px;
+  }
+
+  .habit-list .habit-checks button {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 @media (max-width: 640px) {
   .habit-rhythm {
     padding: 18px;

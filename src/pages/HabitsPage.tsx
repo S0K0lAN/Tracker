@@ -18,6 +18,13 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
+import {
+  atStartOfLocalDay,
+  getHabitRhythm,
+  isHabitAvailableOnDay,
+  toLocalDateKey,
+  type HabitRhythm,
+} from '../domain/habits'
 import type { Habit, Task } from '../domain/models'
 import { INPUT_LIMITS } from '../domain/inputLimits'
 import { useApp } from '../state/AppContext'
@@ -45,6 +52,8 @@ export const HABIT_ICONS = [
   { value: 'sun', label: 'Солнце', Icon: Sun },
 ] as const satisfies ReadonlyArray<{ value: string; label: string; Icon: LucideIcon }>
 
+export const HABIT_CHECK_DAYS = 14
+
 const LEGACY_HABIT_ICONS: Record<string, (typeof HABIT_ICONS)[number]['value']> = {
   '✨': 'sparkles',
   '💧': 'water',
@@ -69,64 +78,8 @@ function HabitIcon({ value, size = 19 }: { value: string; size?: number }) {
   return <Icon size={size} strokeWidth={2} data-habit-icon={normalized} aria-hidden="true" />
 }
 
-export const toDateKey = (date: Date) => [
-  date.getFullYear(),
-  String(date.getMonth() + 1).padStart(2, '0'),
-  String(date.getDate()).padStart(2, '0'),
-].join('-')
-
-function atStartOfDay(value: Date) {
-  const date = new Date(value)
-  date.setHours(0, 0, 0, 0)
-  return date
-}
-
-function getCurrentStreak(habit: Habit, now: Date) {
-  const cursor = atStartOfDay(now)
-  let streak = 0
-
-  for (let offset = 0; offset < 366; offset += 1) {
-    const isScheduled = habit.targetDays.includes(cursor.getDay())
-    if (isScheduled) {
-      const isDone = habit.completions.includes(toDateKey(cursor))
-      const isToday = offset === 0
-
-      if (isDone) streak += 1
-      else if (!isToday) break
-    }
-    cursor.setDate(cursor.getDate() - 1)
-  }
-
-  return streak
-}
-
-export interface HabitRhythm {
-  scheduled: number
-  completed: number
-  progress: number
-  streak: number
-  isScheduledToday: boolean
-  isCompletedToday: boolean
-}
-
-export function getHabitRhythm(habit: Habit, days: Date[], now = new Date()): HabitRhythm {
-  const today = atStartOfDay(now)
-  const elapsedScheduledDays = days.filter((day) => {
-    const normalizedDay = atStartOfDay(day)
-    return normalizedDay <= today && habit.targetDays.includes(normalizedDay.getDay())
-  })
-  const completed = elapsedScheduledDays.filter((day) => habit.completions.includes(toDateKey(day))).length
-  const scheduled = elapsedScheduledDays.length
-
-  return {
-    scheduled,
-    completed,
-    progress: scheduled ? Math.round((completed / scheduled) * 100) : 0,
-    streak: getCurrentStreak(habit, today),
-    isScheduledToday: habit.targetDays.includes(today.getDay()),
-    isCompletedToday: habit.completions.includes(toDateKey(today)),
-  }
-}
+export const toDateKey = toLocalDateKey
+export { getHabitRhythm }
 
 export interface CompletionTrendPoint {
   date: Date
@@ -165,7 +118,9 @@ export function getCompletionTrend(habits: Habit[], tasks: Task[], days: Date[])
     return {
       date,
       dateKey,
-      habits: habits.filter((habit) => habit.completions.includes(dateKey)).length,
+      habits: habits.filter((habit) => (
+        isHabitAvailableOnDay(habit, date) && habit.completions.includes(dateKey)
+      )).length,
       tasks: tasks.filter((task) => task.completedAt && toDateKey(new Date(task.completedAt)) === dateKey).length,
     }
   })
@@ -180,21 +135,17 @@ export function HabitsPage() {
   const { state, toggleHabit, addHabit, updateHabit } = useApp()
   const now = useNow()
   const todayKey = toDateKey(now)
-  const today = useMemo(() => atStartOfDay(now), [todayKey])
+  const today = useMemo(() => atStartOfLocalDay(now), [todayKey])
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string>()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState<(typeof HABIT_ICONS)[number]['value']>('sparkles')
   const [trendPreset, setTrendPreset] = useState<HabitTrendPreset>(30)
-  const [customTrendStart, setCustomTrendStart] = useState(() => toDateKey(shiftLocalDate(atStartOfDay(new Date()), -29)))
-  const [customTrendEnd, setCustomTrendEnd] = useState(() => toDateKey(atStartOfDay(new Date())))
+  const [customTrendStart, setCustomTrendStart] = useState(() => toDateKey(shiftLocalDate(atStartOfLocalDay(new Date()), -29)))
+  const [customTrendEnd, setCustomTrendEnd] = useState(() => toDateKey(atStartOfLocalDay(new Date())))
   const trendViewportRef = useRef<HTMLDivElement>(null)
-  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(today)
-    date.setDate(date.getDate() - 6 + index)
-    return date
-  }), [today])
+  const days = useMemo(() => getRollingDays(today, HABIT_CHECK_DAYS), [today])
   const trendDays = useMemo(
     () => trendPreset === 'custom'
       ? getInclusiveDays(customTrendStart, customTrendEnd)
@@ -291,6 +242,7 @@ export function HabitsPage() {
       targetDays: existing?.targetDays ?? [1, 2, 3, 4, 5, 6, 0],
       completions: existing?.completions ?? [],
       color: existing?.color ?? '#d78b69',
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
     }
     if (existing) updateHabit(habit)
     else addHabit(habit)
@@ -311,7 +263,7 @@ export function HabitsPage() {
             <span className="eyebrow">Ваш ритм</span>
             <h2 id="habit-rhythm-title">Каждая привычка — в своём темпе</h2>
           </div>
-          <p>Прогресс считается только по плановым дням конкретной привычки за последние семь дней.</p>
+          <p>Прогресс считается только по плановым дням конкретной привычки за последние 14 дней.</p>
           <button className="button button--primary habit-rhythm__add" onClick={openCreate}>
             <Plus size={16} /> Новая привычка
           </button>
@@ -329,7 +281,7 @@ export function HabitsPage() {
                 <div
                   className="habit-rhythm-card__ring"
                   style={{ '--habit-progress': `${rhythm.progress * 3.6}deg` } as CSSProperties}
-                  aria-label={`${rhythm.progress}% за семь дней`}
+                  aria-label={`${rhythm.progress}% за последние 14 дней`}
                 >
                   <strong>{rhythm.progress}%</strong>
                 </div>
@@ -471,7 +423,7 @@ export function HabitsPage() {
 
       <section className="habit-list" aria-labelledby="habit-week-title">
         <div className="habit-list__header">
-          <div><h2 id="habit-week-title">Последние 7 дней</h2><p>Отмечайте выполнение отдельно для каждой привычки</p></div>
+          <div><h2 id="habit-week-title">Последние 14 дней</h2><p>Отмечайте выполнение отдельно для каждой привычки</p></div>
           <div className="week-labels">
             {days.map((day) => <span key={toDateKey(day)}>{day.toLocaleDateString('ru-RU', { weekday: 'short' })}<strong>{day.getDate()}</strong></span>)}
           </div>
@@ -495,9 +447,10 @@ export function HabitsPage() {
               <div className="habit-checks">
                 {days.map((day) => {
                   const key = toDateKey(day)
-                  const done = habit.completions.includes(key)
-                  const scheduled = habit.targetDays.includes(day.getDay())
-                  const future = atStartOfDay(day) > today
+                  const available = isHabitAvailableOnDay(habit, day)
+                  const done = available && habit.completions.includes(key)
+                  const scheduled = available && habit.targetDays.includes(day.getDay())
+                  const future = atStartOfLocalDay(day) > today
                   const disabled = future || (!scheduled && !done)
                   const dayLabel = day.toLocaleDateString('ru-RU')
                   const actionLabel = scheduled || done

@@ -6,13 +6,7 @@ import { RouterProvider } from '../core/router/Router'
 import { createSeedState } from '../domain/seed'
 import { AppProvider } from '../state/AppContext'
 
-function renderInbox() {
-  const state = createSeedState()
-  const task = state.tasks.find((item) => item.id === 'task-plan')!
-  task.projectId = 'inbox'
-  task.startAt = undefined
-  task.deadline = undefined
-  localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+function renderStoredInbox() {
   return render(
     <RouterProvider initialPath="/inbox">
       <AppProvider>
@@ -20,6 +14,16 @@ function renderInbox() {
       </AppProvider>
     </RouterProvider>,
   )
+}
+
+function renderInbox() {
+  const state = createSeedState()
+  const task = state.tasks.find((item) => item.id === 'task-plan')!
+  task.projectId = 'inbox'
+  task.startAt = undefined
+  task.deadline = undefined
+  localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
+  return renderStoredInbox()
 }
 
 function taskCard(title: string) {
@@ -45,6 +49,11 @@ describe('task details', () => {
     expect(within(details).getAllByText('Без проекта').length).toBeGreaterThan(0)
     expect(within(details).getByText('#планирование')).toBeInTheDocument()
     expect(within(details).getByRole('checkbox', { name: 'Проверить календарь' })).toBeChecked()
+    const durationFact = within(details).getByText('Длительность').closest<HTMLElement>('.task-details__schedule-item')!
+    expect(within(durationFact).getByText('1 ч')).toBeInTheDocument()
+    expect(within(details).getByText('Планирование')).toBeInTheDocument()
+    expect(within(details).queryByText('Срочность')).not.toBeInTheDocument()
+    expect(within(details).queryByText('Не срочная')).not.toBeInTheDocument()
 
     await user.click(within(details).getByRole('button', { name: 'Редактировать' }))
 
@@ -126,7 +135,10 @@ describe('task details', () => {
     individualTask.title = 'Индивидуальный порог'
     individualTask.urgencyThresholdOverrideHours = 168
     localStorage.setItem('focus-flow.state.v1', JSON.stringify(state))
-    renderInbox()
+    renderStoredInbox()
+    await screen.findByRole('heading', { name: 'Входящие', level: 1 })
+    await user.click(screen.getByRole('button', { name: 'Фильтры' }))
+    await user.click(screen.getByRole('button', { name: 'Все' }))
     await screen.findByText('Наследуемый порог', { selector: '.task-card__title' })
 
     await user.click(taskCard('Наследуемый порог').querySelector<HTMLButtonElement>('.task-card__body')!)
