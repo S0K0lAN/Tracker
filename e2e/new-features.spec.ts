@@ -346,8 +346,8 @@ test('calendar uses a fixed green task palette and a white today frame in every 
     const workProject = state.projects.find((project: { id: string }) => project.id === 'work')
     const today = new Date()
     const startOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 13, 0)
-    const urgentStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 14, 0)
-    const urgentDeadline = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 15, 0)
+    const urgentStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1, 14, 0)
+    const urgentDeadline = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 15, 0)
 
     state.settings.accent = 'violet'
     workProject.urgencyThresholdHours = 48
@@ -367,7 +367,7 @@ test('calendar uses a fixed green task palette and a white today frame in every 
       {
         ...template,
         id: 'calendar-green-urgent',
-        title: 'Зелёная вычисленно срочная задача',
+        title: 'Подготовиться к поездке',
         projectId: 'work',
         startAt: urgentStart.toISOString(),
         plannedDurationMinutes: undefined,
@@ -388,9 +388,9 @@ test('calendar uses a fixed green task palette and a white today frame in every 
     const frame = await currentDate.evaluate((node) => {
       const day = node.closest('.week-day')!
       const style = getComputedStyle(day, '::after')
-      return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth }
+      return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth, zIndex: style.zIndex }
     })
-    expect(frame).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px' })
+    expect(frame).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px', zIndex: '1' })
 
     const importantTask = page.locator('.calendar-task').filter({ hasText: 'Зелёная важная задача' })
     await expect(importantTask).toHaveAttribute('data-importance', 'high')
@@ -403,13 +403,19 @@ test('calendar uses a fixed green task palette and a white today frame in every 
       return { background: style.backgroundColor, border: style.borderLeftColor }
     })).toEqual({ background: CALENDAR_GREEN_SOFT, border: CALENDAR_GREEN })
 
-    const urgentTask = page.locator('.time-calendar__all-day-range').filter({ hasText: 'Зелёная вычисленно срочная задача' })
+    const urgentTask = page.locator('.time-calendar__all-day-range').filter({ hasText: 'Подготовиться к поездке' })
     await expect(urgentTask).toHaveAttribute('data-importance', 'low')
     await expect(urgentTask).toHaveAttribute('data-urgency', 'high')
     await expect(urgentTask).toHaveAccessibleName(/Срочная задача/)
     await expect(urgentTask).not.toHaveAccessibleName(/Важная задача/)
     await expect(urgentTask.locator('.calendar-task-signal--urgency')).toBeVisible()
     expect(await urgentTask.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
+    const taskLayers = await Promise.all([
+      importantTask.evaluate((node) => Number(getComputedStyle(node).zIndex)),
+      urgentTask.evaluate((node) => Number(getComputedStyle(node.closest('.time-calendar__all-day-ranges')!).zIndex)),
+    ])
+    expect(Number(frame.zIndex)).toBeLessThan(taskLayers[0])
+    expect(Number(frame.zIndex)).toBeLessThan(taskLayers[1])
   }
 
   await page.getByRole('button', { name: 'Месяц', exact: true }).click()
@@ -419,13 +425,20 @@ test('calendar uses a fixed green task palette and a white today frame in every 
     const style = getComputedStyle(node.closest('.month-day')!, '::after')
     return { color: style.borderTopColor, style: style.borderTopStyle, width: style.borderTopWidth, zIndex: style.zIndex }
   })).toEqual({ color: 'rgb(255, 255, 255)', style: 'solid', width: '2px', zIndex: '1' })
-  expect(await page.locator('.month-calendar__ranges').first().evaluate((node) => getComputedStyle(node).zIndex)).toBe('3')
+  const monthWeek = monthCurrentDate.locator('xpath=ancestor::div[contains(@class, "month-calendar__week")]')
+  const monthRanges = monthWeek.locator('.month-calendar__ranges')
+  const monthRange = monthRanges.locator('[data-task-id="calendar-green-urgent"]')
+  const monthLayerZIndexes = await Promise.all([
+    monthCurrentDate.evaluate((node) => Number(getComputedStyle(node.closest('.month-day')!, '::after').zIndex)),
+    monthRanges.evaluate((node) => Number(getComputedStyle(node).zIndex)),
+  ])
+  expect(monthLayerZIndexes[0]).toBeLessThan(monthLayerZIndexes[1])
 
   const monthTask = page.locator('.month-day__task').filter({ hasText: 'Зелёная важная задача' })
   await expect(monthTask).toHaveAccessibleName(/Важная задача/)
   await expect(monthTask.locator('.calendar-task-signal--importance')).toBeVisible()
   expect(await monthTask.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(CALENDAR_GREEN_SOFT)
-  const monthRange = page.locator('[data-task-id="calendar-green-urgent"]')
+  expect(monthLayerZIndexes[0]).toBeLessThan(await monthTask.evaluate((node) => Number(getComputedStyle(node.closest('.month-day__items')!).zIndex)))
   await expect(monthRange).toHaveAccessibleName(/Срочная задача/)
   await expect(monthRange.locator('.calendar-task-signal--urgency')).toBeVisible()
   expect(await monthRange.evaluate((node) => {
