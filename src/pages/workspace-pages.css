@@ -525,3 +525,14 @@
   }
 
 }
+
+@media (hover: none) and (pointer: coarse), (max-width: 1000px) and (max-height: 560px) {
+  .project-card__more {
+    width: 44px;
+    height: 44px;
+  }
+
+  .project-card__menu button {
+    min-height: 44px;
+  }
+}

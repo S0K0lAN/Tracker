@@ -24,6 +24,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Toast } from '../components/Toast'
 import { trapTabKey } from '../components/focusTrap'
 import { pluginRegistry } from '../core/plugins/PluginRegistry'
+import { saveUserFile, UserFileSaveError } from '../core/files/UserFileSaver'
 import {
   assertPortableBackupFile,
   createPortableBackup,
@@ -71,6 +72,7 @@ export function SettingsPage() {
   const [backgroundError, setBackgroundError] = useState('')
   const [backupError, setBackupError] = useState('')
   const [backupStatus, setBackupStatus] = useState('')
+  const [exportingBackup, setExportingBackup] = useState(false)
   const [pendingBackup, setPendingBackup] = useState<PendingBackupImport>()
   const [importingBackup, setImportingBackup] = useState(false)
   const [restoringBackup, setRestoringBackup] = useState(false)
@@ -199,24 +201,25 @@ export function SettingsPage() {
     setBackgroundError('')
   }
 
-  const downloadBackup = () => {
+  const downloadBackup = async () => {
+    if (exportingBackup) return
+    setExportingBackup(true)
     try {
       const backup = createPortableBackup(state)
-      const url = URL.createObjectURL(new Blob([backup.contents], { type: 'application/json;charset=utf-8' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.download = backup.fileName
-      document.body.append(link)
-      link.click()
-      link.remove()
-      window.setTimeout(() => URL.revokeObjectURL(url), 0)
+      const result = await saveUserFile({
+        fileName: backup.fileName,
+        mimeType: 'application/json',
+        bytes: new TextEncoder().encode(backup.contents),
+      })
       setBackupError('')
-      setBackupStatus('Резервная копия скачана')
+      setBackupStatus(result.status === 'saved' ? 'Резервная копия сохранена' : '')
     } catch (error) {
       setBackupStatus('')
-      setBackupError(error instanceof PortableBackupError
+      setBackupError(error instanceof PortableBackupError || error instanceof UserFileSaveError
         ? error.message
         : 'Не удалось подготовить резервную копию. Локальные данные не изменены')
+    } finally {
+      setExportingBackup(false)
     }
   }
 
@@ -565,7 +568,9 @@ export function SettingsPage() {
             {backupError && !pendingBackup && <p className="backup-message backup-message--error" role="alert"><CircleAlert size={17} /> {backupError}</p>}
             <div className="setting-row">
               <div><strong>Скачать резервную копию</strong><span>Переносимый JSON содержит задачи и вложения без OAuth-настроек; файл не зашифрован — храните его как конфиденциальный</span></div>
-              <button type="button" className="button button--ghost" disabled={importingBackup || restoringBackup} onClick={downloadBackup}><Download size={16} /> Скачать JSON</button>
+              <button type="button" className="button button--ghost" disabled={exportingBackup || importingBackup || restoringBackup} onClick={() => void downloadBackup()}>
+                {exportingBackup ? <><RefreshCw className="spin" size={16} /> Сохраняем…</> : <><Download size={16} /> Скачать JSON</>}
+              </button>
             </div>
             <div className="setting-row">
               <div><strong>Импортировать из файла</strong><span>Сначала покажем содержимое; данные заменятся только после подтверждения</span></div>

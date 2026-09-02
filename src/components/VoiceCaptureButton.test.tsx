@@ -1,7 +1,23 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
+
+const androidSpeechMocks = vi.hoisted(() => ({
+  nativeAndroid: false,
+  recognizeWithAndroid: vi.fn(),
+}))
+
+vi.mock('../core/speech/AndroidSpeechRecognition', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../core/speech/AndroidSpeechRecognition')>()
+  return {
+    ...actual,
+    isNativeAndroidSpeechRecognition: () => androidSpeechMocks.nativeAndroid,
+    recognizeWithAndroid: androidSpeechMocks.recognizeWithAndroid,
+  }
+})
+
+import { AndroidSpeechRecognitionError } from '../core/speech/AndroidSpeechRecognition'
 import {
   VoiceCaptureButton,
   VoiceCaptureFailureNotice,
@@ -78,6 +94,8 @@ afterEach(() => {
   delete window.webkitSpeechRecognition
   MockRecognition.latest = undefined
   MockRecognition.startError = undefined
+  androidSpeechMocks.nativeAndroid = false
+  androidSpeechMocks.recognizeWithAndroid.mockReset()
 })
 
 describe('VoiceCaptureButton Web Speech errors', () => {
@@ -149,5 +167,42 @@ describe('VoiceCaptureButton Web Speech errors', () => {
     expect(screen.getByRole('button', { name: 'Остановить диктовку' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Остановить диктовку' }))
     expect(retryRecognition.stop).toHaveBeenCalledOnce()
+  })
+
+  it('uses Android system recognition and disables duplicate starts while it is pending', async () => {
+    const user = userEvent.setup()
+    androidSpeechMocks.nativeAndroid = true
+    let resolveRecognition!: (result: { status: 'recognized'; transcript: string }) => void
+    androidSpeechMocks.recognizeWithAndroid.mockReturnValue(new Promise((resolve) => {
+      resolveRecognition = resolve
+    }))
+    const { onTranscript, onUnavailable } = renderHarness()
+
+    await user.click(screen.getByRole('button', { name: 'Надиктовать задачу' }))
+    expect(androidSpeechMocks.recognizeWithAndroid).toHaveBeenCalledWith('ru-RU')
+    expect(screen.getByRole('button', { name: 'Идёт системная диктовка' })).toBeDisabled()
+
+    act(() => resolveRecognition({ status: 'recognized', transcript: 'купить молоко завтра' }))
+    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith('купить молоко завтра'))
+    expect(onUnavailable).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Надиктовать задачу' })).toBeEnabled()
+  })
+
+  it('treats Android cancellation as silent and maps a missing recognizer to the manual fallback', async () => {
+    const user = userEvent.setup()
+    androidSpeechMocks.nativeAndroid = true
+    androidSpeechMocks.recognizeWithAndroid.mockResolvedValueOnce({ status: 'cancelled' })
+    const { onUnavailable } = renderHarness()
+
+    await user.click(screen.getByRole('button', { name: 'Надиктовать задачу' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Надиктовать задачу' })).toBeEnabled())
+    expect(onUnavailable).not.toHaveBeenCalled()
+
+    androidSpeechMocks.recognizeWithAndroid.mockRejectedValueOnce(
+      new AndroidSpeechRecognitionError('no-activity', 'Нет системного распознавателя'),
+    )
+    await user.click(screen.getByRole('button', { name: 'Надиктовать задачу' }))
+    await waitFor(() => expect(onUnavailable).toHaveBeenCalledWith('unsupported'))
+    expect(screen.getByRole('status')).toHaveTextContent('Голосовой ввод не поддерживается этим браузером')
   })
 })

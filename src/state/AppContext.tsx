@@ -322,7 +322,7 @@ function syncErrorMessage(error: unknown) {
   if (error instanceof AuthorizationError) {
     if (error.code === 'cancel') return 'Подключение отменено'
     if (error.code === 'access-denied') return 'Google не разрешил вход. Проверьте, что аккаунт добавлен в Test users приложения'
-    if (error.code === 'config') return 'Проверьте параметры OAuth и разрешённый адрес приложения'
+    if (error.code === 'config') return 'Проверьте OAuth client и параметры этой сборки приложения'
     return 'Не удалось открыть авторизацию хранилища'
   }
   return error instanceof Error ? error.message : 'Ошибка синхронизации'

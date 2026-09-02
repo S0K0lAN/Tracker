@@ -37,10 +37,10 @@ describe('Settings portable backup', () => {
     render(<AppProvider><SettingsPage /></AppProvider>)
     fireEvent.click(await screen.findByRole('button', { name: 'Скачать JSON' }))
 
-    expect(createObjectUrl).toHaveBeenCalledWith(expect.objectContaining({ type: 'application/json;charset=utf-8' }))
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.objectContaining({ type: 'application/json' }))
     expect(downloadedName).toMatch(/^focus-flow-backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/)
     await waitFor(() => expect(revokeObjectUrl).toHaveBeenCalledWith('blob:focus-flow-backup'))
-    expect(screen.getByRole('status')).toHaveTextContent('Резервная копия скачана')
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Резервная копия сохранена'))
   })
 
   it('previews without mutation, supports cancel/reselect, imports, and restores the prior copy', async () => {

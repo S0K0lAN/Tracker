@@ -49,7 +49,7 @@ Done браузерного MVP. Они честно вынесены в отд�
 | NAV-02 | Доступная навигация на промежуточной ширине | **Готово** | React и CSS используют единый breakpoint 820 px; desktop Sidebar остаётся доступным на 1024 px, а mobile drawer получает dialog/inert semantics. Сценарии покрыты Playwright. |
 | PRJ-01 | Создание и lifecycle проектов | **Готово** | `/projects` поддерживает создание и редактирование названия/цвета/описания, detail и подтверждаемое удаление. Component проверяет menu/edit; reducer при удалении переносит задачи в системный проект «Без проекта» и очищает `projectId` сохранённых фильтров. Датированные задачи не появляются в default-режиме «Неразобранные», но доступны через «Все». Архив/иерархия и duplicate-name UX остаются вне критерия. |
 | PRJ-02 | Порог и видимый сигнал срочности (#31) | **Готово** | Каждый проект хранит положительный порог; задачи с дедлайном наследуют его, могут выбрать явный override, а manual urgency сохраняет высший приоритет. По умолчанию выбрано «Нет»: без дедлайна и до порога пользовательский сигнал не отображается, хотя эффективное `low` сохраняется для матрицы и фильтров. В all-day режиме настройки срочности запрещены. Domain/component/E2E проверяют расчёт, сохранение и изменение наследуемого значения. |
-| ATT-01 | Просмотр фото и файлов | **Готово** | Viewer открывает image/PDF/text, поддерживает zoom, download, `Escape` и возврат focus; E2E загружает text attachment и повторно открывает после reload в пределах лимита браузерного MVP. |
+| ATT-01 | Просмотр фото и файлов | **Готово** | Browser viewer открывает image/PDF/text и хранит ограниченный data URL; Android storage выносит bytes в content-addressed private files, PDF открывает через `content://`/`ACTION_VIEW`, а export выполняет через SAF с отдельным cancel outcome. Физический device smoke остаётся pending. |
 | FLT-01 | Составной и сохраняемый фильтр | **Готово** | Есть status/project/importance/urgency/tags ANY/ALL; UI показывает активные условия, сброс; E2E сохраняет и применяет named filter после reload. |
 | SEARCH-01 | Поиск задач, проектов, тегов и фильтров | **Готово** | `/search` регистронезависимо группирует четыре типа результатов; component/E2E подтверждают кириллический поиск, empty state, сохранение и повторное применение фильтра. |
 | TRASH-01 | Корзина удалённых задач | **Готово** | Soft delete → `/trash` → reload → restore проходит E2E; восстановленная неразобранная задача возвращается во Входящие, permanent delete требует и component-тестом проверяет явное второе подтверждение. |
@@ -67,8 +67,8 @@ Done браузерного MVP. Они честно вынесены в отд�
 | BG-01 | Встроенные фоны | **Готово** | Presets, «без фона», dim и global application реализованы; E2E проверяет preset/reload, все страницы — light/dark desktop/mobile contrast и overflow. |
 | BG-02 | Собственный фон | **Готово** | MIME/size validation, upload, global application и reload покрыты E2E в честно документированных browser/localStorage лимитах. |
 | TYPE-01 | Настройка шрифта всего приложения | **Готово** | Три локальных системных стека и масштаб 90–120% применяются CSS variables; schema v2 мигрирует в v3, component/E2E проверяют persistence и отсутствие mobile overflow при 120%. |
-| DATA-01 | Скачать и импортировать переносимую JSON-копию | **Готово** | Экспорт исключает OAuth/device-local sync config; импорт до изменения данных проверяет 10 МБ, схему, вложения и фон, показывает preview, требует подтверждение, сохраняется после reload и оставляет восстанавливаемую предыдущую копию. |
-| VOICE-01 | Надиктовывание задачи | **Готово** | Web Speech ru-RU и ручной fallback интегрированы; unsupported, permission denied, no-speech, network и unknown ошибки различаются доступным live-сообщением, а fallback остаётся рабочим. |
+| DATA-01 | Скачать и импортировать переносимую JSON-копию | **Готово** | Browser скачивает файл; Android вызывает SAF picker и различает save/cancel. Экспорт исключает OAuth/device-local sync config; импорт проверяет 10 МБ, схему, вложения и фон, показывает preview и оставляет rollback-копию. |
+| VOICE-01 | Надиктовывание задачи | **Готово** | Browser использует Web Speech ru-RU, Android — native `SpeechRecognizer`/recognizer intent ru-RU; общий ручной fallback и различимые error states остаются рабочими. Физическая проверка permission UX pending. |
 | VOICE-02 | Разбор надиктованной задачи | **Готово** | Unit с фиксированным `now` проверяет default `startAt`, явные «до»/«дедлайн»/«срок», weekday, time, importance, tags и project; component проверяет, что голосовой дедлайн требует начала и не удаляет его. |
 | DES-01 | Лаконичный дизайн Todoist/Singularity | **Готово** | Общие tokens и progressive disclosure реализованы; независимый аудит desktop 1440×900, intermediate 1024×900 и mobile 390×844 подтвердил layering, focus и отсутствие horizontal overflow. |
 | QA-01 | Независимое покрытие новых функций | **Готово** | Набор содержит unit/component/E2E с наблюдаемыми эффектами, единый automatic browser-error gate, обе темы и desktop/intermediate/mobile loops. GitHub Actions повторяет unit/build и E2E для PR/main. |
@@ -237,17 +237,37 @@ storage races, durable TaskEditor journal, UI/UX/focus и маршрутизац
 - `npm run build`: TypeScript и production Vite build — **успешно**;
 - `npm run test:e2e`: **5 Playwright-файлов, 46/46 сценариев**.
 
+### Android-ready локальный gate 2 сентября 2026 года
+
+- Node.js **18.19.1**;
+- `npm test`: **52 Vitest-файла, 612/612 тестов**;
+- `npm run build`: TypeScript и production Vite build — **успешно**;
+- `npm run test:e2e`: **50/50 сценариев**, включая отдельные Android
+  portrait/landscape smoke с safe-area, overflow и touch-target проверками;
+- performance gate списка из 500 задач: первая отрисовка **490 мс**, p95 кадра
+  **19,7 мс**, длинные кадры **0%**;
+- Android `arm64-v8a` debug APK размером **144211302 bytes** прошёл подпись v2,
+  ZIP/16 KiB alignment, package `io.github.s0k0lan.focusflow.debug`, minSdk 24,
+  targetSdk 36, точный permission allowlist и проверку единственного ABI;
+- SHA-256 APK:
+  `e02a078781fdb28314b287997ee8bb7a90ddae1d04e5f91945a6010ad390fa80`.
+
+Этот gate доказывает готовность к физическому smoke, но не заменяет проверку
+установки, системной кнопки Back, SAF save/cancel, PDF `ACTION_VIEW`, native
+voice, real safe-area/system bars и Google Drive OAuth на OnePlus Ace2.
+
 ## Известные ограничения перед следующим этапом
 
-1. Перенести attachments и custom background из data URL/localStorage в
-   IndexedDB BlobStore, затем в platform storage.
+1. Перенести browser attachments и custom background из data URL/localStorage
+   в IndexedDB BlobStore; Android private attachment store уже реализован.
 2. Добавить историю Pomodoro-сессий; переходы полного цикла уже покрыты fake-clock тестами.
 3. Реализовать date-range filter и табличный contract suite комбинаций.
 4. Добавить иерархию/архив проектов и duplicate-name UX; rename/delete уже
    реализованы.
 5. Расширить CI матрицей поддерживаемых Node-версий; Chrome prerequisite уже
    устанавливается workflow явно.
-6. Вынести Web Speech за adapter; permission/error states уже различаются в UI.
+6. Выполнить физический smoke нативного Android recognizer; browser Web Speech
+   и Android adapter уже разделены.
 7. Добавить visual snapshots/geometry assertions для иконок, menus и focus.
-8. Реализовать platform/Tauri adapters и настоящие Ubuntu/Android/Windows
-   build/install/launch smoke; браузерный MVP не является их доказательством.
+8. Выполнить физический Android и настоящие Ubuntu/Windows build/install/launch
+   smoke; Tauri Android adapters реализованы, но device smoke не заменён тестами.

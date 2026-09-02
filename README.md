@@ -5,8 +5,13 @@
 дедлайны, матрицу Эйзенхауэра, поиск и фильтры, таймер фокуса, привычки,
 корзину/архив и настраиваемое оформление.
 
-Текущая реализация — браузерный MVP. Она проверяет продуктовые сценарии и
-адаптеры, но ещё не является Tauri-сборкой для Ubuntu.
+Текущая реализация включает браузерный MVP и собираемую Tauri 2 Android-
+оболочку. В браузере используются `localStorage`, data URL, Web Speech и
+обычное скачивание. Android использует приватный атомарный JSON,
+content-addressed файлы вложений, SAF export, системный PDF viewer, нативную
+диктовку `ru-RU`, safe-area/system-bar bridge и Google `AuthorizationClient`.
+Физический OnePlus Ace2 и live OAuth smoke, release signing/Play Store и
+Ubuntu-сборка пока не подтверждены.
 
 ## Запуск с нуля
 
@@ -69,6 +74,41 @@ npm run preview
 Не используйте недоверенную Wi-Fi сеть и не пробрасывайте порт 4173 в интернет:
 это сервер разработки без production-защиты, HTTPS и авторизации.
 
+### Android debug APK через Tauri 2
+
+Браузерный LAN-режим выше не устанавливает приложение. Для нативной Android-
+оболочки используются локальные toolchains из `Tracker/.tooling` и три
+воспроизводимых скрипта:
+
+```bash
+bash scripts/mobile-env.sh
+source scripts/mobile-env.sh
+scripts/android-build.sh
+```
+
+`android-build.sh` собирает debug APK только для `arm64-v8a` (в том числе для
+OnePlus Ace2) и сразу проверяет подпись, 16 KiB alignment, SDK levels,
+permissions и ABI. Готовый APK можно повторно проверить явно:
+
+```bash
+scripts/android-verify.sh <путь-к-debug-apk>
+```
+
+Версии окружения зафиксированы в скрипте: Rust 1.98.0, Android Platform 36,
+Build Tools 36.1.0, NDK 29.0.14206865 и ADB 37.0.1. Скрипт окружения не
+устанавливает и не обновляет toolchains; при неполном `.tooling` он завершается с
+инструкцией. Первая Gradle/Cargo-сборка может дозагрузить
+зафиксированные зависимости в проектные кэши. Полная подготовка OnePlus Ace2,
+установка через ADB, logcat, offline/persistence и UX checklist находятся в
+[`docs/android-device-testing.md`](docs/android-device-testing.md).
+
+Это артефакт для физического smoke, не подписанный Google Play release. Android
+использует нативный Google `AuthorizationClient`, а не неподдерживаемый в WebView
+GIS JavaScript; реализованный bridge запрашивает только `drive.appdata` и держит
+access token в памяти. Для live smoke всё ещё нужны отдельный Android OAuth
+client, SHA-1 debug-сертификата и Google Play Services на устройстве. Web OAuth
+остаётся отдельным и не меняется.
+
 ## Проверка
 
 ```bash
@@ -90,9 +130,11 @@ npm run check:full
 NODE_OPTIONS=--no-experimental-webstorage npm test
 ```
 
-Полный локальный gate 1 сентября 2026 года на Node.js 18.19.1: 43 Vitest-файла
-и 508/508 unit/component-тестов, успешная production-сборка и 46/46
-Playwright-сценариев. Датированное evidence и исторические результаты зафиксированы в
+Полный локальный gate 2 сентября 2026 года: 52 Vitest-файла и 612/612
+unit/component-тестов, успешная production-сборка и 50/50
+Playwright-сценариев. Проверенный `arm64-v8a` debug APK имеет SHA-256
+`e02a078781fdb28314b287997ee8bb7a90ddae1d04e5f91945a6010ad390fa80`.
+Датированное evidence и исторические результаты зафиксированы в
 [`docs/feature-acceptance.md`](docs/feature-acceptance.md).
 
 ## Демо-данные
@@ -187,9 +229,13 @@ Playwright-сценариев. Датированное evidence и истори
 
 Breakpoint Sidebar согласован на 820 px, dropdown общего `SelectMenu` поднят
 выше modal backdrop; сценарии повторно проверены на 1024 px и внутри редактора.
-Принципиальные оставшиеся границы — browser-only localStorage, отсутствие
-Tauri, live OAuth smoke, BlobStore для вложений и серверно-атомарного Drive
-CAS — описаны ниже и в расширенной документации.
+Принципиальные оставшиеся границы — физический Android smoke, live OAuth smoke,
+production-подпись/Play Store release, BlobStore браузерной версии и серверно-
+атомарный Drive CAS — описаны ниже и в расширенной документации. В браузере
+используется `localStorage`, data URL, Web Speech и browser download. Tauri
+Android хранит snapshot атомарно в приватном каталоге, выносит вложения в
+content-addressed файлы, сохраняет через SAF, открывает PDF системным
+`ACTION_VIEW` и распознаёт речь нативно.
 
 ## Важные документы
 
@@ -200,8 +246,9 @@ CAS — описаны ниже и в расширенной документа�
 
 ## Статус Google Drive
 
-В браузерном MVP реализован OAuth через Google Identity Services и Drive API
-v3 с минимальным scope `drive.appdata`. Приложение умеет найти существующую
+В браузере OAuth работает через Google Identity Services, а Android-сборка
+использует системный Google `AuthorizationClient`; оба пути передают сессию в
+общий Drive runtime с минимальным scope `drive.appdata`. Приложение умеет найти существующую
 копию `focus-flow-data.json`, загрузить её, создать новую, обновлять после
 локальных изменений и обнаруживать изменение удалённой ревизии. При первом
 согласовании разных копий пользователь явно выбирает источник; перед импортом
@@ -227,7 +274,7 @@ Drive media upload не документирует атомарный compare-an
 остаётся best-effort окно гонки. Для полной межустройственной гарантии нужны
 будущие immutable revisions/base snapshot и трёхсторонний merge.
 
-### Настройка Google OAuth
+### Настройка Google OAuth в браузере
 
 1. В [Google Cloud Console](https://console.cloud.google.com/) создайте или
    выберите проект, включите **Google Drive API** и настройте OAuth consent
@@ -267,12 +314,22 @@ Client ID является публичным идентификатором п�
 автосинхронизации сохраняются, но браузер попросит нажать «Продолжить с Google»,
 чтобы получить новый краткоживущий token. Это ограничение безопасной
 browser-only OAuth-модели: полностью фоновое постоянное подключение потребует
-BFF с защищённым refresh token либо будущей Tauri-версии с Authorization Code +
-PKCE и системным secret store.
+BFF с защищённым refresh token. Android-сборка также намеренно не сохраняет
+credential и получает краткоживущий token через Google Play Services.
 
 OAuth с адреса телефона вида `http://192.168.x.x:4173` не следует считать
 production-сценарием. Для входа с телефона разверните приложение на HTTPS и
 добавьте этот origin в Google Cloud Console.
+
+### Настройка Google OAuth в Android debug APK
+
+Создайте OAuth client типа **Android** для package
+`io.github.s0k0lan.focusflow.debug` и SHA-1, который печатает
+`scripts/android-verify.sh`. Web client ID и client secret в APK не нужны.
+Добавьте тестовый аккаунт в Audience, убедитесь, что Drive API включён, затем
+проверьте вход и отдельные действия «Получить»/«Отправить» на устройстве по
+[`docs/android-device-testing.md`](docs/android-device-testing.md). Для release-
+package и production-сертификата понадобится отдельный Android credential.
 
 Автоматический E2E проверяет OAuth-поток с имитацией Google API; реальный live
 smoke не выполняется без отдельного тестового Client ID и аккаунта. Поэтому

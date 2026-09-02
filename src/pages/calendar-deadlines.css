@@ -145,6 +145,8 @@
 
 .month-calendar__week {
   --month-range-top: 40px;
+  --month-range-row-height: 22px;
+  --month-range-row-pitch: 25px;
 
   position: relative;
   grid-column: 1 / -1;
@@ -160,8 +162,8 @@
 
 .month-day__range-space {
   width: 100%;
-  min-height: calc(var(--month-range-lanes) * 25px - 3px);
-  flex: 0 0 calc(var(--month-range-lanes) * 25px - 3px);
+  min-height: calc(var(--month-range-lanes) * var(--month-range-row-pitch) - 3px);
+  flex: 0 0 calc(var(--month-range-lanes) * var(--month-range-row-pitch) - 3px);
   pointer-events: none;
 }
 
@@ -334,9 +336,17 @@
   box-shadow: none;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 820px), (hover: none) and (pointer: coarse) and (max-height: 560px) {
   .month-calendar__week {
     --month-range-top: 36px;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .month-calendar__week {
+    --month-range-top: 52px;
+    --month-range-row-height: 24px;
+    --month-range-row-pitch: 27px;
   }
 }
 

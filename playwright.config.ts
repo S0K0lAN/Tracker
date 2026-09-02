@@ -9,9 +9,28 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:4173',
     channel: 'chrome',
-    viewport: { width: 1440, height: 960 },
     trace: 'retain-on-failure',
   },
+  projects: [
+    {
+      name: 'desktop-chrome',
+      testIgnore: /mobile-shell\.spec\.ts/,
+      use: {
+        viewport: { width: 1440, height: 960 },
+      },
+    },
+    {
+      name: 'android-touch-smoke',
+      testMatch: /mobile-shell\.spec\.ts/,
+      use: {
+        viewport: { width: 412, height: 915 },
+        deviceScaleFactor: 3,
+        hasTouch: true,
+        isMobile: true,
+        userAgent: 'Mozilla/5.0 (Linux; Android 13; PHK110) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+      },
+    },
+  ],
   webServer: {
     command: 'npm run dev',
     url: 'http://127.0.0.1:4173',

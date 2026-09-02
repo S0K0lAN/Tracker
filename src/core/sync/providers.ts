@@ -1,5 +1,7 @@
 import { GoogleIdentityAuthorization } from '../auth/GoogleIdentityAuthorization'
+import { AndroidGoogleAuthorization } from '../auth/AndroidGoogleAuthorization'
 import type { AuthorizationProvider } from '../auth/AuthorizationProvider'
+import { isTauri } from '@tauri-apps/api/core'
 import { DemoSyncAdapter, demoSyncDescriptor } from './DemoSyncAdapter'
 import { GoogleDriveAdapter, googleDriveDescriptor } from './GoogleDriveAdapter'
 import {
@@ -25,6 +27,7 @@ class GoogleDriveSyncRuntime implements SyncProviderRuntime {
   private adapter?: { accessToken: string; value: SyncAdapter }
 
   constructor(
+    private readonly configured: boolean,
     private readonly clientId: string,
     private readonly createAuthorization: (clientId: string) => AuthorizationProvider,
     private readonly createAdapter: (accessToken: string) => SyncAdapter,
@@ -32,7 +35,7 @@ class GoogleDriveSyncRuntime implements SyncProviderRuntime {
 
   async acquireAdapter({ interactive, resume }: { interactive: boolean; resume: boolean }): Promise<SyncAdapter> {
     const clientId = this.clientId.trim()
-    if (!clientId) {
+    if (!this.configured) {
       throw new SyncProviderError(
         'unavailable',
         'Вход через Google не настроен в этой сборке Focus Flow. Обратитесь к разработчику приложения.',
@@ -65,17 +68,29 @@ export interface GoogleDriveProviderOptions {
   defaultClientId?: string
   createAuthorization?: (clientId: string) => AuthorizationProvider
   createAdapter?: (accessToken: string) => SyncAdapter
+  nativeAndroid?: boolean
+}
+
+export function isNativeAndroidRuntime(
+  tauriRuntime = isTauri(),
+  userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent,
+) {
+  return tauriRuntime && /\bAndroid\b/i.test(userAgent)
 }
 
 export function createGoogleDriveProviderDefinition(
   options: GoogleDriveProviderOptions = {},
 ): SyncProviderDefinition {
   const defaultClientId = options.defaultClientId ?? configuredGoogleClientId()
+  const nativeAndroid = options.nativeAndroid ?? isNativeAndroidRuntime()
   return {
     descriptor: googleDriveDescriptor,
     createRuntime: () => new GoogleDriveSyncRuntime(
+      nativeAndroid || Boolean(defaultClientId.trim()),
       defaultClientId.trim(),
-      options.createAuthorization ?? ((clientId) => new GoogleIdentityAuthorization(clientId)),
+      options.createAuthorization ?? ((clientId) => (
+        nativeAndroid ? new AndroidGoogleAuthorization() : new GoogleIdentityAuthorization(clientId)
+      )),
       options.createAdapter ?? ((accessToken) => new GoogleDriveAdapter(accessToken)),
     ),
   }

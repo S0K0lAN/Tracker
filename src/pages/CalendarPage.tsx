@@ -654,7 +654,7 @@ function MonthCalendar({
               aria-label={`Сроки ${dateForAria(weekDays[0])} — ${dateForAria(weekDays[6])}`}
               style={{
                 gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                gridTemplateRows: `repeat(${laneCount}, 22px)`,
+                gridTemplateRows: `repeat(${laneCount}, var(--month-range-row-height, 22px))`,
               }}
             >
               {ranges.map(({ task, columnStart, columnSpan, lane, startsBeforeWeek, endsAfterWeek }) => {

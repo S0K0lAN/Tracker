@@ -1,5 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Mic, MicOff } from 'lucide-react'
+import {
+  AndroidSpeechRecognitionError,
+  isNativeAndroidSpeechRecognition,
+  recognizeWithAndroid,
+} from '../core/speech/AndroidSpeechRecognition'
 
 interface SpeechRecognitionEventLike extends Event {
   results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>
@@ -68,6 +73,15 @@ function classifyStartError(error: unknown): Exclude<VoiceCaptureFailure, 'unsup
   return 'other'
 }
 
+function classifyNativeError(error: unknown): VoiceCaptureFailure {
+  if (!(error instanceof AndroidSpeechRecognitionError)) return 'other'
+  if (error.code === 'no-activity') return 'unsupported'
+  if (error.code === 'permission-denied') return 'permission-denied'
+  if (error.code === 'no-match') return 'no-speech'
+  if (error.code === 'network') return 'network'
+  return 'other'
+}
+
 export function VoiceCaptureFailureNotice({ failure }: { failure: VoiceCaptureFailure }) {
   const copy = FAILURE_COPY[failure]
   return (
@@ -87,6 +101,13 @@ export function VoiceCaptureButton({
 }) {
   const [listening, setListening] = useState(false)
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
+  const nativeGenerationRef = useRef(0)
+
+  useEffect(() => () => {
+    nativeGenerationRef.current += 1
+    recognitionRef.current?.stop()
+    recognitionRef.current = null
+  }, [])
 
   const reportFailure = (failure: VoiceCaptureFailure, source?: SpeechRecognitionLike) => {
     if (source && recognitionRef.current !== source) return
@@ -98,9 +119,29 @@ export function VoiceCaptureButton({
   const toggle = () => {
     if (listening) {
       const recognition = recognitionRef.current
+      if (!recognition) return
       recognitionRef.current = null
-      recognition?.stop()
+      recognition.stop()
       setListening(false)
+      return
+    }
+
+    if (isNativeAndroidSpeechRecognition()) {
+      const generation = nativeGenerationRef.current + 1
+      nativeGenerationRef.current = generation
+      setListening(true)
+      void recognizeWithAndroid('ru-RU').then((result) => {
+        if (nativeGenerationRef.current !== generation) return
+        if (result.status === 'recognized') onTranscript(result.transcript)
+      }).catch((error: unknown) => {
+        if (nativeGenerationRef.current !== generation) return
+        if (error instanceof AndroidSpeechRecognitionError && error.code === 'cancel') return
+        onUnavailable(classifyNativeError(error))
+      }).finally(() => {
+        if (nativeGenerationRef.current !== generation) return
+        nativeGenerationRef.current = 0
+        setListening(false)
+      })
       return
     }
 
@@ -142,8 +183,9 @@ export function VoiceCaptureButton({
       type="button"
       className={`voice-capture ${listening ? 'voice-capture--listening' : ''}`}
       onClick={toggle}
-      aria-label={listening ? 'Остановить диктовку' : 'Надиктовать задачу'}
+      aria-label={listening ? recognitionRef.current ? 'Остановить диктовку' : 'Идёт системная диктовка' : 'Надиктовать задачу'}
       aria-pressed={listening}
+      disabled={listening && !recognitionRef.current}
       title={listening ? 'Слушаю…' : 'Надиктовать задачу'}
     >
       {listening ? <MicOff size={18} /> : <Mic size={18} />}

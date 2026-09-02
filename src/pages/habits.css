@@ -569,6 +569,25 @@
   }
 }
 
+@media (hover: none) and (pointer: coarse) {
+  .habit-list .week-labels,
+  .habit-list .habit-checks {
+    grid-template-columns: repeat(7, 44px);
+  }
+
+  .habit-list .habit-checks button {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .habit-trend__preset,
+  .habit-trend__date-field input {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 640px) {
   .habit-rhythm {
     padding: 18px;
@@ -738,9 +757,10 @@
   }
 
   .habit-list .habit-checks button {
-    width: min(40px, 100%);
-    height: auto;
-    aspect-ratio: 1;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
     justify-self: center;
   }
 

@@ -63,7 +63,11 @@ Focus Flow — персональный local-first таск-трекер для
 - воспроизводимый demo seed относительно дня запуска с недатированными,
   внутридневными, дедлайновыми, активными и завершёнными all-day задачами;
 - переносимый JSON-export/import с preview, ограничением размера и отменой через import-backup;
-- OAuth Google Identity Services, скачивание/загрузка Drive, ручная и автоматическая синхронизация;
+- Android SAF export с корректной отменой picker, системный PDF `ACTION_VIEW`,
+  нативное распознавание речи `ru-RU`, safe-area fallback и синхронизация
+  status/navigation bars с темой;
+- OAuth через Google Identity Services в браузере и нативный AuthorizationClient
+  в Android, скачивание/загрузка Drive, ручная и автоматическая синхронизация;
 - универсальный реестр sync provider runtime с device-local конфигурацией;
 - глубокая проверка snapshot, ссылочная целостность, бюджеты размера/сложности,
   quarantine и безопасные URL вложений;
@@ -74,7 +78,10 @@ Focus Flow — персональный local-first таск-трекер для
 - доступный keyboard/AT windowed list и performance gate прокрутки списка из 500 задач;
 - CI для unit/build/E2E на pull request и `main`.
 
-Текущая реализация — проверяемая браузерная основа. Она ещё не является Tauri-сборкой для Ubuntu и не доказывает live OAuth-синхронизацию с Google Drive.
+Текущая реализация включает проверяемую браузерную основу и собираемый Tauri 2
+Android debug APK с приватным JSON-хранилищем. Она ещё не является Tauri-сборкой
+для Ubuntu и не доказывает live OAuth-синхронизацию с Google Drive без
+физического smoke и отдельного тестового credential.
 
 ## 3. Быстрый запуск и обязательные проверки
 
@@ -122,8 +129,10 @@ dependency audit (`npm audit` и `npm audit --omit=dev`) сообщили 0 из
 уязвимостей. Это датированный локальный снимок; актуальный CI теперь повторяет
 unit/build/E2E gate на pull request и `main`.
 
-Актуальный полный локальный gate 1 сентября 2026 года на Node.js 18.19.1:
-508/508 unit/component-тестов, успешный build и 46/46 E2E-сценариев.
+Актуальный полный локальный gate 2 сентября 2026 года на Node.js 18.19.1:
+612/612 unit/component-тестов, успешный build и 50/50 E2E-сценариев. Свежий
+`arm64-v8a` debug APK прошёл обязательные проверки подписи v2, ZIP/16 KiB
+alignment, minSdk 24, targetSdk 36, ABI и точного permission allowlist.
 
 ## 4. Архитектурные границы
 
@@ -265,8 +274,9 @@ src/
 - обновление существующего файла media upload;
 - bearer token внедряется снаружи и не сохраняется.
 
-`GoogleDriveSyncRuntime` получает token через Google Identity Services,
-пересоздаёт adapter после `401` и не сохраняет credential. Координатор умеет
+`GoogleDriveSyncRuntime` получает token через Google Identity Services в
+браузере или нативный AuthorizationClient в Android, пересоздаёт adapter после
+`401` и не сохраняет credential. Координатор умеет
 скачивать remote, сравнивать ID/revision/hash, показывать конфликт, создавать
 import-backup и повторно отправлять правку, сделанную во время upload.
 
@@ -289,9 +299,11 @@ import-backup и повторно отправлять правку, сдела�
 
 ## 7. Хранение и Tauri
 
-`LocalStorageAdapter` — временный браузерный адаптер, а не выполнение требования о приватном JSON-файле.
+`LocalStorageAdapter` остаётся браузерным адаптером. Tauri-сборка выбирает
+`TauriJsonStorageAdapter`, который хранит данные в приватном каталоге приложения
+через Rust-команды.
 
-Следующий `TauriJsonStorageAdapter` должен:
+Текущий `TauriJsonStorageAdapter`:
 
 1. Читать versioned snapshot из приватного каталога приложения.
 2. Валидировать schema version и выполнять миграции.
@@ -302,7 +314,10 @@ import-backup и повторно отправлять правку, сдела�
 7. Хранить вложения отдельно в `attachments/<content-hash>`, а в JSON — метаданные.
 8. Не писать основной snapshot на каждый символ; использовать draft/recovery journal и debounce.
 
-Перед добавлением `src-tauri` установите Rust, Cargo, WebKitGTK и системные зависимости Tauri 2. Для Android потребуются SDK/NDK/ADB. Не заявляйте платформенную готовность без реального build/install/launch smoke.
+Для Tauri-сборки установите Rust, Cargo, WebKitGTK и системные зависимости Tauri
+2; для Android — SDK/NDK/ADB. Зафиксированное Android-окружение и скрипты
+описаны в `docs/android-device-testing.md`. Не заявляйте платформенную готовность
+без реального build/install/launch smoke.
 
 ## 8. План дальнейшей реализации
 
@@ -326,15 +341,17 @@ import-backup и повторно отправлять правку, сдела�
 
 ### Этап C — Ubuntu/Tauri
 
-- Создать Tauri 2 shell без изменения доменных контрактов.
-- Реализовать атомарное JSON-хранилище и отдельное хранилище вложений.
+- Переиспользовать реализованный Android Tauri 2 shell без изменения доменных контрактов.
+- Перенести и проверить существующее атомарное JSON-хранилище и attachment store на Ubuntu.
 - Добавить безопасный OAuth redirect и secret store.
 - Реализовать локальные системные уведомления.
 - Проверить production build, установку, direct launch, offline и восстановление backup на Ubuntu 24.04.
 
-### Этап D — Android и Windows
+### Этап D — завершение Android и Windows
 
-- Android: share target, `content://` вложения, фоновые ограничения уведомлений, отдельный OAuth client ID.
+- Android: физический OnePlus smoke, отдельный OAuth client ID, release signing,
+  Play Store, share target и фоновые ограничения уведомлений. Внутренний
+  `content://` для PDF/вложений уже реализован.
 - Windows: атомарная замена открытого файла, WebView2, installer/update smoke.
 - Общий набор contract-тестов должен проходить на каждом platform adapter.
 

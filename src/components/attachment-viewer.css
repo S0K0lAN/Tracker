@@ -59,6 +59,23 @@
   border-radius: 10px;
 }
 
+.attachment-viewer__save-status {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--line);
+  font-size: calc(12px * var(--app-font-scale));
+}
+
+.attachment-viewer__save-status--success {
+  color: var(--success, var(--accent-strong));
+}
+
+.attachment-viewer__save-status--error {
+  color: var(--danger);
+}
+
 .attachment-viewer__content {
   min-height: 360px;
   flex: 1;
@@ -120,6 +137,13 @@
   margin: 6px 0 16px;
   font-size: calc(13px * var(--app-font-scale));
   line-height: 1.5;
+}
+
+.attachment-viewer__native-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
 }
 
 .attachment-viewer__zoom {

@@ -38,6 +38,7 @@ import { Toast } from './components/Toast'
 import { setInert, trapTabKey } from './components/focusTrap'
 import { useApp } from './state/AppContext'
 import { useNow } from './hooks/useNow'
+import { useAndroidBackButton } from './hooks/useAndroidBackButton'
 
 const navigation = [
   { to: '/today', label: 'Сегодня', icon: SunMedium },
@@ -52,17 +53,18 @@ const navigation = [
 ]
 
 const bottomNavigation = navigation.filter((item) => ['/today', '/inbox', '/calendar', '/search', '/settings'].includes(item.to))
+const mobileShellMediaQuery = '(max-width: 820px), (hover: none) and (pointer: coarse) and (max-height: 560px)'
 
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { state } = useApp()
   const { navigate } = useRouter()
   const asideRef = useRef<HTMLElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-  const [drawerMode, setDrawerMode] = useState(() => window.matchMedia?.('(max-width: 820px)').matches ?? false)
+  const [drawerMode, setDrawerMode] = useState(() => window.matchMedia?.(mobileShellMediaQuery).matches ?? false)
   const activeCount = state.tasks.filter((task) => task.status === 'active' && isInboxTask(task)).length
 
   useEffect(() => {
-    const media = window.matchMedia?.('(max-width: 820px)')
+    const media = window.matchMedia?.(mobileShellMediaQuery)
     if (!media) return
     const update = () => setDrawerMode(media.matches)
     update()
@@ -177,6 +179,17 @@ export function App() {
     setEditorTask(undefined)
     setEditorDefaults(undefined)
   }
+
+  useAndroidBackButton({
+    path,
+    navigate,
+    hasOverlay: editorTask !== undefined || Boolean(viewedTask) || menuOpen,
+    dismissOverlay: () => {
+      if (editorTask !== undefined) closeEditor()
+      else if (viewedTask) setViewTaskId(undefined)
+      else setMenuOpen(false)
+    },
+  })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

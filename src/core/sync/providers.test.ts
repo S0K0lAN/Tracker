@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AuthorizationProvider } from '../auth/AuthorizationProvider'
 import type { SyncAdapter } from './SyncAdapter'
 import { googleDriveDescriptor } from './GoogleDriveAdapter'
-import { createGoogleDriveProviderDefinition } from './providers'
+import { createGoogleDriveProviderDefinition, isNativeAndroidRuntime } from './providers'
 
 function authorization(accessToken = 'memory-only-token'): AuthorizationProvider {
   return {
@@ -22,6 +22,12 @@ function adapter(): SyncAdapter {
 }
 
 describe('Google Drive provider configuration', () => {
+  it('detects Android only when both Tauri and an Android user agent are present', () => {
+    expect(isNativeAndroidRuntime(true, 'Mozilla/5.0 (Linux; Android 13; PHK110)')).toBe(true)
+    expect(isNativeAndroidRuntime(false, 'Mozilla/5.0 (Linux; Android 13; PHK110)')).toBe(false)
+    expect(isNativeAndroidRuntime(true, 'Mozilla/5.0 (X11; Linux x86_64)')).toBe(false)
+  })
+
   it('keeps the OAuth client configuration out of the user-facing descriptor', () => {
     const definition = createGoogleDriveProviderDefinition({ defaultClientId: 'build-client-id' })
 
@@ -66,5 +72,25 @@ describe('Google Drive provider configuration', () => {
       message: expect.stringContaining('Вход через Google не настроен'),
     })
     expect(createAuthorization).not.toHaveBeenCalled()
+  })
+
+  it('uses native Android authorization without requiring a browser client ID', async () => {
+    const auth = authorization('android-memory-token')
+    const createAuthorization = vi.fn(() => auth)
+    const createAdapter = vi.fn(() => adapter())
+    const definition = createGoogleDriveProviderDefinition({
+      defaultClientId: '',
+      nativeAndroid: true,
+      createAuthorization,
+      createAdapter,
+    })
+
+    await expect(
+      definition.createRuntime({}).acquireAdapter({ interactive: true, resume: false }),
+    ).resolves.toMatchObject({ descriptor: { id: 'google-drive' } })
+
+    expect(createAuthorization).toHaveBeenCalledWith('')
+    expect(auth.connect).toHaveBeenCalledWith({ prompt: 'select_account' })
+    expect(createAdapter).toHaveBeenCalledWith('android-memory-token')
   })
 })

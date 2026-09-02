@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "android-window:default",
+    "core:default",
+    "core:window:allow-close",
+    "file-export:default",
+    "google-authorization:default",
+    "speech-recognition:default"
+  ]
+}
